@@ -1,0 +1,19 @@
+services:
+  storage:
+    image: ton-storage:2025.03
+    restart: on-failure
+    volumes:
+      - ./storage-db:/storage-db
+    ports:
+      - 3333:3333/udp
+    command: ./storage-daemon -d -v 4 -p 5555 -C global.config.json -D /storage-db -I 46.159.70.250:3333
+
+  client:
+    image: ton-storage:2025.03
+    tty: true
+    profiles:
+      - no-start
+    volumes:
+      - ./storage-db:/storage-db
+      - ./../nft-torrent:/opt/nft-torrent
+    command: ./storage-daemon-cli -I storage:5555 -k /storage-db/cli-keys/client -p /storage-db/cli-keys/server.pub
