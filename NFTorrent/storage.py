@@ -19,6 +19,16 @@ class TonStorageCliSettings:
     request_timeout: int = 30
     manifest_bag_id: str = None
 
+    @classmethod
+    def from_environment(cls):
+        return TonStorageCliSettings(
+            storage_cli_binary=os.environ.get('STORAGE_CLI_BINARY', './storage-daemon-cli'),
+            storage_cli_args=os.environ.get('STORAGE_CLI_ARGS', '-I 127.0.0.1:5555'),
+            storage_db_path=os.environ.get('STORAGE_DB_PATH', './storage-db'),
+            request_timeout=int(os.environ.get('STORAGE_REQUEST_TIMEOUT', TonStorageCliSettings.request_timeout)),
+            manifest_bag_id=os.environ.get('STORAGE_REQUEST_TIMEOUT', None),
+        )
+
 def parse_bag_id(bag_id: str | bytes) -> str:
     hex_bag_id = None
     if isinstance(bag_id, bytes):
@@ -212,11 +222,15 @@ class TonStorageCli:
 
     def node_get_state(self):
         peers = self.run_get_peers(self.settings.manifest_bag_id)
-        return [
-            {'adnl_id': x['adnl_id'], 'ip_str': x['ip_str']} 
-            for x in peers['peers'] 
-            if x['@type'] == 'storage.daemon.peer'
-        ]
+        if (isinstance(peers, dict) and 'peers' in peers):
+            return [
+                {'adnl_id': x['adnl_id'], 'ip_str': x['ip_str']} 
+                for x in peers['peers'] 
+                if x['@type'] == 'storage.daemon.peer'
+            ]
+        else:
+            # Error
+            return peers
         
     def run_list(self):
         return self._run_command('list')
@@ -252,7 +266,7 @@ class TonStorageCli:
         return self._run_command(command)
 
 
-if __name__ == '__main__':  # pragma: no cover
+def __example():  # pragma: no cover
     logging.basicConfig(level=logging.DEBUG)
 
     cli = TonStorageCli(1,
