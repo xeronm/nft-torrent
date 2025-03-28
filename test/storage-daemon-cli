@@ -1,10 +1,10 @@
 #!/bin/bash
 
 
-if [[ "$1" == "err1" ]]; then
+if [[ "$2" == "err1" ]]; then
     echo "Failed to resolve host: No address associated with hostname" >&2
     exit -1
-elif [[ "$1" == "err2" ]]; then
+elif [[ "$2" == "err2" ]]; then
     echo "[ 2][t 0][2025-03-23 14:15:14.540440007][terminal.cpp:102][!terminal io]        disabling readline" >&2
     for i in {1..10} ; do 
         echo "[ 1][t 0][2025-03-23 14:18:36.857873072][adnl-ext-connection.cpp:129][!outconn] Client got error [PosixError : Connection refused : 111 : Error on [fd:5]]" >&2
@@ -17,7 +17,7 @@ fi
 echo "[ 2][t 0][2025-03-23 14:15:14.540440007][terminal.cpp:102][!terminal io]        disabling readline" >&2
 echo "[ 3][t 0][2025-03-23 14:15:14.576307267][storage-daemon-cli.cpp:231][!extclient]        Connected" >&2
 
-if [[ "$1" == "list" ]]; then
+if [[ "$2" == "list" ]]; then
     cat << EOF 
 {
    "@type" : "storage.daemon.torrentList",
@@ -45,9 +45,9 @@ if [[ "$1" == "list" ]]; then
 }
 
 EOF
-elif [[ "$1" == "adderr" ]]; then
+elif [[ "$2" == "adderr" ]]; then
     echo "Query error: Cannot add torrent: duplicate hash F70D2F7587DBDFD0928E1967A0B2783EC3ABD63846AEC3B055B4705AEF742871"
-elif [[ "$1" == "add" ]]; then
+elif [[ "$2" == "add" ]]; then
     cat << EOF 
 {
     "@type": "storage.daemon.torrentFull", 
@@ -72,9 +72,9 @@ elif [[ "$1" == "add" ]]; then
     "files": []
 }
 EOF
-elif [[ "$1" == "geterr" ]]; then
+elif [[ "$2" == "geterr" ]]; then
     echo "Query error: No such torrent"
-elif [[ "$1" == "get" ]]; then
+elif [[ "$2" == "get" ]]; then
     cat << EOF
 {
     "@type": "storage.daemon.torrentFull", 
@@ -122,7 +122,7 @@ elif [[ "$1" == "get" ]]; then
     ]
 }    
 EOF
-elif [[ "$1" == "get-peers" ]]; then
+elif [[ "$2" == "get-peers" ]]; then
     cat << EOF
 {
     "@type": "storage.daemon.peerList", 
@@ -141,11 +141,11 @@ elif [[ "$1" == "get-peers" ]]; then
     "total_parts": "13"
 }
 EOF
-elif [[ "$1" == "remove" ]]; then
+elif [[ "$2" == "remove" ]]; then
     echo "Success"
-elif [[ "$1" == "removeerr" ]]; then
+elif [[ "$2" == "removeerr" ]]; then
     echo "Query error: No such torrent"
-elif [[ "$1" == "create" ]]; then
+elif [[ "$2" == "create" ]]; then
     cat << EOF
 {
     "@type": "storage.daemon.torrentFull", 
@@ -179,7 +179,7 @@ elif [[ "$1" == "create" ]]; then
     ]
 }
 EOF
-elif [[ "$1" == "createerr" ]]; then
+elif [[ "$2" == "createerr" ]]; then
     echo "Query error: File \"C:\\Work\\ton-storage\\file10.txt\" can't be opened for reading for stat"
 fi
 

@@ -1,14 +1,15 @@
 from setuptools import find_packages, setup
+from NFTorrent import __meta__
  
 def read(f):
     return open(f, 'r', encoding='utf-8').read()
  
 setup(
     name='ton-nft-torrent',
-    version='0.1.0',
+    version=__meta__.__version__,
     url='https://github.com/xeronm/nft-torrent',
     license='GNU General Public License v3 (GPLv3)',
-    description='HTTP API Gateway for TON Blockchain NFT data maintained with TON Storage',
+    description=__meta__.__description__,
     long_description=read('README.md'),
     long_description_content_type='text/markdown',
     maintainer='Denis Muratov',

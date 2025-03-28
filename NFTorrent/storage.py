@@ -5,33 +5,17 @@ import selectors
 import json
 import base64
 import binascii
-from dataclasses import dataclass
-from typing import Dict, List
-import logging
+from typing import Dict
 
-logger = logging.getLogger(__name__)
+from NFTorrent.settings import TonStorageCliSettings
 
-@dataclass
-class TonStorageCliSettings:
-    storage_cli_binary: str
-    storage_cli_args: List[str]
-    storage_db_path: str
-    request_timeout: int = 30
-    manifest_bag_id: str = None
+from loguru import logger
 
-    @classmethod
-    def from_environment(cls):
-        return TonStorageCliSettings(
-            storage_cli_binary=os.environ.get('STORAGE_CLI_BINARY', './storage-daemon-cli'),
-            storage_cli_args=os.environ.get('STORAGE_CLI_ARGS', '-I 127.0.0.1:5555'),
-            storage_db_path=os.environ.get('STORAGE_DB_PATH', './storage-db'),
-            request_timeout=int(os.environ.get('STORAGE_REQUEST_TIMEOUT', TonStorageCliSettings.request_timeout)),
-            manifest_bag_id=os.environ.get('STORAGE_REQUEST_TIMEOUT', None),
-        )
-
-def parse_bag_id(bag_id: str | bytes) -> str:
+def parse_bag_id(bag_id: int | str | bytes) -> str:
     hex_bag_id = None
-    if isinstance(bag_id, bytes):
+    if isinstance(bag_id, int):
+        hex_bag_id = hex(bag_id)[2:].rjust(64, '0')
+    elif isinstance(bag_id, bytes):
         if len(bag_id) != 32:
             raise ValueError('Invalid bag id: should be 16 bytes')
         hex_bag_id = bag_id.hex()
@@ -86,40 +70,46 @@ class TonStorageCli:
             raise FileExistsError(f'Binary "{self.settings.storage_cli_binary}" not exists')
 
         try:
-            args = [ self.settings.storage_cli_binary ] + self.settings.storage_cli_args + [
+            args = [ 
+                self.settings.storage_cli_binary, 
+                '-I', self.settings.storage_daemon_addr,
                 '-p', os.path.join(self.settings.storage_db_path, 'cli-keys', 'server.pub'),                    
                 '-k', os.path.join(self.settings.storage_db_path, 'cli-keys', 'client'), 
             ]
+            command = ' '.join(args) 
+            logger.debug("TonStorageCli #{client_id:03d}: Popen cmd: {cmd}", client_id=self.client_id, cmd=command)
 
             self._proc = subprocess.Popen(
-                ' '.join(args),
+                command,
                 bufsize=65536, shell=True, 
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         except OSError as E:
-            logger.error('TonStorageCli #%03d: Popen error - %s', self.client_id, E)
+            logger.error("TonStorageCli #{client_id:03d}: Popen error - {exc}", client_id=self.client_id, exc=E)
             return False
 
         try:
             self._read_until('Connected', timeout=self.settings.request_timeout, stderr=True)
         except subprocess.SubprocessError as E:
-            logger.error('TonStorageCli #%03d: Client communication error - %s', self.client_id, E)
+            logger.error("TonStorageCli #{client_id:03d}: Client communication error - {exc}", client_id=self.client_id, exc=E)
             self.terminate()
             return False
         
-        logger.info(f'Session opened.')        
+        logger.info("Session opened.")
         return True        
             
     def close(self):
         if not self.is_alive():
             return
         
-        return_code = 0
+        returncode = 0
         try:
-            self._proc.communicate('quit\n'.encode(), timeout=self.settings.request_timeout)
+            self._proc.communicate('quit\n'.encode(), timeout=self.settings.request_timeout)            
+            returncode = self._proc.returncode
         except subprocess.TimeoutExpired:
+            returncode = -1
             self.terminate()
+        logger.info("TonStorageCli #{client_id:03d}: Session closed, exitcode: {exitcode}", client_id=self.client_id, exitcode=returncode)
         self._proc = None        
-        logger.info('TonStorageCli #%03d: Session closed, exit=%d.', self.client_id, return_code)
 
     def is_alive(self):
         if self._proc is None:
@@ -127,7 +117,7 @@ class TonStorageCli:
         
         return_code = self._proc.poll()
         if return_code is not None:
-            logger.error('TonStorageCli #%03d: Session aborted, exit=%d', self.client_id, return_code)
+            logger.error("TonStorageCli #{client_id:03d}: Session aborted, exitcode: {exitcode}", client_id=self.client_id, exitcode=return_code)
             self.terminate()
         return return_code is None
 
@@ -153,6 +143,7 @@ class TonStorageCli:
                     if output.find(match, pos) >= 0:
                         return {'message': output.strip()}
                     pos = max(0, len(output) - len(match))        
+
         raise subprocess.CalledProcessError(self._proc.poll(), self.settings.storage_cli_binary, output=None, stderr=output)
                 
     def _read_json(self, timeout: int = None, match_error: str = None):
@@ -203,7 +194,8 @@ class TonStorageCli:
             self.open()
 
         try:
-            logger.debug('TonStorageCli #%03d: run -> %s', self.client_id, command)
+            logger.debug("TonStorageCli #{client_id:03d}: CLI run command: {command}", 
+                         client_id=self.client_id, command=command)
             response = None
             if as_json:
                 self._proc.stdin.write(f'{command} --json\n'.encode())
@@ -214,7 +206,8 @@ class TonStorageCli:
                 self._proc.stdin.flush()
                 response = self._read_until('Success\n', timeout=self.settings.request_timeout, match_error='Query error:')
 
-            logger.debug('TonStorageCli #%03d: response <- %s', self.client_id, json.dumps(response))
+            logger.debug("TonStorageCli #{client_id:03d}: CLI got response: {response}", 
+                         client_id=self.client_id, response=json.dumps(response))
             return response
         except subprocess.SubprocessError as E:
             self.terminate()
@@ -243,6 +236,14 @@ class TonStorageCli:
         bag_id = parse_bag_id(bag_id)
         return self._run_command(f'remove {bag_id}', as_json=False) 
 
+    def run_upload_resume(self, bag_id: str | bytes):
+        bag_id = parse_bag_id(bag_id)
+        return self._run_command(f'upload-resume {bag_id}', as_json=False) 
+
+    def run_upload_pause(self, bag_id: str | bytes):
+        bag_id = parse_bag_id(bag_id)
+        return self._run_command(f'upload-pause {bag_id}', as_json=False) 
+
     def run_get_peers(self, bag_id: str | bytes):
         bag_id = parse_bag_id(bag_id)
         return self._run_command(f'get-peers {bag_id}') 
@@ -251,7 +252,8 @@ class TonStorageCli:
         bag_id = parse_bag_id(bag_id)
         return self._run_command(f'get {bag_id}') 
     
-    def run_create(self, path: str, description: str | dict | list = None, copy: bool = False, check_existance: bool = True):
+    def run_create(self, path: str, description: str | dict | list = None, copy: bool = False, no_upload : bool = False,
+                   check_existance: bool = True):
         if not path or not isinstance(path, str):
             raise ValueError(f'Invalid path value, must be non-empty string')
         if check_existance and not os.path.isfile(path) and not os.path.isdir(path):
@@ -262,17 +264,17 @@ class TonStorageCli:
             command += f'-d \'{str_desc}\' '
         if copy:
             command += '--copy '
+        if no_upload:
+            command += '--no-upload '
         command += path
         return self._run_command(command)
 
 
 def __example():  # pragma: no cover
-    logging.basicConfig(level=logging.DEBUG)
-
     cli = TonStorageCli(1,
         TonStorageCliSettings(
             storage_cli_binary="/mnt/c/Work/ton-storage/storage-daemon-cli.exe",
-            storage_cli_args=["-I", "172.19.96.1:5555"],
+            storage_daemon_addr="172.19.96.1:5555",
             storage_db_path="C:/Work/ton-storage/storage-db",
             request_timeout=3,
             manifest_bag_id='A8C27C0AF2BB3A3077330F1857C3130F6EBEEE5BD5347A18F1A4CCD30D4F5F82'

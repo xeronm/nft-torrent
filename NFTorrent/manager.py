@@ -10,16 +10,15 @@ from concurrent.futures import ThreadPoolExecutor
 
 from pyTON.cache import CacheManager, DisabledCacheManager
 
-from NFTorrent.storage import TonStorageCliSettings, parse_bag_id
+from NFTorrent.storage import parse_bag_id
+from NFTorrent.settings import TonStorageCliSettings
 from NFTorrent.worker import TonStorageCliWorker, WorkerCliTask, WorkerCliTaskResult, WorkerStatusNotify
 
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any
 from datetime import datetime
 
-import logging
-
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 @dataclass
@@ -45,17 +44,22 @@ class WorkerControl:
     futures: Dict[str, any] = field(default_factory=dict)
 
 class TonStorageCliManager:
+    node_state_cache_timeout = 30
 
     def __init__(self,
                  settings: TonStorageCliSettings,
-                 num_workers: int = 4,
+                 num_workers: int = None,
+                 restart_timeout: int = None,
                  dispatcher: Optional["Dispatcher"]=None,
                  cache_manager: Optional["CacheManager"]=None,
                  loop: Optional[asyncio.BaseEventLoop]=None):
-        self.num_workers = num_workers
+        self.num_workers = num_workers or settings.num_workers
+        self.restart_timeout = restart_timeout or settings.restart_timeout
         self.settings = settings
         self.dispatcher = dispatcher
         self.cache_manager = cache_manager or DisabledCacheManager()
+        self.node_state_time = 0
+        self.node_state = None    
 
         self.workers: Dict[int, WorkerControl] = {}
         self.tasks = {}
@@ -63,21 +67,21 @@ class TonStorageCliManager:
         # cache setup
         self.setup_cache()
 
-        logger.info('TonStorageCliManager: starting... workers: %d', num_workers)
-        self.threadpool_executor = ThreadPoolExecutor(max_workers=max(32, num_workers * 3))
+        logger.warning("TonStorageCliManager: starting... workers: {num_workers}", num_workers=self.num_workers)
+        self.threadpool_executor = ThreadPoolExecutor(max_workers=max(32, self.num_workers * 3))
 
         # workers spawn
         self.loop = loop or asyncio.get_running_loop()
-        for client_id in range(num_workers):
+        for client_id in range(self.num_workers):
             self.spawn_worker(client_id)
 
         # running tasks
         self.tasks['check_children_alive'] = self.loop.create_task(self.check_children_alive())
 
     async def shutdown(self):        
-        self.tasks['check_children_alive'].cancel()
-        await self.tasks['check_children_alive']
-
+        for task in self.tasks.values():
+            task.cancel()
+        await asyncio.wait(self.tasks.values())
         await asyncio.wait([self.loop.create_task(self.worker_control(i, enabled=False)) for i in self.workers])
 
         self.threadpool_executor.shutdown()
@@ -124,12 +128,12 @@ class TonStorageCliManager:
         if client_id in self.workers:
             wctl = self.workers[client_id]
             if not force_restart and wctl.worker.is_alive():
-                logger.warning('TonStorageCliManager: worker #%03d already exists', client_id)
+                logger.warning("TonStorageCliManager: Worker #{client_id:03d} already exists", client_id=client_id)
                 return
             try:
                 self.terminate_worker(client_id, timeout=3)
             except Exception as E:
-                logger.error('TonStorageCliManager: Failed to delete existing process: {%s}', E)
+                logger.error("TonStorageCliManager: Failed to delete existing worker #{client_id:03d} process: {exc}", client_id=client_id, exc=E)
 
             wctl.restart_count += 1
             wctl.worker = TonStorageCliWorker(client_id, deepcopy(self.settings))
@@ -141,7 +145,8 @@ class TonStorageCliManager:
             )
             self.workers[client_id] = wctl
 
-        logger.info('TonStorageCliManager: starting worker #%03d, restart_count: %d', client_id, wctl.restart_count)        
+        logger.info("TonStorageCliManager: starting worker #{client_id:03d}, restart_count: {restart_count}", 
+                    client_id=client_id, restart_count=wctl.restart_count)        
         wctl.start_time = time.monotonic()
         wctl.worker.start()
 
@@ -167,16 +172,18 @@ class TonStorageCliManager:
                         if msg.result is not None:    
                             wctl.futures[task_id].set_result(msg.result)
                     else:
-                        logger.warning(f'TonStorageCliManager: received result from worker #{client_id:03d} whose task "{task_id}" doesn\'t exist or is done')
+                        logger.warning("TonStorageCliManager: received result from worker #{client_id:03d} for unexpected task '{task_id}'", 
+                                       client_id=client_id, task_id=task_id)
 
                 if isinstance(msg, WorkerStatusNotify):
                     wctl.cli_status = StorageCliStatus(msg.is_alive, msg.peer_count, msg.date_time, time.monotonic())
 
             except asyncio.CancelledError:
-                logger.info("TonStorageCliManager: Task read_results from worker #%03d was cancelled", client_id)
+                logger.info("TonStorageCliManager: Task \"read_results\" for worker #{client_id:03d} was cancelled", client_id=client_id)
                 return
             except:
-                logger.error("TonStorageCliManager: read_results exception {%s}", traceback.format_exc())
+                logger.error("TonStorageCliManager: Task \"read_results\" for worker #{client_id:03d} terminated with exception: %s", 
+                             client_id=client_id, exc=traceback.format_exc())
 
     async def check_children_alive(self):
         while True:
@@ -187,20 +194,30 @@ class TonStorageCliManager:
                     
                     _is_alive = wctl.worker.is_alive()
                     if wctl.is_alive and not _is_alive:
-                        logger.error('TonStorageCliManager: worker #%03d is dead, exit=%d.', client_id, wctl.worker.exitcode)
+                        logger.error("TonStorageCliManager: Worker #{client_id:03d} is dead, exitcode: {exitcode}", 
+                                     client_id=client_id, exitcode=wctl.worker.exitcode)
                     wctl.is_alive = _is_alive
 
                     wctl.is_healthy = wctl.is_alive and wctl.cli_status is not None and wctl.cli_status.is_alive and \
                         wctl.cli_status.peer_count > 0 and wctl.cli_status.recv_time >= current_time - wctl.worker.report_state_interval * 2
                     
-                    if not wctl.is_alive and wctl.is_enabled and current_time >= wctl.start_time + 30:
+                    if not wctl.is_alive and wctl.is_enabled and current_time >= wctl.start_time + self.restart_timeout:
                         self.spawn_worker(client_id, force_restart=True)
                 await asyncio.sleep(1)
             except asyncio.CancelledError:
-                logger.info('TonStorageCliManager: Task check_children_alive was cancelled')
+                logger.info("TonStorageCliManager: Task \"check_children_alive\" was cancelled")
                 return
             except:
-                logger.critical(f'TonStorageCliManager: Task check_children_alive dead: {traceback.format_exc()}')
+                logger.critical("TonStorageCliManager: Task \"check_children_alive\" terminated with exception: {exc}", exc=traceback.format_exc())                
+
+    async def get_node_state(self):
+        curr_time = time.monotonic()
+        if self.node_state is None or curr_time > self.node_state_time + self.node_state_cache_timeout:
+            state = await self.node_get_state()
+            if not 'error' in state:
+                self.node_state_time = curr_time
+                self.node_state = state
+        return self.node_state
 
     def get_workers_state(self):
         result = {}
@@ -217,10 +234,7 @@ class TonStorageCliManager:
             }
         return result
 
-    def select_worker(self, client_id=None, archival=None, count=1):
-        if count == 1 and client_id is not None:
-            return client_id 
-
+    def select_worker(self, count=1):
         suitable = [
             (client_id, wctl.pending_tasks) for client_id, wctl in self.workers.items()
             if wctl.is_alive and wctl.is_healthy
@@ -237,9 +251,10 @@ class TonStorageCliManager:
 
         random.shuffle(suitable)
         if len(suitable) < count:
-            logger.warning(f'TonStorageCliManager: Required number of workers is not reached: found {len(suitable)} of {count}')
+            logger.warning("TonStorageCliManager: Required number of workers is not reached: found {working_count} of {count}", 
+                           working_count=len(suitable), count=count)
         if len(suitable) == 0:
-            raise RuntimeError(f'No working liteservers with ls_index={client_id}, archival={archival}')
+            raise RuntimeError("TonStorageCliManager: No working clients")
         return suitable[:count] if count > 1 else suitable[0]
 
     async def dispatch_request_to_worker(self, method: str, client_id: int, *args, **kwargs):
@@ -249,22 +264,21 @@ class TonStorageCliManager:
         wctl.tasks_count += 1
         wctl.pending_tasks += 1
 
-        logger.info('TonStorageCliManager: Sending request method: %s, task_id: %s, client_id: %03d', 
-            method, task_id, client_id)
+        logger.info("TonStorageCliManager: Worker #{client_id:03d}, sending request method: {method}, task_id: {task_id}", 
+                    method=method, task_id=task_id, client_id=client_id)
         await self.loop.run_in_executor(self.threadpool_executor, wctl.worker.input_queue.put, WorkerCliTask(task_id, timeout, method, args, kwargs))
 
         try:
             wctl.futures[task_id] = self.loop.create_future()
             await asyncio.wait_for(wctl.futures[task_id], timeout=self.settings.request_timeout + 1)
             result = wctl.futures[task_id].result()
-            logger.info('TonStorageCliManager: Received result: %s, task_id: %s, client_id: %03d', 
-                method, task_id, client_id)
+            logger.info("TonStorageCliManager: Worker #{client_id:03d}, received result method: {method}, task_id: {task_id}", 
+                        method=method, task_id=task_id, client_id=client_id)
         finally:
             wctl.pending_tasks -= 1
             wctl.futures.pop(task_id)
 
         return result
-
 
     def dispatch_request(self, method: str, *args, **kwargs):
         ls_index = self.select_worker()
@@ -278,9 +292,13 @@ class TonStorageCliManager:
         method = 'run_list'
         return await self.dispatch_request(method)
 
-    async def node_create(self, path: str, description: str | dict | list = None, copy: bool = False, check_existance: bool = True):
+    async def node_create(self, path: str, description: str | dict | list = None, 
+                          copy: bool = False, no_upload: bool = False,
+                          check_existance: bool = True):
         method = 'run_create'
-        return await self.dispatch_request(method, path, description=description, copy=copy, check_existance=check_existance)
+        return await self.dispatch_request(method, path, description=description, 
+                                           copy=copy, no_upload=no_upload, 
+                                           check_existance=check_existance)
 
     async def node_add(self, bag_id: str | bytes):
         bag_id = parse_bag_id(bag_id)
@@ -290,6 +308,16 @@ class TonStorageCliManager:
     async def node_remove(self, bag_id: str | bytes):
         bag_id = parse_bag_id(bag_id)
         method = 'run_remove'
+        return await self.dispatch_request(method, bag_id)
+
+    async def node_upload_resume(self, bag_id: str | bytes):
+        bag_id = parse_bag_id(bag_id)
+        method = 'run_upload_resume'
+        return await self.dispatch_request(method, bag_id)
+    
+    async def node_upload_suspend(self, bag_id: str | bytes):
+        bag_id = parse_bag_id(bag_id)
+        method = 'run_upload_suspend'
         return await self.dispatch_request(method, bag_id)
 
     async def node_get(self, bag_id: str | bytes):
@@ -305,12 +333,11 @@ class TonStorageCliManager:
 
 async def __example():  # pragma: no cover
     import json
-    logging.basicConfig(level=logging.INFO)
 
     manager = TonStorageCliManager(
         TonStorageCliSettings(
             storage_cli_binary="/mnt/c/Work/ton-storage/storage-daemon-cli.exe",
-            storage_cli_args=["-I", "172.19.96.1:5555"],
+            storage_daemon_addr="172.19.96.1:5555",
             storage_db_path="C:/Work/ton-storage/storage-db",
             request_timeout=1,
             manifest_bag_id='A8C27C0AF2BB3A3077330F1857C3130F6EBEEE5BD5347A18F1A4CCD30D4F5F82'
@@ -319,7 +346,7 @@ async def __example():  # pragma: no cover
     )
 
     await asyncio.sleep(1)
-    print(json.dumps(manager.get_workers_state()))
+    logger.debug("Dump workers state: {state}", state=(json.dumps(manager.get_workers_state())))
 
 
     await asyncio.wait([
@@ -330,6 +357,6 @@ async def __example():  # pragma: no cover
         manager.node_remove('F70D2F7587DBDFD0928E1967A0B2783EC3ABD63846AEC3B055B4705AEF742871'),
     ], return_when=asyncio.ALL_COMPLETED)
 
-    print(json.dumps(manager.get_workers_state()))
+    logger.debug("Dump workers state: {state}", state=(json.dumps(manager.get_workers_state())))
 
     await manager.shutdown()

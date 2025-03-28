@@ -11,7 +11,7 @@ import logging
 from dataclasses import dataclass
 from typing import Dict, List
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 @dataclass
 class WorkerCliTask:
@@ -69,13 +69,13 @@ class TonStorageCliWorker(mp.Process):
         try:
             self.cli.open()
         except Exception as E:
-            logger.error('TonStorageCliWorker #%03d: failed to init: %s', self.client_id, E)
+            logger.error("TonStorageCliWorker #{client_id:03d}: failed to init: {exc}", client_id=self.client_id, exc=E)
             self.shutdown(11)
 
         # creating tasks
         self.tasks = {
             'main_loop': self.loop.create_task(self.main_loop()),
-            'report_state': self.loop.create_task(self.report_state())
+            'report_state': self.loop.create_task(self.report_state())            
         }
         # self.tasks['lru_cleanup'] = self.loop.create_task(self.lru_cleanup())
         # self.tasks['indexer'] = self.loop.create_task(self.indexer())
@@ -107,14 +107,15 @@ class TonStorageCliWorker(mp.Process):
 
                 await self.loop.run_in_executor(self.threadpool_executor, self.output_queue.put, result)
             except Exception as E:
-                logger.error('TonStorageCliWorker #%03d: Unhandled exception: {%s}', self.client_id,  traceback.format_exc())
+                logger.error("TonStorageCliWorker #{client_id:03d}: Unhandled exception: {exc}", client_id=self.client_id, exc=traceback.format_exc())
                 raise
 
 
     async def report_state(self):
         while not self.exit_event.is_set():
             is_alive, peer_count = await self.loop.run_in_executor(None, self.request_state)
-            logger.debug('TonStorageCliWorker #%03d: status notify is_alive=%d, peer_count=%d', self.client_id, is_alive, peer_count)
+            logger.debug("TonStorageCliWorker #{client_id:03d}: status notify is_alive: {is_alive}, peer_count: {peer_count}", 
+                         client_id=self.client_id, is_alive=is_alive, peer_count=peer_count)
             await self.loop.run_in_executor(self.threadpool_executor, self.output_queue.put, 
                                             WorkerStatusNotify(is_alive, peer_count, time.time())
                                             )
@@ -132,7 +133,7 @@ class TonStorageCliWorker(mp.Process):
 
     def request_state(self):
         peers = self.cli.node_get_state()
-        peer_count = None
+        peer_count = 0
         if isinstance(peers, list):
             peer_count = len(peers)
         return self.cli.is_alive(), peer_count
@@ -147,12 +148,15 @@ class TonStorageCliWorker(mp.Process):
                 result = self.cli.__getattribute__(task.method)(*task.args, **task.kwargs)
             except Exception as E:
                 exception = E
-                logger.warning(f'TonStorageCliWorker #{self.client_id:03d}: unhandled exception. Method: {task.method}, args: {task.args}, kwargs: {task.kwargs}, exception: {E}')
+                logger.warning("TonStorageCliWorker #{self.client_id:03d}: unhandled exception. Method: {method}, task_id: {task_id}, args: {args}, kwargs: {kwargs}, exception: {exc}", 
+                               client_id=self.client_id, method=task.method, task_id=task.task_id, args=task.args, kwargs=task.kwargs, exc=E)
             else:
-                logger.debug(f'TonStorageCliWorker #{self.client_id:03d}: got result {task.method} for task "{task.task_id}"')
+                logger.debug("TonStorageCliWorker #{client_id:03d}: got result. Method: {method}, task \"{task_id}\"", 
+                             client_id=self.client_id, method=task.method, task_id=task.task_id)
         else:
             exception = asyncio.TimeoutError()
-            logger.warning(f'TonStorageCliWorker #{self.client_id:03d}: received task "{task.task_id}" after timeout')
+            logger.warning("TonStorageCliWorker #{client_id:03d}: received task after timeout. Method: {method}, task_id: {task_id}",
+                            client_id=self.client_id, method=task.method, task_id=task.task_id)
         end_time = time.monotonic()
         elapsed_time = end_time - start_time
 

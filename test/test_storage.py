@@ -5,13 +5,13 @@ import unittest
 def settings(test_case: str):
     return TonStorageCliSettings(
         storage_cli_binary='./test/storage-daemon-cli',
-        storage_cli_args=[ test_case ],
+        storage_daemon_addr=test_case,
         storage_db_path="/storage-db",
         request_timeout=0.1,
         manifest_bag_id='A8C27C0AF2BB3A3077330F1857C3130F6EBEEE5BD5347A18F1A4CCD30D4F5F82'
     )    
 
-class TonStorageCliTest(unittest.TestCase):
+class TestTonStorageCli(unittest.TestCase):
 
     def test_parse_bag_id(self):
         base64 = '9w0vdYfb39CSjhlnoLJ4PsOr1jhGrsOwVbRwWu90KHE='
@@ -20,6 +20,7 @@ class TonStorageCliTest(unittest.TestCase):
         self.assertEqual(parse_bag_id(bytes.fromhex(hex)), hex)
         self.assertEqual(parse_bag_id(hex), hex)
         self.assertEqual(parse_bag_id(base64), hex)
+        self.assertEqual(parse_bag_id(int(hex, 16)), hex)
         try:
             parse_bag_id('9w0vdYfb39CSjhlnoLJ4PsOr1jhGrsOwVbRwWu90KHE+++=')
         except Exception as E:
