@@ -1,22 +1,51 @@
 import asyncio
 import sys
 import time
+import traceback
 import multiprocessing as mp
 from typing import Optional
 from concurrent.futures import ThreadPoolExecutor
 import queue
 from .storage import TonStorageCliSettings, TonStorageCli
 import logging
+from dataclasses import dataclass
+from typing import Dict, List
 
-logger = logging.getLogger(__name__)
+from loguru import logger
+
+@dataclass
+class WorkerCliTask:
+    task_id: str
+    timeout: float
+    method: str
+    args: List[any]
+    kwargs: Dict[str, any]
+
+@dataclass
+class WorkerCliTaskResult:
+    task_id: str
+    result_time: float
+    elapsed_time: float
+    result: any
+    exception: Exception = None
+
+@dataclass
+class WorkerStatusNotify:
+    is_alive: bool
+    peer_count: int
+    date_time: float
+
 
 class TonStorageCliWorker(mp.Process):
+    report_state_interval = 10
 
     def __init__(self, 
                  client_id: int,
                  settings: TonStorageCliSettings, 
-                 input_queue: Optional[mp.Queue]=None,
-                 output_queue: Optional[mp.Queue]=None):
+                 input_queue: Optional[mp.Queue] = None,
+                 output_queue: Optional[mp.Queue] = None,
+                 report_state_interval: int = None
+                ):
         super().__init__(daemon=True)
 
         self.client_id = client_id
@@ -24,10 +53,8 @@ class TonStorageCliWorker(mp.Process):
         self.input_queue = input_queue or mp.Queue()
         self.output_queue = output_queue or mp.Queue()
         self.exit_event = mp.Event()
-
         self.threadpool_executor = None
-
-        self.is_dead = False
+        self.report_state_interval = report_state_interval or self.report_state_interval
 
     def run(self):
         self.threadpool_executor = ThreadPoolExecutor(max_workers=8)
@@ -40,18 +67,21 @@ class TonStorageCliWorker(mp.Process):
         self.cli = TonStorageCli(client_id=self.client_id, settings=self.settings)
 
         try:
-            self.loop.run_until_complete(self.cli.open())
+            self.cli.open()
         except Exception as E:
-            logger.error('TonStorageCliWorker #%03d: failed to init and sync tonlib: %s', self.client_id, E)
+            logger.error("TonStorageCliWorker #{client_id:03d}: failed to init: {exc}", client_id=self.client_id, exc=E)
             self.shutdown(11)
 
         # creating tasks
-        self.tasks['main_loop'] = self.loop.create_task(self.main_loop())
-        self.tasks['lru_cleanup'] = self.loop.create_task(self.lru_cleanup())
-        self.tasks['indexer'] = self.loop.create_task(self.indexer())
+        self.tasks = {
+            'main_loop': self.loop.create_task(self.main_loop()),
+            'report_state': self.loop.create_task(self.report_state())            
+        }
+        # self.tasks['lru_cleanup'] = self.loop.create_task(self.lru_cleanup())
+        # self.tasks['indexer'] = self.loop.create_task(self.indexer())
 
-        finished, unfinished = self.loop.run_until_complete(asyncio.wait(self.tasks.values()), 
-                                                            return_when=asyncio.FIRST_COMPLETED)
+        finished, unfinished = self.loop.run_until_complete(asyncio.wait(self.tasks.values(), 
+                                                            return_when=asyncio.FIRST_COMPLETED))
 
         self.shutdown(0 if self.exit_event.is_set() else 12)
 
@@ -68,37 +98,66 @@ class TonStorageCliWorker(mp.Process):
     async def main_loop(self):
         while not self.exit_event.is_set():
             try:
-                task_id, timeout, method, args, kwargs = await self.loop.run_in_executor(self.threadpool_executor, self.input_queue.get, True, 1)
-            except queue.Empty:
-                continue
+                try:
+                    task = await self.loop.run_in_executor(self.threadpool_executor, self.input_queue.get, True, 1)
+                except queue.Empty:
+                    continue
 
-            self.loop.create_task(self.process_task(task_id, timeout, method, args, kwargs))        
+                result = await self.loop.run_in_executor(None, self.process_task, task)
+
+                await self.loop.run_in_executor(self.threadpool_executor, self.output_queue.put, result)
+            except Exception as E:
+                logger.error("TonStorageCliWorker #{client_id:03d}: Unhandled exception: {exc}", client_id=self.client_id, exc=traceback.format_exc())
+                raise
+
+
+    async def report_state(self):
+        while not self.exit_event.is_set():
+            is_alive, peer_count = await self.loop.run_in_executor(None, self.request_state)
+            logger.debug("TonStorageCliWorker #{client_id:03d}: status notify is_alive: {is_alive}, peer_count: {peer_count}", 
+                         client_id=self.client_id, is_alive=is_alive, peer_count=peer_count)
+            await self.loop.run_in_executor(self.threadpool_executor, self.output_queue.put, 
+                                            WorkerStatusNotify(is_alive, peer_count, time.time())
+                                            )
+
+            await asyncio.sleep(self.report_state_interval)
+
 
     async def lru_cleanup(self):
         while not self.exit_event.is_set():
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(1)
 
     async def indexer(self):
         while not self.exit_event.is_set():
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(1)
 
-    async def process_task(self, task_id, timeout, method, args, kwargs):
+    def request_state(self):
+        peers = self.cli.node_get_state()
+        peer_count = 0
+        if isinstance(peers, list):
+            peer_count = len(peers)
+        return self.cli.is_alive(), peer_count
+
+    def process_task(self, task: WorkerCliTask):
         result = None
         exception = None
 
         start_time = time.monotonic()
-        if start_time < timeout:
+        if start_time < task.timeout:
             try:
-                result = await self.cli.__getattribute__(method)(*args, **kwargs)
+                result = self.cli.__getattribute__(task.method)(*task.args, **task.kwargs)
             except Exception as E:
                 exception = E
-                logger.warning(f'TonStorageCliWorker #{self.client_id:03d}: unhandled exception. Method: {method}, args: {args}, kwargs: {kwargs}, exception: {E}')
+                logger.warning("TonStorageCliWorker #{self.client_id:03d}: unhandled exception. Method: {method}, task_id: {task_id}, args: {args}, kwargs: {kwargs}, exception: {exc}", 
+                               client_id=self.client_id, method=task.method, task_id=task.task_id, args=task.args, kwargs=task.kwargs, exc=E)
             else:
-                logger.debug(f'TonStorageCliWorker #{self.client_id:03d}: got result {method} for task "{task_id}"')
+                logger.debug("TonStorageCliWorker #{client_id:03d}: got result. Method: {method}, task \"{task_id}\"", 
+                             client_id=self.client_id, method=task.method, task_id=task.task_id)
         else:
             exception = asyncio.TimeoutError()
-            logger.warning(f'TonStorageCliWorker #{self.client_id:03d}: received task "{task_id}" after timeout')
+            logger.warning("TonStorageCliWorker #{client_id:03d}: received task after timeout. Method: {method}, task_id: {task_id}",
+                            client_id=self.client_id, method=task.method, task_id=task.task_id)
         end_time = time.monotonic()
-        elapsed_time = (end_time - start_time).total_seconds()
+        elapsed_time = end_time - start_time
 
-        await self.loop.run_in_executor(self.threadpool_executor, self.output_queue.put, (task_id, elapsed_time, result, exception))
+        return WorkerCliTaskResult(task.task_id, end_time, elapsed_time, result, exception)
