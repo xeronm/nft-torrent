@@ -1,0 +1,50 @@
+services:
+  storage:
+    image: nft-torrent:0.1.0
+    restart: unless-stopped
+    volumes:
+      - ./storage-db:/storage-db
+    command: ./storage-daemon -d -v 3 -p 5555 -C /run/secrets/liteserver_config -D /storage-db -I ${PUBLIC_ADDR}:3333
+    secrets:
+      - liteserver_config
+    ports:
+      - 3333:3333/udp
+    networks:
+      - internal
+
+  httpserver:
+    image: nft-torrent:0.1.0
+    restart: unless-stopped
+    environment:
+      TON_API_ROOT_PATH: ${TON_API_ROOT_PATH}
+      TON_STORAGE_DAEMON_ADDR: storage:5555
+      TON_API_TONLIB_LITESERVER_CONFIG: /run/secrets/liteserver_config
+      TON_STORAGE_MANIFEST_BAG_ID: file:/run/secrets/storage_manifest
+    volumes:
+      - ./storage-db:/storage-db
+    secrets:
+      - liteserver_config
+      - storage_manifest
+    ports:
+      - 8002:8002      
+    networks:
+      - internal
+    healthcheck:
+      test: curl -sS http://127.0.0.1:8002${TON_API_ROOT_PATH}/healthcheck || echo 1
+      interval: 15s
+      timeout: 3s
+      retries: 5      
+
+  # cache:
+  #   image: redis:latest
+  #   restart: unless-stopped
+  #   networks:
+  #     - internal
+
+secrets:
+  liteserver_config:
+    file: ./private/testnet-global-config.json
+  storage_manifest:
+    file: ./private/storage.manifest
+networks:
+  internal:
