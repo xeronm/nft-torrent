@@ -110,14 +110,18 @@ class TonStorageCliWorker(mp.Process):
 
     async def report_state(self):
         while not self.exit_event.is_set():
-            is_alive, peer_count = await self.loop.run_in_executor(None, self.request_state)
-            logger.debug("TonStorageCliWorker #{client_id:03d}: status notify is_alive: {is_alive}, peer_count: {peer_count}", 
-                         client_id=self.client_id, is_alive=is_alive, peer_count=peer_count)
-            await self.loop.run_in_executor(self.threadpool_executor, self.output_queue.put, 
-                                            WorkerStatusNotify(is_alive, peer_count, time.time())
-                                            )
+            try:
+                is_alive, peer_count = await self.loop.run_in_executor(None, self.request_state)
+                logger.debug("TonStorageCliWorker #{client_id:03d}: status notify is_alive: {is_alive}, peer_count: {peer_count}", 
+                            client_id=self.client_id, is_alive=is_alive, peer_count=peer_count)
+                await self.loop.run_in_executor(self.threadpool_executor, self.output_queue.put, 
+                                                WorkerStatusNotify(is_alive, peer_count, time.time())
+                                                )
 
-            await asyncio.sleep(self.report_state_interval)
+                await asyncio.sleep(self.report_state_interval)
+            except Exception as E:
+                logger.error("TonStorageCliWorker #{client_id:03d}: Unhandled exception: {exc}", client_id=self.client_id, exc=traceback.format_exc())
+                raise                
 
     def request_state(self):
         peers = self.cli.node_get_state()

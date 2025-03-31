@@ -14,7 +14,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 from pyTON.cache import CacheManager, DisabledCacheManager
 
-from NFTorrent.storage import parse_bag_id, TonStorageLru
+from NFTorrent.storage import TonStorageLru
+from NFTorrent.address import parse_bag_id
 from NFTorrent.settings import TonStorageCliSettings
 from NFTorrent.worker import TonStorageCliWorker, WorkerCliTask, WorkerCliTaskResult, WorkerStatusNotify
 from NFTorrent import exceptions
@@ -242,7 +243,11 @@ class TonStorageCliManager:
 
                 while True:
                     await asyncio.sleep(3)
-                    await self.get_node_state()
+                    try:
+                        await self.get_node_state()
+                    except (exceptions.TorrentClientError, OSError, asyncio.exceptions.TimeoutError) as E:
+                        pass
+
                     first_bag_id = None
                     while self.storage_lru.size > self.settings.storage_size_pressure:
                         bag_id, _ = self.storage_lru.remove_back()
@@ -324,6 +329,9 @@ class TonStorageCliManager:
                 logger.critical("TonStorageCliManager: Task \"check_children_alive\" terminated with exception: {exc}", exc=traceback.format_exc())                
                 await asyncio.sleep(10)
 
+    def get_cached_node_state(self):
+        return self.node_state
+
     async def get_node_state(self):
         curr_time = time.monotonic()
         if self.node_state is None or curr_time > self.node_state_time + self.node_state_cache_timeout:
@@ -338,6 +346,13 @@ class TonStorageCliManager:
             self.node_state = state
         return self.node_state
 
+    def get_storage_state(self):        
+        return {
+            'workers': self.get_workers_state(),
+            'size': self.storage_lru.size,
+            'size_pressure': self.settings.storage_size_pressure,
+        }
+    
     def get_workers_state(self):
         result = {}
         for client_id, wctl in self.workers.items():
@@ -357,12 +372,15 @@ class TonStorageCliManager:
             (client_id, wctl.pending_tasks) for client_id, wctl in self.workers.items()
             if wctl.is_alive and wctl.is_healthy
         ]
-        if not suitable:
+        if len(suitable) == 0:
             # fallback
             suitable = [
                 (client_id, wctl.pending_tasks) for client_id, wctl in self.workers.items() 
                 if wctl.is_alive
             ]
+
+        if len(suitable) == 0:
+            raise exceptions.TorrentClientError("No working clients")
 
         min_load = min(map(lambda x: x[1], suitable))
         suitable = [client_id for (client_id, load) in suitable if load == min_load]
@@ -371,8 +389,7 @@ class TonStorageCliManager:
         if len(suitable) < count:
             logger.warning("TonStorageCliManager: Required number of workers is not reached: found {working_count} of {count}", 
                            working_count=len(suitable), count=count)
-        if len(suitable) == 0:
-            raise RuntimeError("TonStorageCliManager: No working clients")
+            
         return suitable[:count] if count > 1 else suitable[0]
 
     async def dispatch_request_to_worker(self, method: str, client_id: int, *args, **kwargs):

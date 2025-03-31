@@ -5,36 +5,17 @@ from dataclasses import dataclass, fields
 
 from pyTON import settings
 
-def parse_bag_id(bag_id: int | str | bytes) -> str:
-    hex_bag_id = None
-    if isinstance(bag_id, int):
-        hex_bag_id = hex(bag_id)[2:].rjust(64, '0')
-    elif isinstance(bag_id, bytes):
-        if len(bag_id) != 32:
-            raise ValueError('Invalid bag id: should be 16 bytes')
-        hex_bag_id = bag_id.hex()
-    else:
-        valid = True
-        if len(bag_id) == 64: # HEX representation
-            try:
-                buf = bytes.fromhex(bag_id)            
-            except ValueError:
-                valid = False
-            hex_bag_id = bag_id
-        else: # base64 representation
-            try:
-                buf = base64.b64decode(bag_id, validate=True)
-                hex_bag_id = buf.hex()
-            except binascii.Error:
-                buf = None            
-        if buf is None or len(buf) != 32:
-            valid = False
-        if not valid:
-            raise ValueError('Invalid bag id: should be 32 bytes hex')
-    return hex_bag_id.upper()
+from NFTorrent.address import parse_bag_id
+
+def _value_from_file(value: str):
+    if value and value.startswith('file:'):
+        with open(value[5:], 'r') as f:
+            return f.readline().strip()
+    return value
 
 @dataclass
 class TonStorageCliSettings:
+    storage_public_addr: str    
     storage_cli_binary: str
     storage_daemon_addr: str
     storage_db_path: str
@@ -46,12 +27,12 @@ class TonStorageCliSettings:
     restart_timeout: int = 30
     confirmation_timeout = 60 
     min_redundancy = 3
-    gateway_port = 80
     torrent_dirname: str = 'nftdata'
 
     @classmethod
     def from_environment(cls):
-        obj = cls.__new__(cls)        
+        obj = cls.__new__(cls)
+        obj.storage_public_addr = os.environ.get('TON_STORAGE_PUBLIC_ADDR', None)        
         obj.storage_cli_binary = os.environ.get('TON_STORAGE_CLI_BINARY', './storage-daemon-cli')
         obj.storage_daemon_addr = os.environ.get('TON_STORAGE_DAEMON_ADDR', '127.0.0.1:5555')
         obj.storage_db_path = os.environ.get('TON_STORAGE_DB_PATH', './storage-db')
@@ -62,15 +43,39 @@ class TonStorageCliSettings:
         obj.restart_timeout = int(os.environ.get('TON_STORAGE_WORKERS_RESTART_TIMEOUT', cls.restart_timeout))
         obj.confirmation_timeout = int(os.environ.get('TON_STORAGE_CONFIRMATION_TIMEOUT', cls.confirmation_timeout))
         obj.min_redundancy = int(os.environ.get('TON_STORAGE_MIN_REDUNDANCY', cls.min_redundancy))
-        obj.gateway_port = int(os.environ.get('TON_STORAGE_GATEWAY_PORT', cls.gateway_port))
         obj.torrent_dirname = os.environ.get('TON_STORAGE_TORRENT_DIRNAME', cls.torrent_dirname)
+        obj.manifest_bag_id = parse_bag_id(_value_from_file(os.environ.get('TON_STORAGE_MANIFEST_BAG_ID', None)))
 
-        obj.manifest_bag_id = os.environ.get('TON_STORAGE_MANIFEST_BAG_ID', None)        
-        if obj.manifest_bag_id and obj.manifest_bag_id.startswith('file:'):
-            with open(obj.manifest_bag_id[5:], 'r') as f:
-                obj.manifest_bag_id = f.readline()
+        if not obj.storage_public_addr:
+            raise ValueError('Environemnt variable "TON_STORAGE_PUBLIC_ADDR" is required')
 
-        obj.manifest_bag_id = parse_bag_id(obj.manifest_bag_id)
+        return obj
+
+
+@dataclass
+class WebServerSettings:
+    api_root_path: str
+    jwt_secret: str
+    jwt_algorithm: str
+    port: int = None
+    enable_ssl: bool = True
+    verify_ssl: bool = True
+    real_ip_header: bool = True
+    request_timeout: int = 10
+
+    @classmethod
+    def from_environment(cls):
+        obj = cls.__new__(cls)
+        obj.api_root_path = os.environ.get('HTTP_API_ROOT_PATH', '/')
+        obj.jwt_secret = _value_from_file(os.environ.get('HTTP_JWT_SECRET', None))
+        obj.jwt_algorithm = os.environ.get('HTTP_JWT_ALGORITHM', 'HS256')
+        obj.port = os.environ.get('HTTP_PORT', None)
+        if obj.port is not None:
+            obj.port = int(obj.port)
+        obj.enable_ssl = settings.strtobool(os.environ.get('HTTP_ENABLE_SSL', 'true'))
+        obj.verify_ssl = settings.strtobool(os.environ.get('HTTP_VERIFY_SSL', 'true'))
+        obj.real_ip_header = settings.strtobool(os.environ.get('HTTP_REAL_IP_HEADER', 'true'))
+        obj.request_timeout = int(os.environ.get('HTTP_REQUEST_TIMEOUT', cls.request_timeout))
 
         return obj
 
@@ -78,7 +83,7 @@ class TonStorageCliSettings:
 @dataclass
 class Settings:
     tonlib: settings.TonlibSettings
-    webserver: settings.WebServerSettings
+    webserver: WebServerSettings
     cache: settings.CacheSettings
     storage: TonStorageCliSettings
 
@@ -86,7 +91,9 @@ class Settings:
     def from_environment(cls):
         obj = cls.__new__(cls)        
         obj.storage = TonStorageCliSettings.from_environment()
+        obj.webserver = WebServerSettings.from_environment()
         _pyton = settings.Settings.from_environment()
-        for field in fields(_pyton):
-            setattr(obj, field.name, getattr(_pyton, field.name))
+        obj.tonlib = _pyton.tonlib
+        obj.cache = _pyton.cache
+
         return obj

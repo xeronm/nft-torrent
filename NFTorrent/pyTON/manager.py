@@ -51,6 +51,7 @@ class TonlibManager(_TonlibManager):
             if detect_address(verified_nft_address)['raw_form'] != detect_address(address)['raw_form']:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Verification with NFT collection failed")
 
+        print(nft_data['individual_content'])
         nft_data['individual_content'] = nft_collection.nft_content_class(CellSlice(nft_data['individual_content']))
 
         return nft_data        
