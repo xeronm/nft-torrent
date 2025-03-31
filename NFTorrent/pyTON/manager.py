@@ -54,3 +54,7 @@ class TonlibManager(_TonlibManager):
         nft_data['individual_content'] = nft_collection.nft_content_class(CellSlice(nft_data['individual_content']))
 
         return nft_data        
+    
+
+    def setup_cache(self):
+        pass    

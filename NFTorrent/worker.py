@@ -77,8 +77,6 @@ class TonStorageCliWorker(mp.Process):
             'main_loop': self.loop.create_task(self.main_loop()),
             'report_state': self.loop.create_task(self.report_state())            
         }
-        # self.tasks['lru_cleanup'] = self.loop.create_task(self.lru_cleanup())
-        # self.tasks['indexer'] = self.loop.create_task(self.indexer())
 
         finished, unfinished = self.loop.run_until_complete(asyncio.wait(self.tasks.values(), 
                                                             return_when=asyncio.FIRST_COMPLETED))
@@ -110,7 +108,6 @@ class TonStorageCliWorker(mp.Process):
                 logger.error("TonStorageCliWorker #{client_id:03d}: Unhandled exception: {exc}", client_id=self.client_id, exc=traceback.format_exc())
                 raise
 
-
     async def report_state(self):
         while not self.exit_event.is_set():
             is_alive, peer_count = await self.loop.run_in_executor(None, self.request_state)
@@ -121,15 +118,6 @@ class TonStorageCliWorker(mp.Process):
                                             )
 
             await asyncio.sleep(self.report_state_interval)
-
-
-    async def lru_cleanup(self):
-        while not self.exit_event.is_set():
-            await asyncio.sleep(1)
-
-    async def indexer(self):
-        while not self.exit_event.is_set():
-            await asyncio.sleep(1)
 
     def request_state(self):
         peers = self.cli.node_get_state()
@@ -148,7 +136,7 @@ class TonStorageCliWorker(mp.Process):
                 result = self.cli.__getattribute__(task.method)(*task.args, **task.kwargs)
             except Exception as E:
                 exception = E
-                logger.warning("TonStorageCliWorker #{self.client_id:03d}: unhandled exception. Method: {method}, task_id: {task_id}, args: {args}, kwargs: {kwargs}, exception: {exc}", 
+                logger.warning("TonStorageCliWorker #{client_id:03d}: unhandled exception. Method: {method}, task_id: {task_id}, args: {args}, kwargs: {kwargs}, exception: {exc}", 
                                client_id=self.client_id, method=task.method, task_id=task.task_id, args=task.args, kwargs=task.kwargs, exc=E)
             else:
                 logger.debug("TonStorageCliWorker #{client_id:03d}: got result. Method: {method}, task \"{task_id}\"", 

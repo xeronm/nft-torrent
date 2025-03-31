@@ -3,42 +3,12 @@ import time
 import subprocess
 import selectors
 import json
-import base64
-import binascii
-from typing import Dict
+from typing import Dict, Any
+from threading import RLock
 
-from NFTorrent.settings import TonStorageCliSettings
+from NFTorrent.settings import TonStorageCliSettings, parse_bag_id
 
 from loguru import logger
-
-def parse_bag_id(bag_id: int | str | bytes) -> str:
-    hex_bag_id = None
-    if isinstance(bag_id, int):
-        hex_bag_id = hex(bag_id)[2:].rjust(64, '0')
-    elif isinstance(bag_id, bytes):
-        if len(bag_id) != 32:
-            raise ValueError('Invalid bag id: should be 16 bytes')
-        hex_bag_id = bag_id.hex()
-    else:
-        valid = True
-        if len(bag_id) == 64: # HEX representation
-            try:
-                buf = bytes.fromhex(bag_id)            
-            except ValueError:
-                valid = False
-            hex_bag_id = bag_id
-        else: # base64 representation
-            try:
-                buf = base64.b64decode(bag_id, validate=True)
-                hex_bag_id = buf.hex()
-            except binascii.Error:
-                buf = None            
-        if buf is None or len(buf) != 32:
-            valid = False
-        if not valid:
-            raise ValueError('Invalid bag id: should be 32 bytes hex')
-    return hex_bag_id.upper()
-
 
 class TonStorageCli:    
 
@@ -309,3 +279,118 @@ def __example():  # pragma: no cover
     cli.run_remove(out['torrent']['hash'])
 
     cli.close()
+
+
+class TonStorageLru:
+    PREV, NEXT, KEY, VALUE = 0, 1, 2, 3   # names for the link fields
+
+    def __init__(self):
+        self._lock = RLock()
+        self._cache = {}
+        self._root = []
+        self._root[:] = [self._root, self._root, None, None]
+        self._iter_ptr = None
+
+    @property
+    def size(self):
+        return self._cache.__len__()
+
+    def swap(self):
+        with self._lock:
+            _cache = self._cache            
+            last, first = self._root[TonStorageLru.PREV], self._root[TonStorageLru.NEXT]
+            self._root[:] = [self._root, self._root, None, None]
+            self._cache = {}
+            self._iter_ptr = None
+
+        if  first is last:
+            return None, None, None
+        else:
+            last[TonStorageLru.NEXT] = None
+            first[TonStorageLru.PREV] = None
+            return last, first, _cache
+
+    def upsert(self, bag_id: str, value: Any = None):        
+        with self._lock:
+            if bag_id in self._cache:
+                item = self._cache[bag_id]
+                item[TonStorageLru.VALUE] = value
+
+                item_prev, item_next = item[TonStorageLru.PREV], item[TonStorageLru.NEXT]
+                item_prev[TonStorageLru.NEXT] = item_next
+                item_next[TonStorageLru.PREV] = item_prev
+                last = self._root[TonStorageLru.PREV]            
+                last[TonStorageLru.NEXT] = self._root[TonStorageLru.PREV] = item
+                item[TonStorageLru.PREV] = last
+                item[TonStorageLru.NEXT] = self._root
+            else:
+                last = self._root[TonStorageLru.PREV]
+                item = [last, self._root, bag_id, value]
+                last[TonStorageLru.NEXT] = self._root[TonStorageLru.PREV] = self._cache[bag_id] = item
+
+    def upsert_back(self, bag_id: str, value: Any = None):
+        with self._lock:
+            if bag_id in self._cache:
+                return
+            first = self._root[TonStorageLru.NEXT]
+            item = [self._root, first, bag_id, value]
+            first[TonStorageLru.PREV] = self._root[TonStorageLru.NEXT] = self._cache[bag_id] = item
+
+    def remove(self, bag_id: str):
+        with self._lock:
+            item = self._cache.get(bag_id)
+            if item is None:
+                return None
+            del self._cache[bag_id]
+            if self._iter_ptr is item:
+                self._iter_ptr = item[TonStorageLru.NEXT]
+                if self._iter_ptr is self._root:
+                    self._iter_ptr = None
+            item_prev, item_next = item[TonStorageLru.PREV], item[TonStorageLru.NEXT]
+            item_prev[TonStorageLru.NEXT] = item_next
+            item_next[TonStorageLru.PREV] = item_prev
+        return item[TonStorageLru.VALUE]
+
+    def remove_back(self):
+        if self._root[TonStorageLru.NEXT] is self._root[TonStorageLru.PREV]:
+            return None, None
+        else:
+            bag_id = self._root[TonStorageLru.NEXT][TonStorageLru.KEY]
+            return bag_id, self.remove(bag_id)
+
+    def __iter__(self):
+        self._iter_ptr = self._root
+        return self
+    
+    def __next__(self):
+        if self._iter_ptr is None:
+            raise StopIteration        
+        with self._lock:
+            self._iter_ptr = self._iter_ptr[TonStorageLru.NEXT]
+            if self._iter_ptr is self._root:
+                self._iter_ptr = None
+                raise StopIteration
+            else:
+                return self._iter_ptr[TonStorageLru.KEY], self._iter_ptr[TonStorageLru.VALUE]
+            
+    def push_back_lru(self, lru):
+        nlast, nfirst, ncache = lru.swap()
+        if nlast is nfirst:
+            return
+        with self._lock:
+            first = self._root[TonStorageLru.NEXT]
+            self._root[TonStorageLru.NEXT] = nfirst
+            nfirst[TonStorageLru.PREV] = self._root
+            nlast[TonStorageLru.NEXT] = first
+            first[TonStorageLru.PREV] = nlast
+
+            for k, item in ncache.items():
+                if k in self._cache:
+                    item_prev, item_next = item[TonStorageLru.PREV], item[TonStorageLru.NEXT]
+                    item_prev[TonStorageLru.NEXT] = item_next
+                    item_next[TonStorageLru.PREV] = item_prev
+                    del ncache[k]
+            self._cache.update(ncache)
+
+            
+    

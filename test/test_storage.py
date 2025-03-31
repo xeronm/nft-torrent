@@ -1,6 +1,7 @@
-from NFTorrent.storage import TonStorageCli, TonStorageCliSettings, parse_bag_id
+from NFTorrent.storage import TonStorageCli, TonStorageCliSettings, parse_bag_id, TonStorageLru
 
 import unittest
+import asyncio
 
 def settings(test_case: str):
     return TonStorageCliSettings(
@@ -211,3 +212,70 @@ class TestTonStorageCli(unittest.TestCase):
 
         cli.close()
         self.assertFalse(cli.is_alive())         
+
+
+class TestTonStorageLru(unittest.TestCase):
+
+    def test_iterator(self):
+        lru = TonStorageLru()
+        lru.upsert(1, 10)
+        lru.upsert(2, 20)
+        lru.upsert(3, 30)
+        lru.upsert(4, 40)
+        self.assertEqual(list(lru), [(1, 10), (2, 20), (3, 30), (4, 40)])
+
+        it = iter(lru)
+        self.assertEqual(next(it), (1, 10))
+
+        lru.remove(2)
+        self.assertEqual(next(it), (3, 30))
+
+        lru.remove(4)
+        try:
+            next(it)
+            self.assertTrue(False)
+        except Exception as E:
+            self.assertIsInstance(E, StopIteration)    
+
+    def test_lru(self):
+        lru = TonStorageLru()
+
+        lru.remove(1)
+        self.assertEqual(lru.size, 0)
+
+        lru.upsert(1, 10)
+        self.assertEqual(lru.size, 1)        
+        self.assertEqual(list(lru), [(1, 10)])
+
+        lru.upsert(2, 20)        
+        self.assertEqual(lru.size, 2)
+        self.assertEqual(list(lru), [(1, 10), (2, 20)])
+
+        lru.upsert(3, 30)
+        self.assertEqual(lru.size, 3)
+        self.assertEqual(list(lru), [(1, 10), (2, 20), (3, 30)])
+
+        lru.upsert(3, 31)
+        self.assertEqual(lru.size, 3)
+        self.assertEqual(list(lru), [(1, 10), (2, 20), (3, 31)])
+
+        lru.upsert(1, 11)
+        self.assertEqual(lru.size, 3)
+        self.assertEqual(list(lru), [(2, 20), (3, 31), (1, 11)])
+
+        lru.upsert(3, 32)
+        self.assertEqual(lru.size, 3)
+        self.assertEqual(list(lru), [(2, 20), (1, 11), (3, 32)])
+
+        lru.remove(1)
+        self.assertEqual(lru.size, 2)
+        self.assertEqual(list(lru), [(2, 20), (3, 32)])
+
+        lru.remove(2)
+        self.assertEqual(lru.size, 1)
+        self.assertEqual(list(lru), [(3, 32)])
+
+        lru.remove(3)
+        self.assertEqual(lru.size, 0)
+        self.assertEqual(list(lru), [])
+

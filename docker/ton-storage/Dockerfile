@@ -17,7 +17,8 @@ RUN git clone https://github.com/ton-blockchain/ton.git --branch ${TON_RELEASE} 
     mkdir build && \
     cd build && \
     cmake -GNinja -DCMAKE_BUILD_TYPE=Release .. && \
-    ninja storage-daemon storage-daemon-cli rldp-http-proxy
+    ninja storage-daemon storage-daemon-cli
+        # rldp-http-proxy
 #    cp assembly/native/build-ubuntu-shared.sh . && \
 #    chmod +x build-ubuntu-shared.sh && \
 #    ./build-ubuntu-shared.sh  
@@ -35,7 +36,7 @@ RUN apt-get update && \
 
 COPY --from=builder /ton/build/storage/storage-daemon/storage-daemon-cli /opt/ton-storage
 COPY --from=builder /ton/build/storage/storage-daemon/storage-daemon /opt/ton-storage
-COPY --from=builder /ton/build/rldp-http-proxy/rldp-http-proxy /opt/ton-storage
+# COPY --from=builder /ton/build/rldp-http-proxy/rldp-http-proxy /opt/ton-storage
 
 WORKDIR /opt/ton-storage
 

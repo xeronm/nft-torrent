@@ -20,7 +20,6 @@ setup(
     python_requires=">=3.9",
     zip_safe=True,
     classifiers=[
-        'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
         'Development Status :: 3 - Alpha',
         'Environment :: Web Environment',
         'Framework :: FastAPI',
