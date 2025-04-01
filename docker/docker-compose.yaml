@@ -4,7 +4,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./storage-db:/storage-db
-    command: ./storage-daemon -d -v 3 -p 5555 -C /run/secrets/liteserver_config -D /storage-db -I ${PUBLIC_ADDR}:3333
+    command: ./storage-daemon -d -v 3 -p 5555 -C /run/secrets/liteserver_config -D /storage-db -I ${TON_STORAGE_PUBLIC_ADDR}:3333
     secrets:
       - liteserver_config
     ports:
@@ -16,21 +16,28 @@ services:
     image: nft-torrent:0.1.0
     restart: unless-stopped
     environment:
-      TON_API_ROOT_PATH: ${TON_API_ROOT_PATH}
+      LOGURU_LEVEL: WARNING
+      TON_STORAGE_NUM_WORKERS: 4
+      TON_STORAGE_PUBLIC_ADDR: ${TON_STORAGE_PUBLIC_ADDR}
       TON_STORAGE_DAEMON_ADDR: storage:5555
-      TON_API_TONLIB_LITESERVER_CONFIG: /run/secrets/liteserver_config
       TON_STORAGE_MANIFEST_BAG_ID: file:/run/secrets/storage_manifest
+      TON_API_TONLIB_REQUEST_TIMEOUT: 15
+      TON_API_TONLIB_LITESERVER_CONFIG: /run/secrets/liteserver_config
+      HTTP_API_ROOT_PATH: ${HTTP_API_ROOT_PATH}
+      HTTP_JWT_SECRET: file:/run/secrets/jwt_key
+      HTTP_REQUEST_TIMEOUT: 15
     volumes:
       - ./storage-db:/storage-db
     secrets:
       - liteserver_config
       - storage_manifest
+      - jwt_key
     ports:
       - 8002:8002      
     networks:
       - internal
     healthcheck:
-      test: curl -sS http://127.0.0.1:8002${TON_API_ROOT_PATH}/healthcheck || echo 1
+      test: curl -sS http://127.0.0.1:8002${HTTP_API_ROOT_PATH}/healthcheck || echo 1
       interval: 15s
       timeout: 3s
       retries: 5      
@@ -46,5 +53,7 @@ secrets:
     file: ./private/testnet-global-config.json
   storage_manifest:
     file: ./private/storage.manifest
+  jwt_key:
+    file: ./private/jwt.key
 networks:
   internal:

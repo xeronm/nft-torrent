@@ -6,9 +6,11 @@ import json
 from typing import Dict, Any
 from threading import RLock
 
-from NFTorrent.settings import TonStorageCliSettings, parse_bag_id
+from NFTorrent.settings import TonStorageCliSettings
+from NFTorrent.address import parse_bag_id, parse_adnl_id
 
 from loguru import logger
+
 
 class TonStorageCli:    
 
@@ -187,7 +189,11 @@ class TonStorageCli:
         peers = self.run_get_peers(self.settings.manifest_bag_id)
         if (isinstance(peers, dict) and 'peers' in peers):
             return [
-                {'adnl_id': x['adnl_id'], 'ip_str': x['ip_str']} 
+                {
+                    'adnl_id': x['adnl_id'], 
+                    'ip_str': x['ip_str'], 
+                    'adnl': parse_adnl_id(x['adnl_id'])
+                }
                 for x in peers['peers'] 
                 if x['@type'] == 'storage.daemon.peer'
             ]
@@ -331,10 +337,11 @@ class TonStorageLru:
     def upsert_back(self, bag_id: str, value: Any = None):
         with self._lock:
             if bag_id in self._cache:
-                return
+                return False
             first = self._root[TonStorageLru.NEXT]
             item = [self._root, first, bag_id, value]
             first[TonStorageLru.PREV] = self._root[TonStorageLru.NEXT] = self._cache[bag_id] = item
+        return True
 
     def remove(self, bag_id: str):
         with self._lock:

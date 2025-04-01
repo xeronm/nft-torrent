@@ -1,7 +1,13 @@
-from NFTorrent.storage import TonStorageCli, TonStorageCliSettings, parse_bag_id, TonStorageLru
+import binascii
+from NFTorrent.storage import (
+    TonStorageCli, 
+    TonStorageCliSettings, 
+    TonStorageLru, 
+    parse_bag_id,
+)
 
 import unittest
-import asyncio
+
 
 def settings(test_case: str):
     return TonStorageCliSettings(
@@ -9,7 +15,8 @@ def settings(test_case: str):
         storage_daemon_addr=test_case,
         storage_db_path="/storage-db",
         request_timeout=0.1,
-        manifest_bag_id='A8C27C0AF2BB3A3077330F1857C3130F6EBEEE5BD5347A18F1A4CCD30D4F5F82'
+        manifest_bag_id='A8C27C0AF2BB3A3077330F1857C3130F6EBEEE5BD5347A18F1A4CCD30D4F5F82',
+        storage_public_addr='192.168.1.10'
     )    
 
 class TestTonStorageCli(unittest.TestCase):
@@ -272,6 +279,18 @@ class TestTonStorageLru(unittest.TestCase):
         self.assertEqual(list(lru), [(2, 20), (3, 32)])
 
         lru.remove(2)
+        self.assertEqual(lru.size, 1)
+        self.assertEqual(list(lru), [(3, 32)])
+
+        self.assertEqual(lru.upsert_back(3, 33), False)
+        self.assertEqual(lru.size, 1)
+        self.assertEqual(list(lru), [(3, 32)])
+
+        self.assertEqual(lru.upsert_back(4, 40), True)
+        self.assertEqual(lru.size, 2)
+        self.assertEqual(list(lru), [(4, 40), (3, 32)])
+
+        lru.remove_back()
         self.assertEqual(lru.size, 1)
         self.assertEqual(list(lru), [(3, 32)])
 

@@ -2,7 +2,7 @@ import codecs
 from tonpy.types import CellSlice
 from bitstring import BitArray
 
-from NFTorrent.storage import parse_bag_id
+from NFTorrent.address import parse_bag_id
 
 # BCD encoded date mask
 # 4 octets - year; 2 Octets - month; 2 octets - day; 0x00 - means unspecified or unknown

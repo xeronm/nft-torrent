@@ -4,7 +4,8 @@ from fastapi.params import Path, File
 from fastapi import UploadFile
 
 from pytonlib.utils.address import prepare_address
-from NFTorrent.storage import parse_bag_id
+from NFTorrent.address import parse_bag_id, parse_adnl_id
+
 
 class ProblemDetail(BaseModel):
     type: Optional[str] = None
@@ -14,12 +15,20 @@ class ProblemDetail(BaseModel):
     errors: Optional[List] = None
 
 
-class TorrentMethod(BaseModel):
+class StorageTorrentMethod(BaseModel):
     bag_id: str = Path(description="Torrent bag id")
 
     @validator('bag_id')
     def validate_contract_address(cls, v):
         return parse_bag_id(v)
+
+
+class StoragePeerMethod(BaseModel):
+    adnl_id: str = Path(description="ADNL id")
+
+    @validator('adnl_id')
+    def validate_adnl_address(cls, v):
+        return parse_adnl_id(v)    
 
 
 class NftMethod(BaseModel):
@@ -33,7 +42,7 @@ class NftMethod(BaseModel):
             raise ValueError('Ivalid TON contract address format')
 
 
-class NftTorrentMethod(NftMethod):
+class NftStorageTorrentMethod(NftMethod):
     file_path: str = Path(description="Torrent file path")
 
 

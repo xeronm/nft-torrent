@@ -2,3 +2,4 @@ ton-http-api~=2.0.0
 python-multipart
 tonpy
 aiohttp
+pyjwt
