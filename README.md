@@ -7,20 +7,26 @@ Provides following HTTP API Gateway functions:
 - maintain Torrent redundacy policy
 - keep storage limits by cleaning non-pinned Torrents by LRU policy 
 
+NFT Contract example: https://github.com/xeronm/pets-memorial
+
+Feel free to support me with TON: UQDJJHWJKrt7ZKiRzXz2TpzJMxJ5RrWffTqXL8769EXa_2bh
+
+![Wallet UQDJJHWJKrt7ZKiRzXz2TpzJMxJ5RrWffTqXL8769EXa_2bh QR code](/assets/images/UQDJJHWJKrt7ZKiRzXz2TpzJMxJ5RrWffTqXL8769EXa_2bh.PNG "UQDJJHWJKrt7ZKiRzXz2TpzJMxJ5RrWffTqXL8769EXa_2bh")
 
 
 ### Getting Started
 
 1. Build Docker image
 ```sh
-$ pip intsall tox
-$ tox -e image
+pip intsall tox
+tox -e build
+tox -e image
 ```
 
 2. Create user
 ```sh
-$ sudo groupadd -r nftorrent --gid=9001
-$ sudo useradd -r -g nftorrent --uid=9001 --home-dir=/home/nftorrent --shell=/sbin/nologin nftorrent
+sudo groupadd -r nftorrent --gid=9001
+sudo useradd -r -g nftorrent --uid=9001 --home-dir=/home/nftorrent --shell=/sbin/nologin nftorrent
 ```
 
 3. Setup application directory
