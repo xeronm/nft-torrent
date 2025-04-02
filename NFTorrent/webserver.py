@@ -23,7 +23,7 @@ from NFTorrent.settings import Settings
 from NFTorrent import exceptions, messages
 from NFTorrent.manager import TonStorageCliManager
 from NFTorrent.exceptions import TorrentClientError
-from NFTorrent.auth import NodeJWTBearer
+from NFTorrent.auth import NodeJWTBearer, ContractAPIKeyCookie
 from NFTorrent.address import parse_bag_id
 
 class Server:
@@ -40,15 +40,21 @@ class Server:
                            jwt_algorithm=self.settings.webserver.jwt_algorithm,
                            node_state=self.get_node_state,
                            real_ip_header=self.settings.webserver.real_ip_header)
+        
+        self.jwt_session = ContractAPIKeyCookie(jwt_secret=self.settings.webserver.jwt_secret,
+                                                 jwt_algorithm=self.settings.webserver.jwt_algorithm,
+                                                 real_ip_header=self.settings.webserver.real_ip_header,
+                                                 domains=self.settings.webserver.twa_domains)
     
     def get_node_state(self):
         return self.storage.get_cached_node_state()
 
     async def startup(self):
         logger.warning('Server startup initiated...')
-        logger.warning('Storage public address: {addr}, HTTP API Root: {api_root}', 
+        logger.warning('Storage public address: {addr}, HTTP API Root: {api_root}, TWA: {domains}', 
                     addr=self.settings.storage.storage_public_addr, 
-                    api_root=self.settings.webserver.api_root_path)        
+                    api_root=self.settings.webserver.api_root_path,
+                    domains=self.settings.webserver.twa_domains)        
 
         # self.resolver = aiodns.DNSResolver(loop=self.loop)
 
@@ -56,7 +62,6 @@ class Server:
         if self.settings.cache.enabled:
             if isinstance(self.settings.pyton.cache, RedisCacheSettings):
                 cache_manager = RedisCacheManager(self.settings.cache)
-                print(self.settings.cache)
             else:
                 raise RuntimeError('Only Redis cache supported')
         else:
@@ -94,8 +99,8 @@ class Server:
             self.storage.shutdown(),
         ], return_when=asyncio.ALL_COMPLETED)
 
-    async def _get_nft_bag_id(self, address: str, skip_verification: bool = False):
-        nft_data = await self.tonlib.get_nft_data(address, skip_verification)
+    async def _get_nft_bag_id(self, address: str, skip_verification: bool = False, owner: str = None):
+        nft_data = await self.tonlib.get_nft_data(address, skip_verification, owner=owner)
         nft_content = nft_data['individual_content']
 
         bag_id = None
@@ -126,8 +131,8 @@ class Server:
 
         return None
 
-    async def _get_nft_torrent(self, address, add_on_notfound: bool = True):
-        bag_id = await self._get_nft_bag_id(address)
+    async def get_nft_torrent(self, address, add_on_notfound: bool = True, owner: str = None):
+        bag_id = await self._get_nft_bag_id(address, owner=owner)
         if bag_id is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)    
         
@@ -255,7 +260,6 @@ class Server:
                     state['status'] = resp.status
                     state['response'] = await resp.json()
             except Exception as E: 
-                print(E.__dict__)
                 state['error'] = str(E)
                 logger.warning("Call storage peer error, ADNL: {adnl}, host: {host}, exc: {exc}", 
                                 adnl=peer[0]["adnl_id"], host=host, exc=str(E))
@@ -266,8 +270,8 @@ class Server:
         result.update(peer[0])
         return result    
     
-    async def get_nft_torrent_filename(self, address: str, file_path: str) -> str:
-        torrent_info = await self._get_nft_torrent(address)
+    async def get_nft_torrent_filename(self, address: str, file_path: str, owner: str = None) -> str:
+        torrent_info = await self.get_nft_torrent(address, owner=owner)
         if not torrent_info['torrent']['completed'] and int(torrent_info['torrent']['files_count']) == 0:
             raise exceptions.TorrentStorageError("Torrent meta not ready")
         file_path = os.path.normpath(file_path)
@@ -290,8 +294,8 @@ class Server:
         
         return target_file
     
-    async def create_nft_torrent(self, address: str, files: List[UploadFile]):
-        bag_id = await self._get_nft_bag_id(address)
+    async def create_nft_torrent(self, address: str, files: List[UploadFile], owner: str = None):
+        bag_id = await self._get_nft_bag_id(address, owner=owner)
         node_state = await self.storage.get_node_state()
 
         if len(node_state) < self.settings.storage.min_redundancy - 1:

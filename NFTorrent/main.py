@@ -1,4 +1,5 @@
 import asyncio
+import os
 from functools import wraps
 
 from fastapi import FastAPI
@@ -92,7 +93,7 @@ def wrap_result(func):
 
 # API
 @app.get('/healthcheck', include_in_schema=False)
-async def healthcheck():
+async def healthcheck()-> models.HealthCheckResult:
     return await ws.get_healthcheck()
 
 
@@ -142,6 +143,7 @@ async def get_torrent(request: models.StorageTorrentMethod = Depends()):
     result = await ws.storage.node_get(request.bag_id)
     return result
 
+
 @app.get('/storage/torrent/{bag_id}/peers', dependencies=[Depends(ws.jwt_bearer)], response_model_exclude_none=True, tags=['storage'])
 @wrap_result
 async def get_torrent_peers(request: models.StorageTorrentMethod = Depends()):
@@ -163,37 +165,53 @@ async def add_torrent(request: models.StorageTorrentMethod = Depends()):
     return result
 
 
-@app.get('/nft/{address}', response_model_exclude_none=True, tags=['nft'])
+@app.get('/account/auth', tags=['account'])
+async def get_account_auth_payload() -> models.AuthPayload:
+    """
+    Get authentication payload
+    """
+    return models.AuthPayload(payload=ws.jwt_session.get_auth_payload())
+
+
+@app.post('/account/auth', tags=['account'])
+async def create_account_auth_session(request: models.AuthData = Depends()) -> None:
+    """
+    Auhtenticate account signature and create session 
+    """
+    return ws.jwt_session.auth_session(request.account, request.proof)
+
+
+@app.get('/nft/{address}', response_model_exclude_none=True, dependencies=[Depends(ws.jwt_session)], tags=['nft'])
 @wrap_result
 async def get_nft_data(request: models.NftMethod = Depends()):
     """
     Get NFT Data information.
     """
-    return await ws.tonlib.get_nft_data(request.address)
+    return await ws.tonlib.get_nft_data(request.address, owner=request._contract)
 
 
-@app.get('/nft/{address}/torrent', response_model_exclude_none=True, tags=['nft-torrent'])
+@app.get('/nft/{address}/torrent', response_model_exclude_none=True, dependencies=[Depends(ws.jwt_session)], tags=['nft'])
 @wrap_result
 async def get_nft_torrent(request: models.NftMethod = Depends()):
     """
     Get NFT Torrent information.
     """
-    return await ws._get_nft_torrent(request.address)
+    return await ws.get_nft_torrent(request.address, owner=request._contract)
 
 
-@app.get('/nft/{address}/torrent/{file_path:path}', response_model_exclude_none=True, tags=['nft-torrent'])
+@app.get('/nft/{address}/torrent/{file_path:path}', response_model_exclude_none=True, dependencies=[Depends(ws.jwt_session)], tags=['nft'])
 @wrap_result
-async def get_nft_torrent_file(request: models.NftStorageTorrentMethod = Depends()):
+async def get_nft_torrent_file(request: models.NftStorageTorrentMethod = Depends()) -> FileResponse:
     """
     Get NFT Torrent File.
     """
-    filename = await ws.get_nft_torrent_filename(request.address, request.file_path)    
+    filename = await ws.get_nft_torrent_filename(request.address, request.file_path, owner=request._contract)    
     return FileResponse(path=filename)
 
 
-@app.post('/nft/{address}/torrent', response_model_exclude_none=True, tags=['nft-torrent'])
+@app.post('/nft/{address}/torrent', response_model_exclude_none=True, dependencies=[Depends(ws.jwt_session)], tags=['nft'])
 async def create_nft_torrent(request: models.NftTorrentCreate = Depends()):
     """
     Create NFT Torrent.
     """
-    return await ws.create_nft_torrent(request.address, request.files)
+    return await ws.create_nft_torrent(request.address, request.files, owner=request._contract)

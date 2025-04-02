@@ -1,7 +1,6 @@
 import os
-import base64
-import binascii
-from dataclasses import dataclass, fields
+from typing import List
+from dataclasses import dataclass
 
 from pyTON import settings
 
@@ -58,6 +57,7 @@ class WebServerSettings:
     jwt_secret: str
     jwt_algorithm: str
     port: int = None
+    twa_domains: List[str] = None
     enable_ssl: bool = True
     verify_ssl: bool = True
     real_ip_header: bool = True
@@ -76,6 +76,7 @@ class WebServerSettings:
         obj.verify_ssl = settings.strtobool(os.environ.get('HTTP_VERIFY_SSL', 'true'))
         obj.real_ip_header = settings.strtobool(os.environ.get('HTTP_REAL_IP_HEADER', 'true'))
         obj.request_timeout = int(os.environ.get('HTTP_REQUEST_TIMEOUT', cls.request_timeout))
+        obj.twa_domains = [x.strip() for x in os.environ.get('HTTP_TWA_DOMAINS', '').split(',')]
 
         return obj
 

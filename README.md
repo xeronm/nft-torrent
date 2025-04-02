@@ -30,8 +30,16 @@ sudo useradd -r -g nftorrent --uid=9001 --home-dir=/home/nftorrent --shell=/sbin
 ```
 
 3. Setup application directory
+- create `storage-db` path
+- setup environment variables `.env`
 - create `private` sub-directory, and place:
     - TON configuration, e.g. `wget https://ton.org/testnet-global-config.json`
-    - `storage.manifest` with BAG ID
-- setup environment variables `.env`
+    - create `storage.manifest` - BAG ID of the torrent to locate NFT Storage Peers
+    - generate `jwt.key` - JWT secret key for Bearer Authorization
 
+4. Run docker-compose
+```sh
+docker compose up -d
+```
+
+5. Create 

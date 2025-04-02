@@ -3,3 +3,4 @@ python-multipart
 tonpy
 aiohttp
 pyjwt
+PyNaCl

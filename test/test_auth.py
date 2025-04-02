@@ -1,6 +1,9 @@
 import unittest
+import time
+from unittest import mock
 
-from NFTorrent.auth import NodeJWTBearer
+from NFTorrent.auth import NodeJWTBearer, ContractAPIKeyCookie
+from NFTorrent import models
 
 def get_node_state():
     return [
@@ -49,3 +52,51 @@ class TestNodeJWTBearer(unittest.TestCase):
         except Exception as E:
             validated = type(E).__name__
         self.assertEqual(validated, 'InvalidSubjectError')
+
+
+class TestContractAPIKeyCookie(unittest.TestCase):
+    proof = {
+        "timestamp":1743608712,
+        "domain": "127.0.0.1:5173",
+        "signature": "F5JvXRdwbMjLHyST+X6WXbt25zCmlBEAy4jBOXeRI3R2dAZ4BRWwFhQ2DweGTBqrPRbReRQtJcNJt7kwWqE4DQ==",
+        "payload":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0aWQiOiI0MWY2M2YwYTE2NDY0MDBkIiwic3ViIjoiYWNjb3VudCIsImF1ZCI6WyJuZnQtdG9ycmVudCJdLCJleHAiOjE3NDM2MDg4MTkuMTI4MDQxfQ.JxTRmHEVTiY-VMPa5sBQFqqwnia_yoqVlQqdtC7xxxM"
+    }
+    account = {
+        "address":"0:06e97f0512ce358a3dc71169ace415ee17f5810dbfae538c7cfc7520b9409e9b",
+        "chain":"-3",
+        "public_key":"4e60c24b40405a827a5dda9d949c09b7cc169da88c617b3cc4b77ecb789662c5"
+    }
+
+    def test_auth_payload(self):
+        contr = ContractAPIKeyCookie(jwt_algorithm='HS256', jwt_secret='0123456789', domains=['127.0.0.1:5173'])
+        self.assertIsNotNone(contr.get_auth_payload())
+
+    @mock.patch('time.time', mock.MagicMock(return_value=1743608712))
+    def test_auth_success(self):
+        contr = ContractAPIKeyCookie(jwt_algorithm='HS256', jwt_secret='0123456789', domains=['127.0.0.1:5173'])
+        validated = None
+        try:
+            validated = contr.auth_verify(account=models.Account(**self.account), proof=models.TonProof(**self.proof)) or True
+        except Exception as E:
+            validated = str(E)
+        self.assertEqual(validated, 'Signature has expired')
+
+    @mock.patch('time.time', mock.MagicMock(return_value=1743608712 + ContractAPIKeyCookie.auth_payload_expires_timeout))
+    def test_auth_expired_error(self):
+        contr = ContractAPIKeyCookie(jwt_algorithm='HS256', jwt_secret='0123456789')
+        validated = None
+        try:
+            validated = contr.auth_verify(account=models.Account(**self.account), proof=models.TonProof(**self.proof)) or True
+        except Exception as E:
+            validated = str(E)
+        self.assertEqual(validated, 'Signature expired')
+
+    @mock.patch('time.time', mock.MagicMock(return_value=1743608712))
+    def test_auth_domain_error(self):
+        contr = ContractAPIKeyCookie(jwt_algorithm='HS256', jwt_secret='0123456789')
+        validated = None
+        try:
+            validated = contr.auth_verify(account=models.Account(**self.account), proof=models.TonProof(**self.proof)) or True
+        except Exception as E:
+            validated = str(E)
+        self.assertEqual(validated, 'Invalid domain')
