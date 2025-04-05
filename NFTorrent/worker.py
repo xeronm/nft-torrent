@@ -145,16 +145,20 @@ class TonStorageCliWorker(mp.Process):
         if start_time < task.timeout:
             try:
                 result = self.cli.__getattribute__(task.method)(*task.args, **task.kwargs)
+            except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as E: 
+                exception = E
+                logger.warning("TonStorageCliWorker #{client_id:03d}: Got exception, method: {method}, task_id: {task_id}, args: {args}, kwargs: {kwargs}, exception: {exc}", 
+                               client_id=self.client_id, method=task.method, task_id=task.task_id, args=task.args, kwargs=task.kwargs, exc=str(E))
             except Exception as E:
                 exception = E
-                logger.warning("TonStorageCliWorker #{client_id:03d}: unhandled exception. Method: {method}, task_id: {task_id}, args: {args}, kwargs: {kwargs}, exception: {exc}", 
+                logger.warning("TonStorageCliWorker #{client_id:03d}: Got unhandled exception, method: {method}, task_id: {task_id}, args: {args}, kwargs: {kwargs}, exception: {exc}", 
                                client_id=self.client_id, method=task.method, task_id=task.task_id, args=task.args, kwargs=task.kwargs, exc=E)
             else:
-                logger.debug("TonStorageCliWorker #{client_id:03d}: got result. Method: {method}, task \"{task_id}\"", 
+                logger.debug("TonStorageCliWorker #{client_id:03d}: Got result, method: {method}, task \"{task_id}\"", 
                              client_id=self.client_id, method=task.method, task_id=task.task_id)
         else:
             exception = asyncio.TimeoutError()
-            logger.warning("TonStorageCliWorker #{client_id:03d}: received task after timeout. Method: {method}, task_id: {task_id}",
+            logger.warning("TonStorageCliWorker #{client_id:03d}: Received task after timeout, method: {method}, task_id: {task_id}",
                             client_id=self.client_id, method=task.method, task_id=task.task_id)
         end_time = time.monotonic()
         elapsed_time = end_time - start_time

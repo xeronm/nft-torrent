@@ -9,7 +9,7 @@ Provides following HTTP API Gateway functions:
 
 NFT Contract example: https://github.com/xeronm/pets-memorial
 
-Feel free to support me with TON: UQDJJHWJKrt7ZKiRzXz2TpzJMxJ5RrWffTqXL8769EXa_2bh
+Feel free to support me with TON: `UQDJJHWJKrt7ZKiRzXz2TpzJMxJ5RrWffTqXL8769EXa_2bh`
 
 ![Wallet UQDJJHWJKrt7ZKiRzXz2TpzJMxJ5RrWffTqXL8769EXa_2bh QR code](/assets/images/UQDJJHWJKrt7ZKiRzXz2TpzJMxJ5RrWffTqXL8769EXa_2bh.PNG "UQDJJHWJKrt7ZKiRzXz2TpzJMxJ5RrWffTqXL8769EXa_2bh")
 
@@ -31,6 +31,7 @@ sudo useradd -r -g nftorrent --uid=9001 --home-dir=/home/nftorrent --shell=/sbin
 
 3. Setup application directory
 - create `storage-db` path
+- create `uploads` temporary path `mkdir /tmp/uploads`
 - setup environment variables `.env`
 - create `private` sub-directory, and place:
     - TON configuration, e.g. `wget https://ton.org/testnet-global-config.json`

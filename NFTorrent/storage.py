@@ -117,7 +117,7 @@ class TonStorageCli:
                         return {'message': output.strip()}
                     pos = max(0, len(output) - len(match))        
 
-        raise subprocess.CalledProcessError(self._proc.poll(), self.settings.storage_cli_binary, output=None, stderr=output)
+        raise subprocess.CalledProcessError(self._proc.poll(), self.settings.storage_cli_binary, output=output)
                 
     def _read_json(self, timeout: int = None, match_error: str = None):
         st_time = time.monotonic()
@@ -133,7 +133,7 @@ class TonStorageCli:
             while self._proc.poll() is None:
                 cur_time = time.monotonic()
                 if cur_time - st_time > timeout:
-                    raise subprocess.TimeoutExpired(self.settings.storage_cli_binary, timeout, output=output, stderr=None)
+                    raise subprocess.TimeoutExpired(self.settings.storage_cli_binary, timeout, output=output)
                 if selector.select(timeout=timeout - (cur_time - st_time)):
                     buffer = self._proc.stdout.read1().decode()
                     output += buffer
@@ -161,7 +161,7 @@ class TonStorageCli:
                                     return json.loads(buffer)
                             
         raise subprocess.CalledProcessError(self._proc.poll(), self.settings.storage_cli_binary, 
-                                            output=output, stderr=self._proc.stderr.read1().decode())
+                                            output=output)
 
     def _run_command(self, command: str, as_json=True):
         if not self.is_alive():

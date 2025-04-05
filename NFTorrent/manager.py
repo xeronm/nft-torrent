@@ -306,7 +306,7 @@ class TonStorageCliManager:
             try:
                 try:
                     await self.get_node_state()
-                except (exceptions.TorrentClientError, OSError, asyncio.exceptions.TimeoutError) as E:
+                except (exceptions.TorrentClientError, OSError, asyncio.exceptions.TimeoutError, subprocess.CalledProcessError) as E:
                     logger.info("TonStorageCliManager[check_children_alive]: failed to get node state, exc: {exc}", exc=str(E))
 
                 for client_id in self.workers:
