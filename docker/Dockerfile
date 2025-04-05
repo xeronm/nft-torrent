@@ -65,5 +65,5 @@ USER nftorrent
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
  
-CMD [ "gunicorn", "-k", "uvicorn.workers.UvicornWorker", "-w", "1", "--bind", "0.0.0.0:8002", "NFTorrent.main:app" ]
+CMD [ "gunicorn", "-k", "uvicorn.workers.UvicornWorker", "-w", "1", "--bind", "0.0.0.0:8002", "--access-logfile", "-", "NFTorrent.main:app" ]
 

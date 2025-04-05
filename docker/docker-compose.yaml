@@ -25,7 +25,10 @@ services:
       TON_API_TONLIB_LITESERVER_CONFIG: /run/secrets/liteserver_config
       HTTP_API_ROOT_PATH: ${HTTP_API_ROOT_PATH}
       HTTP_JWT_SECRET: file:/run/secrets/jwt_key
+      HTTP_TWA_DOMAINS: 127.0.0.1:5173,127.0.0.1:5174
+      HTTP_ALLOW_NETWORKS: 127.0.0.1/32,192.168.0.0/16
       HTTP_REQUEST_TIMEOUT: 15
+      HTTP_NFT_COLLECTIONS: NFTorrent.collections.collections
     volumes:
       - ./storage-db:/storage-db
     secrets:
@@ -37,7 +40,7 @@ services:
     networks:
       - internal
     healthcheck:
-      test: curl -sS http://127.0.0.1:8002${HTTP_API_ROOT_PATH}/healthcheck || echo 1
+      test: curl -sS http://127.0.0.1:8002/healthcheck || echo 1
       interval: 15s
       timeout: 3s
       retries: 5      

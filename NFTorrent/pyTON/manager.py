@@ -1,5 +1,4 @@
-from typing import List
-from dataclasses import dataclass
+from typing import Dict
 
 from pyTON.manager import TonlibManager as _TonlibManager
 from pytonlib.utils.tokens import parse_nft_item_data
@@ -9,18 +8,14 @@ from fastapi.exceptions import HTTPException
 from fastapi import status
 from tonpy.types import CellSlice
 
-from NFTorrent.messages import TvmStructure
+from NFTorrent.models import NftCollection
 
-@dataclass
-class NftCollection:
-    address: str
-    nft_content_class: TvmStructure
 
 class TonlibManager(_TonlibManager):
 
-    def __init__(self, *args, nft_collections: List[NftCollection] = None, **kwargs):
+    def __init__(self, *args, nft_collections: Dict[str, NftCollection] = None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.nft_collections = { detect_address(x.address)['raw_form']: x for x in nft_collections }
+        self.nft_collections = nft_collections
 
     def get_nft_collection(self, address: str) -> NftCollection:
         return self.nft_collections.get(detect_address(address)['raw_form'])
@@ -53,9 +48,9 @@ class TonlibManager(_TonlibManager):
             if detect_address(verified_nft_address)['raw_form'] != detect_address(address)['raw_form']:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Verification with NFT collection failed")
 
+        # print(nft_data['individual_content'])
         nft_data['individual_content'] = nft_collection.nft_content_class(CellSlice(nft_data['individual_content']))
-
-        return nft_data        
+        return nft_data, nft_collection
     
 
     def setup_cache(self):

@@ -2,6 +2,7 @@ import asyncio
 import sys
 import time
 import traceback
+import subprocess
 import multiprocessing as mp
 from typing import Optional
 from concurrent.futures import ThreadPoolExecutor
@@ -104,6 +105,9 @@ class TonStorageCliWorker(mp.Process):
                 result = await self.loop.run_in_executor(None, self.process_task, task)
 
                 await self.loop.run_in_executor(self.threadpool_executor, self.output_queue.put, result)
+            except subprocess.CalledProcessError as E:
+                logger.error("TonStorageCliWorker #{client_id:03d}: Subprocess error, output: {output}, {exc}", client_id=self.client_id, output=E.output, exc=str(E))
+                self.shutdown(10)
             except Exception as E:
                 logger.error("TonStorageCliWorker #{client_id:03d}: Unhandled exception: {exc}", client_id=self.client_id, exc=traceback.format_exc())
                 raise
@@ -119,6 +123,9 @@ class TonStorageCliWorker(mp.Process):
                                                 )
 
                 await asyncio.sleep(self.report_state_interval)
+            except subprocess.CalledProcessError as E:
+                logger.error("TonStorageCliWorker #{client_id:03d}: Subprocess error, output: {output}, {exc}", client_id=self.client_id, output=E.output, exc=str(E))
+                self.shutdown(10)
             except Exception as E:
                 logger.error("TonStorageCliWorker #{client_id:03d}: Unhandled exception: {exc}", client_id=self.client_id, exc=traceback.format_exc())
                 raise                

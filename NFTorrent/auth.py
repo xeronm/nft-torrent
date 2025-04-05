@@ -1,7 +1,7 @@
 from typing import Dict, Callable, Any, List
 import time
 import jwt
-import os
+import ipaddress
 import hashlib
 import struct
 import base64
@@ -23,16 +23,17 @@ class InvalidSubjectError(InvalidTokenError):
 class SignatureVerificationError(Exception):
     pass
 
+
 class NodeJWTBearer(HTTPBearer):
 
     def __init__(self, subject: str = None, 
                  jwt_secret: str = None, jwt_algorithm = None,
                  node_state: Callable[..., List[Dict]] = None, 
                  auto_error: bool = True, 
-                 allow_local: bool = True,
+                 allow_networks: List[str] = None,
                  real_ip_header: bool = True):
         super().__init__(auto_error=auto_error)
-        self.allow_local = allow_local
+        self.allow_networks = [ipaddress.ip_network(x) for x in allow_networks or []]
         self.real_ip_header = real_ip_header
         self.subject = subject.split(':')[0]
         self.jwt_secret = jwt_secret
@@ -43,17 +44,20 @@ class NodeJWTBearer(HTTPBearer):
         self._jwt_cache = {}
 
     async def __call__(self, request: Request):
-        client_ip = request.client.host        
+        client_ip = request.client.host
+        real_ip = request.headers.get('X-Real-IP')
+        logger.debug('NodeJWTBearer: Authorization request, real_ip: {real_ip}, host: {host}', real_ip=real_ip, host=client_ip)
         if self.real_ip_header:
             client_ip = request.headers.get('X-Real-IP', client_ip)
-        if self.allow_local and client_ip == '127.0.0.1':
+        if self.allow_networks and [True for x in self.allow_networks if ipaddress.ip_address(client_ip) in x]:
             return
+        
         credentials: HTTPAuthorizationCredentials = await super().__call__(request)
         if credentials:
             try:
                 self.verify_jwt_token(credentials.credentials, client_ip)
             except InvalidTokenError as E:
-                logger.info('NodeJWTBearer: token validation error, token: {token}, client: {client_ip}, {exc}', 
+                logger.info('NodeJWTBearer: token validation error, token: {token}, client_ip: {client_ip}, {exc}', 
                             token=credentials.credentials,
                             client_ip=client_ip, 
                             exc=str(E))
@@ -115,21 +119,24 @@ class ContractAPIKeyCookie(APIKeyCookie):
                  jwt_secret: str = None, jwt_algorithm = None,
                  domains: List[str] = None,
                  auto_error: bool = True, 
-                 allow_local: bool = True,
+                 allow_networks: List[str] = None,
                  real_ip_header: bool = True):
         super().__init__(name=self.cookie_name, auto_error=auto_error)
         self.domains = set(domains or [])
-        self.allow_local = allow_local
+        self.allow_networks = [ipaddress.ip_network(x) for x in allow_networks or []]
         self.real_ip_header = real_ip_header
         self.jwt_secret = jwt_secret
         self.jwt_algorithm = jwt_algorithm
 
     async def __call__(self, request: Request):
-        client_ip = request.client.host        
+        client_ip = request.client.host
+        real_ip = request.headers.get('X-Real-IP')
+        logger.debug('ContractAPIKeyCookie: Authorization request, real_ip: {real_ip}, host: {host}', real_ip=real_ip, host=client_ip)
         if self.real_ip_header:
             client_ip = request.headers.get('X-Real-IP', client_ip)
-        # if self.allow_local and client_ip == '127.0.0.1':
-        #     return
+        if self.allow_networks and [True for x in self.allow_networks if ipaddress.ip_address(client_ip) in x]:
+            return
+
         api_key: str = await super().__call__(request)
 
         try:
@@ -137,13 +144,14 @@ class ContractAPIKeyCookie(APIKeyCookie):
                                 audience=self.audience, 
                                 algorithms=[self.jwt_algorithm])        
         except InvalidTokenError as E:
-            logger.info('ContractAPIKeyCookie: token validation error, token: {token}, client: {client_ip}, {exc}', 
+            logger.info('ContractAPIKeyCookie: token validation error, token: {token}, client_ip: {client_ip}, host: {host}, {exc}', 
                         token=api_key,
-                        client_ip=client_ip, 
+                        client_ip=client_ip,
+                        host=request.client.host,
                         exc=str(E))
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid or expired token")
         
-        request._contract = payload['sub']
+        request.auth_wallet = payload['sub']
         return payload
         
     def get_auth_payload(self) -> str:
