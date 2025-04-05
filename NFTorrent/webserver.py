@@ -59,12 +59,12 @@ class Server:
         self.loop = loop = asyncio.get_event_loop()
         logger.warning('Server startup initiated...')
         logger.warning("Parameters:\n"
-        " - Public address: {addr}\n"
-        " - API Root: {api_root}\n"
-        " - TWA: {domains}\n"
-        " - Allow Networks: {networks}\n"
-        " - DB Path: {dbpath}\n"
-        " - Temp dir: {tempdir}\n", 
+        " - webserver.allow_networks: {networks}\n"
+        " - webserver.api_root_path: {api_root}\n"
+        " - webserver.storage_public_addr: {addr}\n"
+        " - webserver.twa_domains: {domains}\n"
+        " - storage.storage_db_path: {dbpath}\n"
+        " - storage.storage_temp_dir: {tempdir}\n", 
                     addr=self.settings.storage.storage_public_addr, 
                     api_root=self.settings.webserver.api_root_path,
                     domains=self.settings.webserver.twa_domains,
@@ -307,11 +307,15 @@ class Server:
             raise exceptions.TorrentStorageError("Torrent file not ready")
         
         bag_id = parse_bag_id(torrent_info['torrent']['hash'])
-        target_file = os.path.join(
+        target_path = os.path.join(
             self.settings.storage.storage_db_torrent_path or os.path.join(self.settings.storage.storage_db_path, 'torrent/torrent-files'), 
-            bag_id,
-            self.settings.storage.torrent_dirname,
-            files[0]['name'])
+            bag_id)
+        torrent_dir = os.path.join(target_path, torrent_info['torrent']['dir_name'])
+        if not os.path.isdir(torrent_dir):
+            # Try to fallback
+            torrent_dir = os.path.join(target_path, self.settings.storage.torrent_dirname)
+
+        target_file = os.path.join(torrent_dir, files[0]['name'])
         if not os.path.isfile(target_file):            
             logger.warning("Torrent file not exists in daemon storage, bag_id: {bag_id}, file={filename}", bag_id=bag_id, filename=target_file)
             raise exceptions.TorrentStorageError("Torrent file not exists in daemon storage")

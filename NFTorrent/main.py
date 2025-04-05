@@ -138,8 +138,19 @@ async def get_storage_node_peer_state(request: models.StoragePeerMethod = Depend
     return await ws.get_storage_peer_state(request.adnl_id, '/storage/state')
 
 
+@app.get('/storage/torrent', dependencies=[Depends(ws.jwt_bearer)], 
+         response_model_exclude_none=True, tags=['storage'])
+@wrap_result
+async def get_torrent():
+    """
+    List Torrents.
+    """
+    result = await ws.storage.node_list()
+    return result
 
-@app.get('/storage/torrent/{bag_id}', dependencies=[Depends(ws.jwt_bearer)], response_model_exclude_none=True, tags=['storage'])
+
+@app.get('/storage/torrent/{bag_id}', dependencies=[Depends(ws.jwt_bearer)], 
+         response_model_exclude_none=True, tags=['storage'])
 @wrap_result
 async def get_torrent(request: models.StorageTorrentMethod = Depends()):
     """
@@ -149,7 +160,8 @@ async def get_torrent(request: models.StorageTorrentMethod = Depends()):
     return result
 
 
-@app.get('/storage/torrent/{bag_id}/peers', dependencies=[Depends(ws.jwt_bearer)], response_model_exclude_none=True, tags=['storage'])
+@app.get('/storage/torrent/{bag_id}/peers', dependencies=[Depends(ws.jwt_bearer)], 
+         response_model_exclude_none=True, tags=['storage'])
 @wrap_result
 async def get_torrent_peers(request: models.StorageTorrentMethod = Depends()):
     """
@@ -159,14 +171,25 @@ async def get_torrent_peers(request: models.StorageTorrentMethod = Depends()):
     return result
 
 
-@app.post('/storage/torrent/{bag_id}', dependencies=[Depends(ws.jwt_bearer)], response_model_exclude_none=True, tags=['storage'])
+@app.post('/storage/torrent/{bag_id}', dependencies=[Depends(ws.jwt_bearer)], 
+          response_model_exclude_none=True, tags=['storage'])
 @wrap_result
 async def add_torrent(request: models.StorageTorrentMethod = Depends()):
     """
     Add Torrent.
     """
-    # TODO Validate adnl_id and ip_str
     result = await ws.storage.node_add(request.bag_id)
+    return result
+
+
+@app.delete('/storage/torrent/{bag_id}', dependencies=[Depends(ws.jwt_bearer)], 
+          response_model_exclude_none=True, tags=['storage'])
+@wrap_result
+async def remove_torrent(request: models.StorageTorrentMethod = Depends()):
+    """
+    Remove Torrent.
+    """
+    result = await ws.storage.node_remove(request.bag_id)
     return result
 
 

@@ -129,6 +129,7 @@ class StorageWorkerState(BaseModel):
 
 class StorageManagerState(BaseModel):
     workers: Dict[str, StorageWorkerState]
+    stats: Dict[str, int]
     size: int
     size_pressure: int
     

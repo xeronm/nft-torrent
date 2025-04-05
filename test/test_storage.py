@@ -57,7 +57,7 @@ class TestTonStorageCli(unittest.TestCase):
         self.assertTrue(cli.open())
         self.assertTrue(cli.is_alive())
         
-        result = cli.run_list()
+        result = cli.cmd_list()
         self.assertEqual(result, {'@type': 'storage.daemon.torrentList', 'torrents': [{'@type': 'storage.daemon.torrent', 'hash': 'qMJ8CvK7OjB3Mw8YV8MTD26+7lvVNHoY8aTM0w1PX4I=', 'flags': 3, 'total_size': '52', 'description': '4c48d157-56fc-5487-b8a5-2e331c2e7e11', 'files_count': '1', 'included_size': '52', 'dir_name': '', 'downloaded_size': '52', 'added_at': 1742716306, 'root_dir': '/storage-db/torrent/torrent-files/A8C27C0AF2BB3A3077330F1857C3130F6EBEEE5BD5347A18F1A4CCD30D4F5F82', 'active_download': True, 'active_upload': True, 'completed': True, 'download_speed': 0.0, 'upload_speed': 0.0, 'fatal_error': ''}]})
         self.assertTrue(cli.is_alive())
 
@@ -69,7 +69,7 @@ class TestTonStorageCli(unittest.TestCase):
         self.assertTrue(cli.open())
         self.assertTrue(cli.is_alive())
         
-        result = cli.run_add('F70D2F7587DBDFD0928E1967A0B2783EC3ABD63846AEC3B055B4705AEF742871')
+        result = cli.cmd_add('F70D2F7587DBDFD0928E1967A0B2783EC3ABD63846AEC3B055B4705AEF742871')
         self.assertEqual(result, {
             '@type': 'storage.daemon.torrentFull', 
             'torrent': {
@@ -103,7 +103,7 @@ class TestTonStorageCli(unittest.TestCase):
         self.assertTrue(cli.open())
         self.assertTrue(cli.is_alive())
         
-        result = cli.run_add('F70D2F7587DBDFD0928E1967A0B2783EC3ABD63846AEC3B055B4705AEF742871')
+        result = cli.cmd_add('F70D2F7587DBDFD0928E1967A0B2783EC3ABD63846AEC3B055B4705AEF742871')
         self.assertEqual(result, {'error': 'Query error: Cannot add torrent: duplicate hash F70D2F7587DBDFD0928E1967A0B2783EC3ABD63846AEC3B055B4705AEF742871'})
         self.assertTrue(cli.is_alive())
 
@@ -115,7 +115,7 @@ class TestTonStorageCli(unittest.TestCase):
         self.assertTrue(cli.open())
         self.assertTrue(cli.is_alive())
         
-        result = cli.run_get_peers('F70D2F7587DBDFD0928E1967A0B2783EC3ABD63846AEC3B055B4705AEF742871')
+        result = cli.cmd_get_peers('F70D2F7587DBDFD0928E1967A0B2783EC3ABD63846AEC3B055B4705AEF742871')
         self.assertEqual(result, {
             '@type': 'storage.daemon.peerList', 
             'peers': [
@@ -144,7 +144,7 @@ class TestTonStorageCli(unittest.TestCase):
         self.assertTrue(cli.open())
         self.assertTrue(cli.is_alive())
         
-        result = cli.run_remove('F70D2F7587DBDFD0928E1967A0B2783EC3ABD63846AEC3B055B4705AEF742871')
+        result = cli.cmd_remove('F70D2F7587DBDFD0928E1967A0B2783EC3ABD63846AEC3B055B4705AEF742871')
         self.assertEqual(result, {'message': 'Success'})
 
         self.assertTrue(cli.is_alive())
@@ -158,7 +158,7 @@ class TestTonStorageCli(unittest.TestCase):
         self.assertTrue(cli.open())
         self.assertTrue(cli.is_alive())
         
-        result = cli.run_remove('F70D2F7587DBDFD0928E1967A0B2783EC3ABD63846AEC3B055B4705AEF742871')
+        result = cli.cmd_remove('F70D2F7587DBDFD0928E1967A0B2783EC3ABD63846AEC3B055B4705AEF742871')
         self.assertEqual(result, {'error': 'Query error: No such torrent'})
 
         self.assertTrue(cli.is_alive())
@@ -171,7 +171,7 @@ class TestTonStorageCli(unittest.TestCase):
         self.assertTrue(cli.open())
         self.assertTrue(cli.is_alive())
         
-        result = cli.run_create("C:/Work/ton-storage/file1.txt", {"nft_address": "kQDggbH8_-FjQOjYgh96uSlZpImO02o9cBberv3BQRfcw7mH"}, copy=True, check_existance=False)
+        result = cli.cmd_create("C:/Work/ton-storage/file1.txt", {"nft_address": "kQDggbH8_-FjQOjYgh96uSlZpImO02o9cBberv3BQRfcw7mH"}, copy=True, check_existance=False)
         self.assertEqual(result, {
             '@type': 'storage.daemon.torrentFull', 
             'torrent': {
@@ -213,7 +213,7 @@ class TestTonStorageCli(unittest.TestCase):
         self.assertTrue(cli.open())
         self.assertTrue(cli.is_alive())
         
-        result = cli.run_create("C:/Work/ton-storage/file1.txt", {"nft_address": "kQDggbH8_-FjQOjYgh96uSlZpImO02o9cBberv3BQRfcw7mH"}, copy=True, check_existance=False)
+        result = cli.cmd_create("C:/Work/ton-storage/file1.txt", {"nft_address": "kQDggbH8_-FjQOjYgh96uSlZpImO02o9cBberv3BQRfcw7mH"}, copy=True, check_existance=False)
         self.assertEqual(result, {'error': 'Query error: File "C:\\Work\\ton-storage\\file10.txt" can\'t be opened for reading for stat'})
         self.assertTrue(cli.is_alive())
 
