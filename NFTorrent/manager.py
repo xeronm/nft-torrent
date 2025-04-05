@@ -8,6 +8,8 @@ import os
 import shutil
 import hashlib
 import base64
+import subprocess
+from collections import Counter
 from pathlib import Path
 
 from copy import deepcopy
@@ -76,6 +78,7 @@ class TonStorageCliManager:
         self.workers: Dict[int, WorkerControl] = {}
         self.storage_lru = TonStorageLru()
         self.tasks = {}
+        self.stats: Dict[str, int] = Counter()
 
         # cache setup
         self.setup_cache()
@@ -109,7 +112,7 @@ class TonStorageCliManager:
         # self.get_transactions = self.cache_manager.cached(expire=15, check_error=False)(self.get_transactions)
         # self.raw_get_account_state = self.cache_manager.cached(expire=5)(self.raw_get_account_state)
         # self.generic_get_account_state = self.cache_manager.cached(expire=5)(self.generic_get_account_state)
-        # self.raw_run_method = self.cache_manager.cached(expire=5)(self.raw_run_method)
+        # self.raw_cmd_method = self.cache_manager.cached(expire=5)(self.raw_cmd_method)
         # self.raw_estimate_fees = self.cache_manager.cached(expire=5)(self.raw_estimate_fees)
         # self.getMasterchainInfo = self.cache_manager.cached(expire=1)(self.getMasterchainInfo)
         # self.getMasterchainBlockSignatures = self.cache_manager.cached(expire=5)(self.getMasterchainBlockSignatures)
@@ -264,21 +267,31 @@ class TonStorageCliManager:
                                 delete_reason = None
                                 if not torrent_info['torrent']['completed']:
                                     delete_reason = 'incomplete'
-                                # 2. Delete all torrents which have at least min_redundancy+1 completed copies
+
+                                # 2. Delete all torrents with size limit exceeded
+                                if not torrent_info['torrent']['total_size'] or int(torrent_info['torrent']['total_size']) > self.settings.storage_bag_size_limit:
+                                    delete_reason = 'size limit=' + torrent_info['torrent']['total_size']
+
+                                # 3. Delete all torrents which have at least min_redundancy+1 completed copies
                                 copies_count = peers = None
                                 if not delete_reason:
                                     peers = await self.node_get_peers(bag_id)                        
                                     copies_count = len([x for x in peers['peers'] if x['ready_parts'] == peers['total_parts']])
                                     if copies_count > self.settings.min_redundancy:
                                         delete_reason = f'redundancy={copies_count}'
-                                # 3. Query delete LRU
+                                # 4. Query delete LRU
                                 if not delete_reason and self.query_delete_lru is not None:
                                     delete_reason = await self.query_delete_lru(bag_id, peers, torrent_info)
                                 
                                 if delete_reason:
                                     logger.warning("TonStorageCliManager[torrent_lru_manager]: remove, BAG_ID: {bag_id}, reason: {reason}", 
                                                 bag_id=bag_id, reason=delete_reason)
-                                    await self.node_remove(bag_id)
+                                    self.stats['lru_recyle'] += 1
+                                    try:
+                                        await self.node_remove(bag_id)                                                                        
+                                    except:
+                                        self.stats['lru_recyle_error'] += 1
+                                        raise
                                 else:
                                     self.storage_lru.upsert(bag_id)
                                 processed = True
@@ -341,7 +354,7 @@ class TonStorageCliManager:
             try:
                 state = await self.node_get_state()
             except exceptions.TorrentNotFound:
-                await self.dispatch_request('run_add', self.settings.manifest_bag_id)
+                await self.dispatch_request('cmd_add', self.settings.manifest_bag_id)
                 await asyncio.sleep(1)
                 state = await self.node_get_state()
 
@@ -354,6 +367,7 @@ class TonStorageCliManager:
             'workers': self.get_workers_state(),
             'size': self.storage_lru.size,
             'size_pressure': self.settings.storage_size_pressure,
+            'stats': self.stats,
         }
     
     def get_workers_state(self):
@@ -419,13 +433,18 @@ class TonStorageCliManager:
         return result
 
     async def dispatch_request(self, method: str, *args, **kwargs):
-        client_id = self.select_worker()
-        response = await self.dispatch_request_to_worker(method, client_id, *args, **kwargs)
-        if self.response_handler:
-            _response = self.response_handler(response)
-            if _response is not None:
-               response = _response
-        return response
+        try:
+            self.stats[method] += 1
+            client_id = self.select_worker()
+            response = await self.dispatch_request_to_worker(method, client_id, *args, **kwargs)
+            if self.response_handler:
+                _response = self.response_handler(response)
+                if _response is not None:
+                    response = _response                
+            return response
+        except:
+            self.stats[f'{method}_error'] += 1
+            raise        
 
     def _torrent_info_make_files_digest(self, torrent_info: Dict[str, Any], bag_id: str):
         if 'files' not in torrent_info:
@@ -441,13 +460,13 @@ class TonStorageCliManager:
         return await self.dispatch_request(method)
 
     async def node_list(self):
-        method = 'run_list'
+        method = 'cmd_list'
         return await self.dispatch_request(method)
 
     async def node_create(self, path: str, description: str | dict | list = None, 
                           copy: bool = False, no_upload: bool = False,
                           check_existance: bool = True):
-        method = 'run_create'
+        method = 'cmd_create'
         result = await self.dispatch_request(method, path, description=description, 
                                            copy=copy, no_upload=no_upload, 
                                            check_existance=check_existance)
@@ -456,41 +475,45 @@ class TonStorageCliManager:
         self._torrent_info_make_files_digest(result, bag_id)
         return result        
     
-    async def node_add(self, bag_id: str | bytes):
+    async def node_add(self, bag_id: str | bytes, paused: bool = False):
         bag_id = parse_bag_id(bag_id)
-        method = 'run_add'
-        result = await self.dispatch_request(method, bag_id)
+        method = 'cmd_add'
+        result = await self.dispatch_request(method, bag_id, paused=paused)        
         self.storage_lru.upsert(bag_id)
         return result
 
     async def node_remove(self, bag_id: str | bytes):
         bag_id = parse_bag_id(bag_id)
-        method = 'run_remove'
+        method = 'cmd_remove'
         result = await self.dispatch_request(method, bag_id)
         self.storage_lru.remove(bag_id)
         return result
 
     async def node_upload_resume(self, bag_id: str | bytes):
         bag_id = parse_bag_id(bag_id)
-        method = 'run_upload_resume'
+        method = 'cmd_upload_resume'
         return await self.dispatch_request(method, bag_id)
-    
+
+    async def node_download_resume(self, bag_id: str | bytes):
+        bag_id = parse_bag_id(bag_id)
+        method = 'cmd_download_resume'
+        return await self.dispatch_request(method, bag_id)
+
     async def node_upload_suspend(self, bag_id: str | bytes):
         bag_id = parse_bag_id(bag_id)
-        method = 'run_upload_suspend'
+        method = 'cmd_upload_suspend'
         return await self.dispatch_request(method, bag_id)
 
     async def node_get(self, bag_id: str | bytes):
         bag_id = parse_bag_id(bag_id)
-        method = 'run_get'
+        method = 'cmd_get'
         result = await self.dispatch_request(method, bag_id)
         self._torrent_info_make_files_digest(result, bag_id)
         return result
     
-
     async def node_get_peers(self, bag_id: str | bytes):
         bag_id = parse_bag_id(bag_id)
-        method = 'run_get_peers'
+        method = 'cmd_get_peers'
         return await self.dispatch_request(method, bag_id)
     
 

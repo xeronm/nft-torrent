@@ -37,7 +37,7 @@ class TonStorageCli:
 
     def open(self):
         if self._proc is not None:
-            return True
+            return
         
         if not os.path.isfile(self.settings.storage_cli_binary):
             raise FileExistsError(f'Binary "{self.settings.storage_cli_binary}" not exists')
@@ -58,17 +58,15 @@ class TonStorageCli:
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         except OSError as E:
             logger.error("TonStorageCli #{client_id:03d}: Popen error - {exc}", client_id=self.client_id, exc=E)
-            return False
+            raise
 
         try:
             self._read_until('Connected', timeout=self.settings.request_timeout, stderr=True)
         except subprocess.SubprocessError as E:
             logger.error("TonStorageCli #{client_id:03d}: Client communication error - {exc}", client_id=self.client_id, exc=E)
             self.terminate()
-            return False
-        
+            raise        
         logger.info("Session opened.")
-        return True        
             
     def close(self):
         if not self.is_alive():
@@ -163,14 +161,17 @@ class TonStorageCli:
         raise subprocess.CalledProcessError(self._proc.poll(), self.settings.storage_cli_binary, 
                                             output=output)
 
-    def _run_command(self, command: str, as_json=True):
-        if not self.is_alive():
-            self.open()
-
+    def _cmd_command(self, command: str, as_json=True):
         try:
+            if not self.is_alive():
+                self.open()
+                if not self.is_alive():
+                    raise subprocess.SubprocessError('')
+
             logger.debug("TonStorageCli #{client_id:03d}: CLI run command: {command}", 
                          client_id=self.client_id, command=command)
             response = None
+            
             if as_json:
                 self._proc.stdin.write(f'{command} --json\n'.encode())
                 self._proc.stdin.flush()
@@ -189,7 +190,7 @@ class TonStorageCli:
             raise
 
     def node_get_state(self):
-        peers = self.run_get_peers(self.settings.manifest_bag_id)
+        peers = self.cmd_get_peers(self.settings.manifest_bag_id)
         if (isinstance(peers, dict) and 'peers' in peers):
             return [
                 {
@@ -204,34 +205,42 @@ class TonStorageCli:
             # Error
             return peers
         
-    def run_list(self):
-        return self._run_command('list')
+    def cmd_list(self):
+        return self._cmd_command('list')
 
-    def run_add(self, bag_id: str | bytes):
+    def cmd_add(self, bag_id: str | bytes, paused: bool = False):
+        command = 'add-by-hash '
         bag_id = parse_bag_id(bag_id)
-        return self._run_command(f'add-by-hash {bag_id}') 
+        if paused:
+            command += '--paused '        
+        command += bag_id
+        return self._cmd_command(command) 
 
-    def run_remove(self, bag_id: str | bytes):
+    def cmd_remove(self, bag_id: str | bytes):
         bag_id = parse_bag_id(bag_id)
-        return self._run_command(f'remove {bag_id}', as_json=False) 
+        return self._cmd_command(f'remove {bag_id}', as_json=False) 
 
-    def run_upload_resume(self, bag_id: str | bytes):
+    def cmd_upload_resume(self, bag_id: str | bytes):
         bag_id = parse_bag_id(bag_id)
-        return self._run_command(f'upload-resume {bag_id}', as_json=False) 
+        return self._cmd_command(f'upload-resume {bag_id}', as_json=False) 
 
-    def run_upload_pause(self, bag_id: str | bytes):
+    def cmd_upload_pause(self, bag_id: str | bytes):
         bag_id = parse_bag_id(bag_id)
-        return self._run_command(f'upload-pause {bag_id}', as_json=False) 
+        return self._cmd_command(f'upload-pause {bag_id}', as_json=False) 
 
-    def run_get_peers(self, bag_id: str | bytes):
+    def cmd_download_resume(self, bag_id: str | bytes):
         bag_id = parse_bag_id(bag_id)
-        return self._run_command(f'get-peers {bag_id}') 
-
-    def run_get(self, bag_id: str | bytes):        
-        bag_id = parse_bag_id(bag_id)
-        return self._run_command(f'get {bag_id}') 
+        return self._cmd_command(f'download-resume {bag_id}', as_json=False) 
     
-    def run_create(self, path: str, description: str | dict | list = None, copy: bool = False, no_upload : bool = False,
+    def cmd_get_peers(self, bag_id: str | bytes):
+        bag_id = parse_bag_id(bag_id)
+        return self._cmd_command(f'get-peers {bag_id}') 
+
+    def cmd_get(self, bag_id: str | bytes):        
+        bag_id = parse_bag_id(bag_id)
+        return self._cmd_command(f'get {bag_id}') 
+    
+    def cmd_create(self, path: str, description: str | dict | list = None, copy: bool = False, no_upload : bool = False,
                    check_existance: bool = True):
         if not path or not isinstance(path, str):
             raise ValueError(f'Invalid path value, must be non-empty string')
@@ -246,7 +255,7 @@ class TonStorageCli:
         if no_upload:
             command += '--no-upload '
         command += path
-        return self._run_command(command)
+        return self._cmd_command(command)
 
 
 def __example():  # pragma: no cover
@@ -264,28 +273,28 @@ def __example():  # pragma: no cover
     peers = cli.node_get_state()
     print(peers)
 
-    out = cli.run_list()
+    out = cli.cmd_list()
 
-    out = cli.run_get('F70D2F7587DBDFD0928E1967A0B2783EC3ABD63846AEC3B055B4705AEF742871')
+    out = cli.cmd_get('F70D2F7587DBDFD0928E1967A0B2783EC3ABD63846AEC3B055B4705AEF742871')
 
-    out = cli.run_add('F70D2F7587DBDFD0928E1967A0B2783EC3ABD63846AEC3B055B4705AEF742871')    
+    out = cli.cmd_add('F70D2F7587DBDFD0928E1967A0B2783EC3ABD63846AEC3B055B4705AEF742871')    
     
-    out = cli.run_get('F70D2F7587DBDFD0928E1967A0B2783EC3ABD63846AEC3B055B4705AEF742871')
+    out = cli.cmd_get('F70D2F7587DBDFD0928E1967A0B2783EC3ABD63846AEC3B055B4705AEF742871')
     while out['torrent']['completed'] == False:
         time.sleep(3)
-        out = cli.run_get('F70D2F7587DBDFD0928E1967A0B2783EC3ABD63846AEC3B055B4705AEF742871')
+        out = cli.cmd_get('F70D2F7587DBDFD0928E1967A0B2783EC3ABD63846AEC3B055B4705AEF742871')
 
-    out = cli.run_add('F70D2F7587DBDFD0928E1967A0B2783EC3ABD63846AEC3B055B4705AEF742871')    
+    out = cli.cmd_add('F70D2F7587DBDFD0928E1967A0B2783EC3ABD63846AEC3B055B4705AEF742871')    
 
-    out = cli.run_get_peers('F70D2F7587DBDFD0928E1967A0B2783EC3ABD63846AEC3B055B4705AEF742871')
+    out = cli.cmd_get_peers('F70D2F7587DBDFD0928E1967A0B2783EC3ABD63846AEC3B055B4705AEF742871')
 
-    out = cli.run_remove('F70D2F7587DBDFD0928E1967A0B2783EC3ABD63846AEC3B055B4705AEF742871')
+    out = cli.cmd_remove('F70D2F7587DBDFD0928E1967A0B2783EC3ABD63846AEC3B055B4705AEF742871')
 
-    out = cli.run_remove('F70D2F7587DBDFD0928E1967A0B2783EC3ABD63846AEC3B055B4705AEF742871')
+    out = cli.cmd_remove('F70D2F7587DBDFD0928E1967A0B2783EC3ABD63846AEC3B055B4705AEF742871')
 
-    out = cli.run_create("C:/Work/ton-storage/file1.txt", {"nft_address": "kQDggbH8_-FjQOjYgh96uSlZpImO02o9cBberv3BQRfcw7mH"}, copy=True, check_existance=False)
+    out = cli.cmd_create("C:/Work/ton-storage/file1.txt", {"nft_address": "kQDggbH8_-FjQOjYgh96uSlZpImO02o9cBberv3BQRfcw7mH"}, copy=True, check_existance=False)
 
-    cli.run_remove(out['torrent']['hash'])
+    cli.cmd_remove(out['torrent']['hash'])
 
     cli.close()
 
