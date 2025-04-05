@@ -58,10 +58,19 @@ class Server:
     async def startup(self):
         self.loop = loop = asyncio.get_event_loop()
         logger.warning('Server startup initiated...')
-        logger.warning('Storage public address: {addr}, HTTP API Root: {api_root}, TWA: {domains}', 
+        logger.warning("Parameters:\n"
+        " - Public address: {addr}\n"
+        " - API Root: {api_root}\n"
+        " - TWA: {domains}\n"
+        " - Allow Networks: {networks}\n"
+        " - DB Path: {dbpath}\n"
+        " - Temp dir: {tempdir}\n", 
                     addr=self.settings.storage.storage_public_addr, 
                     api_root=self.settings.webserver.api_root_path,
-                    domains=self.settings.webserver.twa_domains)        
+                    domains=self.settings.webserver.twa_domains,
+                    networks=self.settings.webserver.allow_networks,
+                    dbpath=self.settings.storage.storage_db_path,
+                    tempdir=self.settings.storage.storage_temp_dir)
 
         # self.resolver = aiodns.DNSResolver(loop=self.loop)
 
@@ -340,7 +349,7 @@ class Server:
             raise exceptions.TorrentStorageError("Local storage node unable to comply required redundancy")
 
         torrent_info = None
-        with tempfile.TemporaryDirectory() as tmpdirname:
+        with tempfile.TemporaryDirectory(dir=self.settings.storage.storage_temp_dir) as tmpdirname:
             target_path = os.path.join(tmpdirname, self.settings.storage.torrent_dirname)
             logger.warning("Creating new NFT Torrent, NFT: {address}, path: {target_path}, bag_id: {bag_id}", 
                            address=address, target_path=target_path, bag_id=bag_id)

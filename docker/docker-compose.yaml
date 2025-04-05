@@ -4,7 +4,8 @@ services:
     restart: unless-stopped
     volumes:
       - ./storage-db:/storage-db
-    command: ./storage-daemon -d -v 3 -p 5555 -C /run/secrets/liteserver_config -D /storage-db -I ${TON_STORAGE_PUBLIC_ADDR}:3333
+      - /tmp/uploads:/uploads      
+    command: ./storage-daemon -v 3 -p 5555 -C /run/secrets/liteserver_config -D /storage-db -I ${TON_STORAGE_PUBLIC_ADDR}:3333
     secrets:
       - liteserver_config
     ports:
@@ -17,20 +18,23 @@ services:
     restart: unless-stopped
     environment:
       LOGURU_LEVEL: WARNING
+      LOGURU_COLORIZE: 1
       TON_STORAGE_NUM_WORKERS: 4
       TON_STORAGE_PUBLIC_ADDR: ${TON_STORAGE_PUBLIC_ADDR}
       TON_STORAGE_DAEMON_ADDR: storage:5555
-      TON_STORAGE_MANIFEST_BAG_ID: file:/run/secrets/storage_manifest
-      TON_API_TONLIB_REQUEST_TIMEOUT: 15
+      TON_STORAGE_TEMP_DIR: /uploads
+      TON_STORAGE_MANIFEST_BAG_ID: file:/run/secrets/storage_manifest      
+      TON_API_TONLIB_REQUEST_TIMEOUT: 20
       TON_API_TONLIB_LITESERVER_CONFIG: /run/secrets/liteserver_config
       HTTP_API_ROOT_PATH: ${HTTP_API_ROOT_PATH}
-      HTTP_JWT_SECRET: file:/run/secrets/jwt_key
+      HTTP_API_JWT_SECRET: file:/run/secrets/jwt_key
       HTTP_TWA_DOMAINS: 127.0.0.1:5173,127.0.0.1:5174
       HTTP_ALLOW_NETWORKS: 127.0.0.1/32,192.168.0.0/16
-      HTTP_REQUEST_TIMEOUT: 15
+      HTTP_REQUEST_TIMEOUT: 20
       HTTP_NFT_COLLECTIONS: NFTorrent.collections.collections
     volumes:
       - ./storage-db:/storage-db
+      - /tmp/uploads:/uploads
     secrets:
       - liteserver_config
       - storage_manifest
