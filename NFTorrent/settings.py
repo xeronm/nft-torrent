@@ -40,8 +40,9 @@ class TonStorageCliSettings:
     storage_cli_binary: str
     storage_daemon_addr: str
     storage_db_path: str
+    storage_temp_dir: str = None
     storage_db_torrent_path: str = None
-    storage_size_pressure = 10000
+    storage_size_pressure = 1000
     request_timeout: int = 5
     manifest_bag_id: str = None
     num_workers: int = 16
@@ -57,6 +58,7 @@ class TonStorageCliSettings:
         obj.storage_cli_binary = os.environ.get('TON_STORAGE_CLI_BINARY', './storage-daemon-cli')
         obj.storage_daemon_addr = os.environ.get('TON_STORAGE_DAEMON_ADDR', '127.0.0.1:5555')
         obj.storage_db_path = os.environ.get('TON_STORAGE_DB_PATH', './storage-db')
+        obj.storage_temp_dir = os.environ.get('TON_STORAGE_TEMP_DIR', None)        
         obj.storage_db_torrent_path = os.environ.get('TON_STORAGE_DB_TORRENT_PATH', None)
         obj.storage_size_pressure = int(os.environ.get('TON_STORAGE_SIZE_PRESSURE', cls.storage_size_pressure))
         obj.request_timeout = int(os.environ.get('TON_STORAGE_REQUEST_TIMEOUT', cls.request_timeout))
@@ -91,8 +93,8 @@ class WebServerSettings:
     def from_environment(cls):
         obj = cls.__new__(cls)
         obj.api_root_path = os.environ.get('HTTP_API_ROOT_PATH', '/')
-        obj.jwt_secret = _value_from_file(os.environ.get('HTTP_JWT_SECRET', None))
-        obj.jwt_algorithm = os.environ.get('HTTP_JWT_ALGORITHM', 'HS256')
+        obj.jwt_secret = _value_from_file(os.environ.get('HTTP_API_JWT_SECRET', None))
+        obj.jwt_algorithm = os.environ.get('HTTP_API_JWT_ALGORITHM', 'HS256')
         obj.port = os.environ.get('HTTP_PORT', None)
         if obj.port is not None:
             obj.port = int(obj.port)
