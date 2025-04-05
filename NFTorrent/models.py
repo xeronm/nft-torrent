@@ -55,6 +55,15 @@ class StorageTorrentMethod(BaseModel):
         return parse_bag_id(v)
 
 
+class StorageTorrentContentMethod(BaseModel):
+    bag_id: str = Path(description="Torrent bag id")
+    digest: str = Path(description="Content digest")
+
+    @validator('bag_id')
+    def validate_contract_address(cls, v):
+        return parse_bag_id(v)
+        
+
 class StoragePeerMethod(BaseModel):
     adnl_id: str = Path(description="ADNL id")
 

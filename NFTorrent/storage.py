@@ -208,9 +208,13 @@ class TonStorageCli:
     def cmd_list(self):
         return self._cmd_command('list')
 
-    def cmd_add(self, bag_id: str | bytes):
+    def cmd_add(self, bag_id: str | bytes, paused: bool = False):
+        command = 'add-by-hash '
         bag_id = parse_bag_id(bag_id)
-        return self._cmd_command(f'add-by-hash {bag_id}') 
+        if paused:
+            command += '--paused '        
+        command += bag_id
+        return self._cmd_command(command) 
 
     def cmd_remove(self, bag_id: str | bytes):
         bag_id = parse_bag_id(bag_id)
@@ -224,6 +228,10 @@ class TonStorageCli:
         bag_id = parse_bag_id(bag_id)
         return self._cmd_command(f'upload-pause {bag_id}', as_json=False) 
 
+    def cmd_download_resume(self, bag_id: str | bytes):
+        bag_id = parse_bag_id(bag_id)
+        return self._cmd_command(f'download-resume {bag_id}', as_json=False) 
+    
     def cmd_get_peers(self, bag_id: str | bytes):
         bag_id = parse_bag_id(bag_id)
         return self._cmd_command(f'get-peers {bag_id}') 

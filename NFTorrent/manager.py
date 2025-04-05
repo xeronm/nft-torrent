@@ -267,14 +267,19 @@ class TonStorageCliManager:
                                 delete_reason = None
                                 if not torrent_info['torrent']['completed']:
                                     delete_reason = 'incomplete'
-                                # 2. Delete all torrents which have at least min_redundancy+1 completed copies
+
+                                # 2. Delete all torrents with size limit exceeded
+                                if not torrent_info['torrent']['total_size'] or int(torrent_info['torrent']['total_size']) > self.settings.storage_bag_size_limit:
+                                    delete_reason = 'size limit=' + torrent_info['torrent']['total_size']
+
+                                # 3. Delete all torrents which have at least min_redundancy+1 completed copies
                                 copies_count = peers = None
                                 if not delete_reason:
                                     peers = await self.node_get_peers(bag_id)                        
                                     copies_count = len([x for x in peers['peers'] if x['ready_parts'] == peers['total_parts']])
                                     if copies_count > self.settings.min_redundancy:
                                         delete_reason = f'redundancy={copies_count}'
-                                # 3. Query delete LRU
+                                # 4. Query delete LRU
                                 if not delete_reason and self.query_delete_lru is not None:
                                     delete_reason = await self.query_delete_lru(bag_id, peers, torrent_info)
                                 
@@ -470,10 +475,10 @@ class TonStorageCliManager:
         self._torrent_info_make_files_digest(result, bag_id)
         return result        
     
-    async def node_add(self, bag_id: str | bytes):
+    async def node_add(self, bag_id: str | bytes, paused: bool = False):
         bag_id = parse_bag_id(bag_id)
         method = 'cmd_add'
-        result = await self.dispatch_request(method, bag_id)
+        result = await self.dispatch_request(method, bag_id, paused=paused)        
         self.storage_lru.upsert(bag_id)
         return result
 
@@ -488,7 +493,12 @@ class TonStorageCliManager:
         bag_id = parse_bag_id(bag_id)
         method = 'cmd_upload_resume'
         return await self.dispatch_request(method, bag_id)
-    
+
+    async def node_download_resume(self, bag_id: str | bytes):
+        bag_id = parse_bag_id(bag_id)
+        method = 'cmd_download_resume'
+        return await self.dispatch_request(method, bag_id)
+
     async def node_upload_suspend(self, bag_id: str | bytes):
         bag_id = parse_bag_id(bag_id)
         method = 'cmd_upload_suspend'
