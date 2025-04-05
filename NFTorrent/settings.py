@@ -1,10 +1,32 @@
 import os
 from typing import List
 from dataclasses import dataclass
+from importlib import import_module
 
 from pyTON import settings
 
 from NFTorrent.address import parse_bag_id
+from NFTorrent.models import NftCollection
+
+def import_string(dotted_path):
+    """
+    Import a dotted module path and return the attribute/class designated by the
+    last name in the path. Raise ImportError if the import failed.
+    """
+    try:
+        module_path, class_name = dotted_path.rsplit('.', 1)
+    except ValueError as err:
+        raise ImportError("%s doesn't look like a module path" % dotted_path) from err
+
+    module = import_module(module_path)
+
+    try:
+        return getattr(module, class_name)
+    except AttributeError as err:
+        raise ImportError('Module "%s" does not define a "%s" attribute/class' % (
+            module_path, class_name)
+        ) from err
+    
 
 def _value_from_file(value: str):
     if value and value.startswith('file:'):
@@ -61,7 +83,9 @@ class WebServerSettings:
     enable_ssl: bool = True
     verify_ssl: bool = True
     real_ip_header: bool = True
+    allow_networks: List[str] = None
     request_timeout: int = 10
+    nft_collections: List[NftCollection] = None
 
     @classmethod
     def from_environment(cls):
@@ -76,7 +100,9 @@ class WebServerSettings:
         obj.verify_ssl = settings.strtobool(os.environ.get('HTTP_VERIFY_SSL', 'true'))
         obj.real_ip_header = settings.strtobool(os.environ.get('HTTP_REAL_IP_HEADER', 'true'))
         obj.request_timeout = int(os.environ.get('HTTP_REQUEST_TIMEOUT', cls.request_timeout))
-        obj.twa_domains = [x.strip() for x in os.environ.get('HTTP_TWA_DOMAINS', '').split(',')]
+        obj.twa_domains = [x.strip() for x in os.environ.get('HTTP_TWA_DOMAINS', '').split(',') if x.strip()]
+        obj.nft_collections = import_string(os.environ.get('HTTP_NFT_COLLECTIONS', 'NFTorrent.collections.collections'))
+        obj.allow_networks = [x.strip() for x in os.environ.get('HTTP_ALLOW_NETWORKS', '').split(',') if x.strip()]
 
         return obj
 

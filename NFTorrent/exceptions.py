@@ -4,11 +4,11 @@ from fastapi import status
 
 from NFTorrent.address import parse_bag_id
 
-class TorrentPathNotFound(HTTPException):
+class TorrentFileNotFound(HTTPException):
 
     def __init__(self, detail: Any = None):
         super().__init__(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, 
-                         detail=detail or 'Path not found in torrent')
+                         detail=detail or 'Torrent File not found')
       
 
 class TorrentForbidden(HTTPException):

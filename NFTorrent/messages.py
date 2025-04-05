@@ -3,6 +3,8 @@ from tonpy.types import CellSlice
 from bitstring import BitArray
 
 from NFTorrent.address import parse_bag_id
+from NFTorrent.models import TvmStructure, NftContent
+
 
 # BCD encoded date mask
 # 4 octets - year; 2 Octets - month; 2 octets - day; 0x00 - means unspecified or unknown
@@ -41,8 +43,13 @@ def flatten_snake_cell(cs: CellSlice) -> bytes:
         cs = cs.load_ref(as_cs=True) if cs.refs else None
     return b''.join(buffer)
 
-class TvmStructure:
-    pass
+
+class GeoPoint:
+
+    def __init__(self, v: int):
+        self.is_south = (v >> 47) & 1 == 1
+        self.latitude = ((v >> 24) & 0x7FFFFF) * 90 / (1 << 23)
+        self.longitude = (v & 0xFFFFFF) * 360 / (1 << 24)
 
 class PetMemoryNftImmutableData(TvmStructure):
 
@@ -57,6 +64,7 @@ class PetMemoryNftImmutableData(TvmStructure):
         self.breed = _sc1.load_ref(as_cs=True).load_string() if _sc1.load_uint(1) else None
         self.lang = bcd2c_to_string(_sc1.load_uint(10)) if _sc1.load_uint(1) else None
         self.country_code = bcd2c_to_string(_sc1.load_uint(10))
+        self.geo_point = GeoPoint(_sc1.load_uint(48)) if _sc1.load_uint(1) else None
         self.location = _sc1.load_ref(as_cs=True).load_string() if _sc1.load_uint(1) else None
         self.birth_date = date_mask_to_string(_sc1.load_uint(32))
         self.death_date = date_mask_to_string(_sc1.load_uint(32))
@@ -72,14 +80,16 @@ class NftMutableMetaData(TvmStructure):
         _sc1 = _sc0.load_ref(as_cs=True)
         self.image = _sc1.load_ref(as_cs=True).load_string() if _sc1.load_uint(1) else None
 
-        self.imageData = None
+        self.image_data = None
         if _sc1.load_uint(1):            
             _img = _sc1.load_ref(as_cs=True)
             if _img.load_uint(8) != 0: # CONTENT_DATA_FORMAT_SNAKE
                 raise ValueError('Only snake format is supported')            
-            self.imageData = codecs.encode(flatten_snake_cell(_img), 'base64')
+            self.image_data = codecs.encode(flatten_snake_cell(_img), 'base64')
+        
 
-class PetMemoryNftContent(TvmStructure):
+
+class PetMemoryNftContent(NftContent):
 
     def __init__(self, cs: CellSlice):
         _sc0 = cs
@@ -91,3 +101,12 @@ class PetMemoryNftContent(TvmStructure):
 
     def bag_id(self):
         return self.data.bag_id
+    
+    def image(self):
+        return self.data.image
+
+    def image_data(self):
+        if not self.data.image_data:
+            return None
+        return codecs.decode(self.data.image_data, 'base64')
+

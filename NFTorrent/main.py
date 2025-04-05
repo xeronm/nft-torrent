@@ -1,6 +1,7 @@
 import asyncio
 import os
 from functools import wraps
+from typing import List, Optional
 
 from fastapi import FastAPI
 from fastapi.exceptions import ValidationError
@@ -14,8 +15,7 @@ from pytonlib import TonlibException
 from NFTorrent import __meta__
 from NFTorrent import models
 from NFTorrent.webserver import Server
-
-from loguru import logger
+from NFTorrent import messages
 
 ws = Server()
 
@@ -29,7 +29,7 @@ app = FastAPI(
     docs_url='/',
     responses={
         422: {'description': 'Validation Error'},
-        504: {'description': 'Lite Server Timeout'}
+        504: {'description': 'Server Timeout'}
     },
     root_path=ws.settings.webserver.api_root_path,
     openapi_tags=tags_metadata
@@ -97,16 +97,20 @@ async def healthcheck()-> models.HealthCheckResult:
     return await ws.get_healthcheck()
 
 
-@app.get('/tonlib/state', dependencies=[Depends(ws.jwt_bearer)], tags=['liteserver'])
+@app.get('/tonlib/state', dependencies=[Depends(ws.jwt_bearer)], tags=['liteserver'], 
+         response_model=models.TonlibManagerState)
 @wrap_result
 async def get_tonlib_worker_state():
     """
     Get liteservers state.
     """       
-    return ws.tonlib.get_workers_state()
+    return {
+        'liteservers': ws.tonlib.get_workers_state()
+    }
 
 
-@app.get('/storage/state', dependencies=[Depends(ws.jwt_bearer)], tags=['storage'])
+@app.get('/storage/state', dependencies=[Depends(ws.jwt_bearer)], tags=['storage'],
+         response_model=models.StorageManagerState)
 @wrap_result
 async def get_storage_state():
     """
@@ -115,7 +119,8 @@ async def get_storage_state():
     return ws.storage.get_storage_state()
 
 
-@app.get('/storage/peers', dependencies=[Depends(ws.jwt_bearer)], tags=['storage'])
+@app.get('/storage/peers', dependencies=[Depends(ws.jwt_bearer)], tags=['storage'],
+         response_model=List[models.NodePeerInfo])
 @wrap_result
 async def get_storage_node_peers():
     """
@@ -174,11 +179,29 @@ async def get_account_auth_payload() -> models.AuthPayload:
 
 
 @app.post('/account/auth', tags=['account'])
-async def create_account_auth_session(request: models.AuthData = Depends()) -> None:
+async def create_account_auth_session(body: models.AuthData) -> Optional[str]:
     """
     Auhtenticate account signature and create session 
     """
-    return ws.jwt_session.auth_session(request.account, request.proof)
+    return ws.jwt_session.auth_session(body.account, body.proof) or "Ok"
+
+
+@app.get('/c/{address}', response_model_exclude_none=True, tags=['nft-content'])
+@wrap_result
+async def get_nft_content_default_image(request: models.NftMethod = Depends()) -> FileResponse:
+    """
+    Get NFT default content image.
+    """
+    return await ws.get_default_image(request.address)
+
+
+@app.get('/c/{address}/{digest}', response_model_exclude_none=True, tags=['nft-content'])
+@wrap_result
+async def get_nft_content(request: models.NftContentMethod = Depends()) -> FileResponse:
+    """
+    Get NFT content by digest.
+    """
+    return await ws.get_nft_torrent_filename(request.address, digest=request.digest)
 
 
 @app.get('/nft/{address}', response_model_exclude_none=True, dependencies=[Depends(ws.jwt_session)], tags=['nft'])
@@ -187,7 +210,8 @@ async def get_nft_data(request: models.NftMethod = Depends()):
     """
     Get NFT Data information.
     """
-    return await ws.tonlib.get_nft_data(request.address, owner=request._contract)
+    nft_data, _ = await ws.tonlib.get_nft_data(request.address)
+    return nft_data
 
 
 @app.get('/nft/{address}/torrent', response_model_exclude_none=True, dependencies=[Depends(ws.jwt_session)], tags=['nft'])
@@ -196,7 +220,7 @@ async def get_nft_torrent(request: models.NftMethod = Depends()):
     """
     Get NFT Torrent information.
     """
-    return await ws.get_nft_torrent(request.address, owner=request._contract)
+    return await ws.get_nft_torrent(request.address)
 
 
 @app.get('/nft/{address}/torrent/{file_path:path}', response_model_exclude_none=True, dependencies=[Depends(ws.jwt_session)], tags=['nft'])
@@ -205,8 +229,7 @@ async def get_nft_torrent_file(request: models.NftStorageTorrentMethod = Depends
     """
     Get NFT Torrent File.
     """
-    filename = await ws.get_nft_torrent_filename(request.address, request.file_path, owner=request._contract)    
-    return FileResponse(path=filename)
+    return await ws.get_nft_torrent_filename(request.address, request.file_path)    
 
 
 @app.post('/nft/{address}/torrent', response_model_exclude_none=True, dependencies=[Depends(ws.jwt_session)], tags=['nft'])
@@ -214,4 +237,4 @@ async def create_nft_torrent(request: models.NftTorrentCreate = Depends()):
     """
     Create NFT Torrent.
     """
-    return await ws.create_nft_torrent(request.address, request.files, owner=request._contract)
+    return await ws.create_nft_torrent(request.address, request.files, owner=getattr(request, 'auth_wallet', None))

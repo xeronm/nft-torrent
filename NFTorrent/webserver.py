@@ -6,19 +6,21 @@ import os
 import shutil
 import tempfile
 
-from typing import Dict, List
+from typing import Dict, List, Any
 from loguru import logger
 
 from fastapi.exceptions import HTTPException
+from fastapi.responses import RedirectResponse, StreamingResponse, FileResponse
 from fastapi import status
 from fastapi import UploadFile
 
-from pytonlib.utils.address import prepare_address
+from pytonlib.utils.address import prepare_address, detect_address
 
 from pyTON.cache import CacheManager, RedisCacheManager, DisabledCacheManager
 from pyTON.settings import RedisCacheSettings
 
-from NFTorrent.pyTON.manager import TonlibManager, NftCollection
+from NFTorrent.pyTON.manager import TonlibManager
+from NFTorrent.models import NftCollection, NftContent
 from NFTorrent.settings import Settings
 from NFTorrent import exceptions, messages
 from NFTorrent.manager import TonStorageCliManager
@@ -26,30 +28,35 @@ from NFTorrent.exceptions import TorrentClientError
 from NFTorrent.auth import NodeJWTBearer, ContractAPIKeyCookie
 from NFTorrent.address import parse_bag_id
 
+
 class Server:
 
-    def __init__(self, loop: asyncio.AbstractEventLoop = None, settings: Settings = None):
+    def __init__(self, settings: Settings = None, nft_collections: List[NftCollection] = None):
         self.settings = settings or Settings.from_environment()
+        self.nft_collections = { x.raw_address: x for x in nft_collections or self.settings.webserver.nft_collections }
         self.tonlib: TonlibManager = None
         self.storage: TonStorageCliManager = None
         self.peer_hostnames = {}
+        self.loop = None
         # self.resolver: aiodns.DNSResolver = None
-        self.loop = loop or asyncio.get_event_loop()
         self.jwt_bearer = NodeJWTBearer(subject=self.settings.storage.storage_public_addr,
                            jwt_secret=self.settings.webserver.jwt_secret,
                            jwt_algorithm=self.settings.webserver.jwt_algorithm,
                            node_state=self.get_node_state,
-                           real_ip_header=self.settings.webserver.real_ip_header)
+                           real_ip_header=self.settings.webserver.real_ip_header,
+                           allow_networks=self.settings.webserver.allow_networks)
         
         self.jwt_session = ContractAPIKeyCookie(jwt_secret=self.settings.webserver.jwt_secret,
                                                  jwt_algorithm=self.settings.webserver.jwt_algorithm,
                                                  real_ip_header=self.settings.webserver.real_ip_header,
-                                                 domains=self.settings.webserver.twa_domains)
+                                                 domains=self.settings.webserver.twa_domains,
+                                                 allow_networks=self.settings.webserver.allow_networks)
     
     def get_node_state(self):
         return self.storage.get_cached_node_state()
 
     async def startup(self):
+        self.loop = loop = asyncio.get_event_loop()
         logger.warning('Server startup initiated...')
         logger.warning('Storage public address: {addr}, HTTP API Root: {api_root}, TWA: {domains}', 
                     addr=self.settings.storage.storage_public_addr, 
@@ -71,12 +78,8 @@ class Server:
             self.tonlib = TonlibManager(tonlib_settings=self.settings.tonlib,
                                 dispatcher=None,
                                 cache_manager=cache_manager,
-                                loop=self.loop,
-                                nft_collections=[
-                                    NftCollection(
-                                        'EQDZvNPzp8kfHUBbvQRovtHOquSy6ZN_p-toP_ed35gyH1vL', 
-                                        messages.PetMemoryNftContent
-                                        )])
+                                loop=loop,
+                                nft_collections=self.nft_collections)
         else:
             logger.warning("Tonlib disabled, liteserver_config required")
 
@@ -86,11 +89,12 @@ class Server:
                                         cache_manager=cache_manager,
                                         response_handler=TorrentClientError.from_response,
                                         query_delete_lru=self._nft_query_delete_lru,
-                                        loop=self.loop)
+                                        loop=loop)
         else:
             logger.warning("Storage disabled, num_workers required")
 
         await asyncio.sleep(3) # wait for manager to spawn all workers and report their status
+
 
     async def shutdown(self):
         logger.warning('Server shutdown initiated...')
@@ -100,7 +104,7 @@ class Server:
         ], return_when=asyncio.ALL_COMPLETED)
 
     async def _get_nft_bag_id(self, address: str, skip_verification: bool = False, owner: str = None):
-        nft_data = await self.tonlib.get_nft_data(address, skip_verification, owner=owner)
+        nft_data, _ = await self.tonlib.get_nft_data(address, skip_verification, owner=owner)
         nft_content = nft_data['individual_content']
 
         bag_id = None
@@ -118,7 +122,7 @@ class Server:
         except ValueError:
             return 'Invalid NFT reference'
 
-        nft_data = await self.tonlib.get_nft_data(address)
+        nft_data, _ = await self.tonlib.get_nft_data(address)
         nft_content = nft_data['individual_content']
         nft_bag_id = nft_content.bag_id()
 
@@ -131,8 +135,8 @@ class Server:
 
         return None
 
-    async def get_nft_torrent(self, address, add_on_notfound: bool = True, owner: str = None):
-        bag_id = await self._get_nft_bag_id(address, owner=owner)
+    async def get_nft_torrent(self, address: str, bag_id: str = None, add_on_notfound: bool = True):
+        bag_id = bag_id or await self._get_nft_bag_id(address)
         if bag_id is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)    
         
@@ -142,8 +146,9 @@ class Server:
             if not add_on_notfound:
                 raise
             await self.storage.node_add(bag_id)
-            await asyncio.sleep(1)
+            await asyncio.sleep(2)
             result = await self.storage.node_get(bag_id)
+
         return result
 
     async def _torrent_apply_redundancy_policy(self, bag_id: str, peers: Dict = None):
@@ -178,6 +183,9 @@ class Server:
                                             allow_redirects=False) as resp:
                         if resp.status == status.HTTP_200_OK:
                             replica_set.add(node["adnl_id"])
+                        else:
+                            logger.warning("Add torrent to storage peer error, ADNL: {adnl}, host: {host}, BAG Id: {bag_id}, status: {status}, body: {body}", 
+                                           adnl=node["adnl_id"], host=host, bag_id=bag_id, status=resp.status, body=await resp.read())
                 except Exception as E: 
                     logger.warning("Add torrent to storage peer error, ADNL: {adnl}, host: {host}, BAG Id: {bag_id}, exc: {exc}", 
                                 adnl=node["adnl_id"], host=host, bag_id=bag_id, exc=str(E))
@@ -237,7 +245,7 @@ class Server:
     # API
     async def get_healthcheck(self):
         tonlib_state = sum([1 for x in self.tonlib.get_workers_state().values() if x['is_working']])
-        stotage_state = sum([1 for x in self.storage.get_workers_state() if x['is_healthy']])
+        stotage_state = sum([1 for x in self.storage.get_workers_state().values() if x['is_healthy']])
 
         return {
             'tonlib': bool(tonlib_state),
@@ -270,30 +278,60 @@ class Server:
         result.update(peer[0])
         return result    
     
-    async def get_nft_torrent_filename(self, address: str, file_path: str, owner: str = None) -> str:
-        torrent_info = await self.get_nft_torrent(address, owner=owner)
+    async def get_nft_torrent_filename(self, address: str, bag_id: str = None, file_path: str = None, digest: str = None) -> str:
+        torrent_info = await self.get_nft_torrent(address, bag_id=bag_id)
         if not torrent_info['torrent']['completed'] and int(torrent_info['torrent']['files_count']) == 0:
             raise exceptions.TorrentStorageError("Torrent meta not ready")
-        file_path = os.path.normpath(file_path)
+        
+        files = None
+        if file_path is not None:
+            file_path = os.path.normpath(file_path)
+            files = [x for x in torrent_info['files'] if x['name'] == file_path]
+        if digest is not None:
+            files = [x for x in torrent_info['files'] if x['digest'] == digest]
 
-        files = [x for x in torrent_info['files'] if x['name'] == file_path]
         if not files:
-            raise exceptions.TorrentPathNotFound()
+            raise exceptions.TorrentFileNotFound()
         
         if files[0]['size'] != files[0]['downloaded_size']:
-            # TODO: Trru to locate peer with ready parts and proxy request
+            # TODO: Try to locate peer with ready parts and proxy request
             raise exceptions.TorrentStorageError("Torrent file not ready")
         
+        bag_id = parse_bag_id(torrent_info['torrent']['hash'])
         target_file = os.path.join(
             self.settings.storage.storage_db_torrent_path or os.path.join(self.settings.storage.storage_db_path, 'torrent/torrent-files'), 
-            parse_bag_id(torrent_info['torrent']['hash']),
+            bag_id,
             self.settings.storage.torrent_dirname,
             files[0]['name'])
-        if not os.path.isfile(target_file):
+        if not os.path.isfile(target_file):            
+            logger.warning("Torrent file not exists in daemon storage, bag_id: {bag_id}, file={filename}", bag_id=bag_id, filename=target_file)
             raise exceptions.TorrentStorageError("Torrent file not exists in daemon storage")
         
-        return target_file
+        return FileResponse(target_file, headers={"Cache-Control": "public, max-age=3600"})
     
+    async def get_default_image(self, address: str):
+        headers = {"Cache-Control": "public, max-age=3600"}
+        nft_collection = self.nft_collections.get(detect_address(address)['raw_form'])
+        if nft_collection is not None:
+            return FileResponse(nft_collection.image, headers=headers)
+        
+        nft_data, nft_collection = await self.tonlib.get_nft_data(address)        
+        nft_content: NftContent = nft_data['individual_content']
+
+        image = nft_content.image()
+        if nft_content.bag_id() and image and image[0] == ":":
+            return await self.get_nft_torrent_filename(address, bag_id=nft_content.bag_id(), digest=image[1:])
+        if image:
+            return RedirectResponse(image)
+        if nft_content.image_data():
+            def _data_stream():
+                yield nft_content.image_data()
+            response = StreamingResponse(_data_stream(), media_type='image/webp', headers=headers)
+            return response
+            
+        # TODO: Generate dynamic default image with pets Name
+        return HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+        
     async def create_nft_torrent(self, address: str, files: List[UploadFile], owner: str = None):
         bag_id = await self._get_nft_bag_id(address, owner=owner)
         node_state = await self.storage.get_node_state()
@@ -316,7 +354,7 @@ class Server:
             
             torrent_description = f'nft:{address}'
             try:
-                torrent_info = await self.storage.node_create(os.path.join(target_path, ''), 
+                torrent_info = await self.storage.node_create(os.path.join(target_path), 
                                                         torrent_description, copy=True, 
                                                         check_existance=False, 
                                                         no_upload=True)
@@ -328,11 +366,11 @@ class Server:
                 # trying to recreate
                 if not torrent_info['torrent']['completed']:                
                     await self.storage.node_remove(E.bag_id)
-                    torrent_info = await self.storage.node_create(os.path.join(target_path, ''), 
+                    torrent_info = await self.storage.node_create(os.path.join(target_path), 
                                                             torrent_description, copy=True, 
                                                             check_existance=False, 
                                                             no_upload=True)
-        
+
         new_bag_id = parse_bag_id(torrent_info['torrent']['hash'])
         if not torrent_info['torrent']['active_upload']:
             if bag_id != new_bag_id:

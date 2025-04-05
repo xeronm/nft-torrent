@@ -19,6 +19,7 @@ class TonStorageCli:
         self.settings = settings
         self.calls_stat: Dict[str, int] = {}
         self._proc = None
+        self.last_error = None
 
     def terminate(self):
         if self._proc is None:
@@ -159,7 +160,8 @@ class TonStorageCli:
                                 if braces == 0:
                                     return json.loads(buffer)
                             
-        raise subprocess.CalledProcessError(self._proc.poll(), self.settings.storage_cli_binary, output=output, stderr=None)
+        raise subprocess.CalledProcessError(self._proc.poll(), self.settings.storage_cli_binary, 
+                                            output=output, stderr=self._proc.stderr.read1().decode())
 
     def _run_command(self, command: str, as_json=True):
         if not self.is_alive():
@@ -182,6 +184,7 @@ class TonStorageCli:
                          client_id=self.client_id, response=json.dumps(response))
             return response
         except subprocess.SubprocessError as E:
+            self.last_error = E
             self.terminate()
             raise
 

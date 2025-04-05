@@ -6,9 +6,10 @@ import heapq
 import queue
 import os
 import shutil
+import hashlib
+import base64
 from pathlib import Path
 
-from collections.abc import Mapping
 from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
 
@@ -22,7 +23,6 @@ from NFTorrent import exceptions
 
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any
-from datetime import datetime
 
 from loguru import logger
 
@@ -75,14 +75,13 @@ class TonStorageCliManager:
 
         self.workers: Dict[int, WorkerControl] = {}
         self.storage_lru = TonStorageLru()
-        self.pinned_queue = []
         self.tasks = {}
 
         # cache setup
         self.setup_cache()
 
         logger.warning("TonStorageCliManager: starting... workers: {num_workers}", num_workers=self.num_workers)
-        self.threadpool_executor = ThreadPoolExecutor(max_workers=max(32, self.num_workers * 3))
+        self.threadpool_executor = ThreadPoolExecutor(max_workers=max(32, self.num_workers * 4))
 
         # workers spawn
         self.loop = loop or asyncio.get_running_loop()
@@ -168,6 +167,7 @@ class TonStorageCliManager:
         wctl._start_time = time.monotonic()
         wctl.start_time = time.time()
         wctl.worker.start()
+        wctl.is_alive = wctl.worker.is_alive()
 
     async def worker_control(self, client_id, enabled):
         if enabled == False:            
@@ -209,7 +209,7 @@ class TonStorageCliManager:
             try:
                 self.storage_lru = TonStorageLru()
 
-                logger.warning("TonStorageCliManager: torrent_lru_manager reading path: {path}", path=self.settings.storage_db_torrent_path)
+                logger.warning("TonStorageCliManager[torrent_lru_manager]: reading path: {path}", path=self.settings.storage_db_torrent_path)
                 path = Path(self.settings.storage_db_torrent_path)
                 mtime_queue = []
                 bulk_cnt = 0
@@ -230,7 +230,7 @@ class TonStorageCliManager:
                         bulk_cnt = 0
                         await asyncio.sleep(0.1)
 
-                logger.warning("TonStorageCliManager: torrent_lru_manager found torrents: {count}", count=len(mtime_queue))
+                logger.warning("TonStorageCliManager[torrent_lru_manager]: found torrents: {count}", count=len(mtime_queue))
 
                 bulk_cnt = 0
                 while len(mtime_queue):
@@ -241,12 +241,9 @@ class TonStorageCliManager:
                         bulk_cnt = 0
                         await asyncio.sleep(0.1)
 
+                logger.warning("TonStorageCliManager[torrent_lru_manager]: entering main loop")
                 while True:
                     await asyncio.sleep(3)
-                    try:
-                        await self.get_node_state()
-                    except (exceptions.TorrentClientError, OSError, asyncio.exceptions.TimeoutError) as E:
-                        pass
 
                     first_bag_id = None
                     while self.storage_lru.size > self.settings.storage_size_pressure:
@@ -254,7 +251,7 @@ class TonStorageCliManager:
                         if first_bag_id is None:
                             first_bag_id = bag_id
                         elif first_bag_id == bag_id:                            
-                            logger.error("TonStorageCliManager: torrent_lru_manager can't keep limits, size: {size}, pressure: {pressure}", 
+                            logger.error("TonStorageCliManager[torrent_lru_manager]: can't keep limits, size: {size}, pressure: {pressure}", 
                                          size=self.storage_lru.size, pressure=self.settings.storage_size_pressure)
                             await asyncio.sleep(30)
                             break
@@ -279,7 +276,7 @@ class TonStorageCliManager:
                                     delete_reason = await self.query_delete_lru(bag_id, peers, torrent_info)
                                 
                                 if delete_reason:
-                                    logger.warning("TonStorageCliManager: torrent_lru_manager remove, BAG_ID: {bag_id}, reason: {reason}", 
+                                    logger.warning("TonStorageCliManager[torrent_lru_manager]: remove, BAG_ID: {bag_id}, reason: {reason}", 
                                                 bag_id=bag_id, reason=delete_reason)
                                     await self.node_remove(bag_id)
                                 else:
@@ -288,31 +285,37 @@ class TonStorageCliManager:
                             except asyncio.CancelledError:
                                 raise
                             except exceptions.TorrentNotFound:
-                                logger.warning("TonStorageCliManager: torrent_lru_manager torrent not found, BAG_ID: {bag_id}", bag_id=bag_id)
+                                logger.warning("TonStorageCliManager[torrent_lru_manager]: torrent not found, BAG_ID: {bag_id}", bag_id=bag_id)
                                 shutil.rmtree(os.path.join(self.settings.storage_db_torrent_path, bag_id))
                             except (exceptions.TorrentClientError, OSError, asyncio.exceptions.TimeoutError) as E:
-                                logger.warning("TonStorageCliManager: torrent_lru_manager error, BAG_ID: {bag_id}, {exc}", 
+                                logger.warning("TonStorageCliManager[torrent_lru_manager]: error, BAG_ID: {bag_id}, {exc}", 
                                                bag_id=bag_id, exc=str(E))
                                 await asyncio.sleep(10)                    
 
             except asyncio.CancelledError:
-                logger.info("TonStorageCliManager: Task \"torrent_lru_manager\" was cancelled")
+                logger.info("TonStorageCliManager[torrent_lru_manager]: Task was cancelled")
                 return
             except:
-                logger.error("TonStorageCliManager: Task \"torrent_lru_manager\" terminated with exception: {exc}", 
+                logger.error("TonStorageCliManager[torrent_lru_manager]: Task terminated with exception: {exc}", 
                              exc=traceback.format_exc())
                 await asyncio.sleep(300)                
 
     async def check_children_alive(self):
+        logger.warning("TonStorageCliManager[check_children_alive]: entering main loop")
         while True:
             try:
+                try:
+                    await self.get_node_state()
+                except (exceptions.TorrentClientError, OSError, asyncio.exceptions.TimeoutError) as E:
+                    logger.info("TonStorageCliManager[check_children_alive]: failed to get node state, exc: {exc}", exc=str(E))
+
                 for client_id in self.workers:
                     current_time = time.monotonic()
                     wctl = self.workers[client_id]
                     
                     _is_alive = wctl.worker.is_alive()
                     if wctl.is_alive and not _is_alive:
-                        logger.error("TonStorageCliManager: Worker #{client_id:03d} is dead, exitcode: {exitcode}", 
+                        logger.error("TonStorageCliManager[check_children_alive]: Worker #{client_id:03d} is dead, exitcode: {exitcode}", 
                                      client_id=client_id, exitcode=wctl.worker.exitcode)
                     wctl.is_alive = _is_alive
 
@@ -323,10 +326,10 @@ class TonStorageCliManager:
                         self.spawn_worker(client_id, force_restart=True)
                 await asyncio.sleep(1)
             except asyncio.CancelledError:
-                logger.info("TonStorageCliManager: Task \"check_children_alive\" was cancelled")
+                logger.info("TonStorageCliManager[check_children_alive]: Task was cancelled")
                 return
             except:
-                logger.critical("TonStorageCliManager: Task \"check_children_alive\" terminated with exception: {exc}", exc=traceback.format_exc())                
+                logger.critical("TonStorageCliManager[check_children_alive]: Task terminated with exception: {exc}", exc=traceback.format_exc())                
                 await asyncio.sleep(10)
 
     def get_cached_node_state(self):
@@ -424,6 +427,15 @@ class TonStorageCliManager:
                response = _response
         return response
 
+    def _torrent_info_make_files_digest(self, torrent_info: Dict[str, Any], bag_id: str):
+        if 'files' not in torrent_info:
+            return
+        
+        for f in torrent_info['files']:
+            digest = hashlib.shake_256((bag_id + f['name']).encode()).digest(15)
+            f['digest'] = base64.b32encode(digest).decode().lower()    
+
+
     async def node_get_state(self):
         method = 'node_get_state'
         return await self.dispatch_request(method)
@@ -439,7 +451,9 @@ class TonStorageCliManager:
         result = await self.dispatch_request(method, path, description=description, 
                                            copy=copy, no_upload=no_upload, 
                                            check_existance=check_existance)
-        self.storage_lru.upsert(parse_bag_id(result['torrent']['hash']))
+        bag_id = parse_bag_id(result['torrent']['hash'])
+        self.storage_lru.upsert(bag_id)
+        self._torrent_info_make_files_digest(result, bag_id)
         return result        
     
     async def node_add(self, bag_id: str | bytes):
@@ -469,7 +483,10 @@ class TonStorageCliManager:
     async def node_get(self, bag_id: str | bytes):
         bag_id = parse_bag_id(bag_id)
         method = 'run_get'
-        return await self.dispatch_request(method, bag_id)
+        result = await self.dispatch_request(method, bag_id)
+        self._torrent_info_make_files_digest(result, bag_id)
+        return result
+    
 
     async def node_get_peers(self, bag_id: str | bytes):
         bag_id = parse_bag_id(bag_id)
