@@ -6,8 +6,10 @@ import hashlib
 import struct
 import base64
 from jwt.exceptions import InvalidTokenError
+from aiohttp import ClientResponse
 
 from nacl.signing import VerifyKey
+from pydantic import BaseModel
 from fastapi import Request, HTTPException, status, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, APIKeyCookie
 
@@ -17,14 +19,22 @@ from NFTorrent import models
 from loguru import logger
 
 
+class JWTPayload(BaseModel):
+    sub: str
+    aud: List[str]
+    exp: int
+
 class InvalidSubjectError(InvalidTokenError):
     pass
 
 class SignatureVerificationError(Exception):
     pass
 
+class ServerResponseAuthError(Exception):
+    pass
 
 class NodeJWTBearer(HTTPBearer):
+    response_header = "X-Peer-Bearer-Token"
 
     def __init__(self, subject: str = None, 
                  jwt_secret: str = None, jwt_algorithm = None,
@@ -50,22 +60,46 @@ class NodeJWTBearer(HTTPBearer):
         if self.real_ip_header:
             client_ip = request.headers.get('X-Real-IP', client_ip)
         if self.allow_networks and [True for x in self.allow_networks if ipaddress.ip_address(client_ip) in x]:
-            return
+            request.state.bearer_auth_client_ip = client_ip
+            return {}
         
         credentials: HTTPAuthorizationCredentials = await super().__call__(request)
-        if credentials:
-            try:
-                self.verify_jwt_token(credentials.credentials, client_ip)
-            except InvalidTokenError as E:
-                logger.info('NodeJWTBearer: token validation error, token: {token}, client_ip: {client_ip}, {exc}', 
-                            token=credentials.credentials,
-                            client_ip=client_ip, 
-                            exc=str(E))
+        if credentials is None:
+            return None
+        try:
+            payload = self.verify_jwt_token(credentials.credentials, client_ip)
+        except InvalidTokenError as E:
+            logger.info('NodeJWTBearer: token validation error, token: {token}, client_ip: {client_ip}, {exc}', 
+                        token=credentials.credentials,
+                        client_ip=client_ip, 
+                        exc=str(E))
+            if self.auto_error:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid or expired token")
-            
-            return credentials.credentials
-        else:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid authorization code")
+            else:
+                return None
+        
+        request.state.bearer_auth_client_ip = client_ip
+        return payload
+
+    async def response_credentials(self, response: ClientResponse, server_ip: str):        
+        response_token = response.headers.get(self.response_header)
+        if not response_token:
+            if self.auto_error:
+                raise ServerResponseAuthError("Response not authenticated")
+            else:
+                return None
+        try:
+            payload = self.verify_jwt_token(response_token, server_ip)
+        except InvalidTokenError as E:
+            logger.info('NodeJWTBearer: token validation error, token: {token}, server_ip: {server_ip}, {exc}', 
+                        token=response_token,
+                        server_ip=server_ip, 
+                        exc=str(E))
+            if self.auto_error:
+                raise ServerResponseAuthError("Invalid or expired token")
+            else:
+                return None
+        return payload
 
     def get_jwt_token(self, audience: str) -> Dict[str, Any]:
         token, expires = self._jwt_cache.get(audience, (None, None))
@@ -83,17 +117,17 @@ class NodeJWTBearer(HTTPBearer):
         self._jwt_cache[audience] = (token, expires)
         return token
 
-    def verify_jwt_token(self, jwtoken: str, client_ip: str):
+    def verify_jwt_token(self, jwtoken: str, subject_ip: str):
         payload = jwt.decode(jwtoken, self.jwt_secret, 
                              audience=self.subject, 
                              algorithms=[self.jwt_algorithm])
-        logger.debug('NodeJWTBearer:verify_jwt_token: decoded token, client: {client_ip}, payload: {payload}', 
-                     client_ip=client_ip, payload=str(payload))
+        logger.debug('NodeJWTBearer:verify_jwt_token: decoded token, subject: {subject_ip}, payload: {payload}', 
+                     subject_ip=subject_ip, payload=str(payload))
 
         subject = payload.get('sub', None)
         if not subject:
             raise InvalidSubjectError('Subject required')
-        if subject != client_ip:
+        if subject != subject_ip:
             raise InvalidSubjectError('Subject not match client address')
         
         _node_state = self.node_state()
@@ -107,6 +141,7 @@ class NodeJWTBearer(HTTPBearer):
 
         if subject != self.subject and subject not in self._node_state_map:
             raise InvalidSubjectError('Subject not known')
+        return JWTPayload(**payload)
 
 
 class ContractAPIKeyCookie(APIKeyCookie):
@@ -151,8 +186,7 @@ class ContractAPIKeyCookie(APIKeyCookie):
                         exc=str(E))
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid or expired token")
         
-        request.auth_wallet = payload['sub']
-        return payload
+        return JWTPayload(**payload)
         
     def get_auth_payload(self) -> str:
         expires = time.time() + self.auth_payload_expires_timeout

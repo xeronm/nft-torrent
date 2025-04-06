@@ -87,6 +87,7 @@ class WebServerSettings:
     twa_domains: List[str] = None
     enable_ssl: bool = True
     verify_ssl: bool = True
+    bearer_auth_response: bool = True
     real_ip_header: bool = True
     allow_networks: List[str] = None
     request_timeout: int = 10
@@ -95,6 +96,7 @@ class WebServerSettings:
     @classmethod
     def from_environment(cls):
         obj = cls.__new__(cls)
+        obj.debug = settings.strtobool(os.environ.get('HTTP_DEBUG', 'false'))
         obj.api_root_path = os.environ.get('HTTP_API_ROOT_PATH', '/')
         obj.remote_api_root = os.environ.get('HTTP_REMOTE_API_ROOT')
         obj.jwt_secret = _value_from_file(os.environ.get('HTTP_API_JWT_SECRET', None))
@@ -104,6 +106,7 @@ class WebServerSettings:
             obj.port = int(obj.port)
         obj.enable_ssl = settings.strtobool(os.environ.get('HTTP_ENABLE_SSL', 'true'))
         obj.verify_ssl = settings.strtobool(os.environ.get('HTTP_VERIFY_SSL', 'true'))
+        obj.bearer_auth_response = settings.strtobool(os.environ.get('HTTP_BEARER_AUTH_RESPONSE', 'true'))
         obj.real_ip_header = settings.strtobool(os.environ.get('HTTP_REAL_IP_HEADER', 'true'))
         obj.request_timeout = int(os.environ.get('HTTP_REQUEST_TIMEOUT', cls.request_timeout))
         obj.twa_domains = [x.strip() for x in os.environ.get('HTTP_TWA_DOMAINS', '').split(',') if x.strip()]

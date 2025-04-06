@@ -1,9 +1,8 @@
 import asyncio
-import os
 from functools import wraps
 from typing import List, Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.exceptions import ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.responses import JSONResponse, FileResponse
@@ -15,7 +14,7 @@ from pytonlib import TonlibException
 from NFTorrent import __meta__
 from NFTorrent import models
 from NFTorrent.webserver import Server
-from NFTorrent import messages
+from NFTorrent.auth import JWTPayload
 
 ws = Server()
 
@@ -82,6 +81,15 @@ async def fastapi_generic_exception_handler(request, exc):
     return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
+@app.middleware("http")
+async def add_bearer_response_auth_header(request: Request, call_next):
+    request.state.bearer_auth_client_ip = None
+    response = await call_next(request)
+    if request.state.bearer_auth_client_ip:
+        response.headers[ws.jwt_bearer.response_header] = ws.jwt_bearer.get_jwt_token(request.state.bearer_auth_client_ip)
+    return response
+
+
 def wrap_result(func):
     @wraps(func)
     async def wrapper(*args, **kwargs):
@@ -120,7 +128,7 @@ async def get_storage_state():
     return result
 
 
-@app.get('/storage/peers', dependencies=[Depends(ws.jwt_bearer)], tags=['storage'],
+@app.get('/storage/peer', dependencies=[Depends(ws.jwt_bearer)], tags=['storage'],
          response_model=List[models.NodePeerInfo])
 @wrap_result
 async def get_storage_node_peers():
@@ -130,7 +138,7 @@ async def get_storage_node_peers():
     return await ws.storage.get_node_state()
 
 
-@app.get('/storage/peers/{adnl_id}', dependencies=[Depends(ws.jwt_bearer)], tags=['storage'])
+@app.get('/storage/peer/{adnl_id}', dependencies=[Depends(ws.jwt_bearer)], tags=['storage'])
 @wrap_result
 async def get_storage_node_peer_state(request: models.StoragePeerMethod = Depends()):
     """
@@ -161,17 +169,18 @@ async def get_torrent(request: models.StorageTorrentMethod = Depends()):
     return result
 
 
-@app.get('/storage/torrent/{bag_id}/{digest}', dependencies=[Depends(ws.jwt_bearer)], 
+@app.get('/storage/torrent/{bag_id}/c/{digest}', dependencies=[Depends(ws.jwt_bearer)], 
          response_model_exclude_none=True, tags=['storage'])
 @wrap_result
 async def get_torrent_content(request: models.StorageTorrentContentMethod = Depends()):
     """
     Get Torrent content.
     """
-    return await ws.get_nft_torrent_filename(bag_id=request.bag_id, digest=request.digest)
+    response = await ws.get_nft_torrent_content(bag_id=request.bag_id, digest=request.digest)
+    return response
 
 
-@app.get('/storage/torrent/{bag_id}/peers', dependencies=[Depends(ws.jwt_bearer)], 
+@app.get('/storage/torrent/{bag_id}/peer', dependencies=[Depends(ws.jwt_bearer)], 
          response_model_exclude_none=True, tags=['storage'])
 @wrap_result
 async def get_torrent_peers(request: models.StorageTorrentMethod = Depends()):
@@ -189,8 +198,7 @@ async def add_torrent(request: models.StorageTorrentMethod = Depends()):
     """
     Add Torrent.
     """
-    result = await ws.add_torrent(request.bag_id)
-    return result
+    return await ws.add_torrent(request.bag_id)
 
 
 @app.delete('/storage/torrent/{bag_id}', dependencies=[Depends(ws.jwt_bearer)], 
@@ -235,7 +243,7 @@ async def get_nft_content(request: models.NftContentMethod = Depends()) -> FileR
     """
     Get NFT content by digest.
     """
-    return await ws.get_nft_torrent_filename(request.address, digest=request.digest)
+    return await ws.get_nft_torrent_content(request.address, digest=request.digest)
 
 
 @app.get('/nft/{address}', response_model_exclude_none=True, dependencies=[Depends(ws.jwt_session)], tags=['nft'])
@@ -263,12 +271,12 @@ async def get_nft_torrent_file(request: models.NftStorageTorrentMethod = Depends
     """
     Get NFT Torrent File.
     """
-    return await ws.get_nft_torrent_filename(request.address, request.file_path)    
+    return await ws.get_nft_torrent_content(request.address, request.file_path)    
 
 
-@app.post('/nft/{address}/torrent', response_model_exclude_none=True, dependencies=[Depends(ws.jwt_session)], tags=['nft'])
-async def create_nft_torrent(request: models.NftTorrentCreate = Depends()):
+@app.post('/nft/{address}/torrent', response_model_exclude_none=True, tags=['nft'])
+async def create_nft_torrent(request: models.NftTorrentCreate = Depends(), jwt_payload: JWTPayload = Depends(ws.jwt_session)):
     """
     Create NFT Torrent.
     """
-    return await ws.create_nft_torrent(request.address, request.files, owner=getattr(request, 'auth_wallet', None))
+    return await ws.create_nft_torrent(request.address, request.files, owner=jwt_payload.sub if jwt_payload is not None else None)

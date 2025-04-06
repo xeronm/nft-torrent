@@ -7,14 +7,13 @@ import shutil
 import tempfile
 import json
 import io
-from enum import Enum
 from collections import Counter
 
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Any
 from loguru import logger
 
 from fastapi.exceptions import HTTPException
-from fastapi.responses import RedirectResponse, StreamingResponse, FileResponse
+from fastapi.responses import RedirectResponse, StreamingResponse, FileResponse, JSONResponse
 from fastapi import status
 from fastapi import UploadFile
 
@@ -26,10 +25,10 @@ from pyTON.settings import RedisCacheSettings
 from NFTorrent.pyTON.manager import TonlibManager
 from NFTorrent.models import NftCollection, NftContent
 from NFTorrent.settings import Settings
-from NFTorrent import exceptions, messages
+from NFTorrent import exceptions
 from NFTorrent.manager import TonStorageCliManager
 from NFTorrent.exceptions import TorrentClientError
-from NFTorrent.auth import NodeJWTBearer, ContractAPIKeyCookie
+from NFTorrent.auth import NodeJWTBearer, ContractAPIKeyCookie, ServerResponseAuthError
 from NFTorrent.address import parse_bag_id
 
 
@@ -283,6 +282,8 @@ class Server:
                                             headers=self._get_peer_headers(host), 
                                             verify_ssl=self.settings.webserver.verify_ssl,
                                             allow_redirects=False) as resp:
+                        if self.settings.webserver.bearer_auth_response:
+                            await self.jwt_bearer.response_credentials(resp, host)
                         if resp.status == status.HTTP_200_OK or resp.status == status.HTTP_409_CONFLICT:
                             replica_set.add(node["adnl_id"])
                         else:
@@ -291,6 +292,8 @@ class Server:
                             logger.warning("Add torrent to storage peer error, ADNL: {adnl}, host: {host}, BAG Id: {bag_id}, status: {status}, body: {body}", 
                                            adnl=node["adnl_id"], host=host, bag_id=bag_id, status=resp.status, body=await resp.read())
                 except Exception as E: 
+                    if isinstance(E, ServerResponseAuthError):
+                        self.stats['remote_auth_error'] += 1
                     self.stats['call_replicate_error'] += 1                    
                     calls_error += 1
                     logger.warning("Add torrent to storage peer error, ADNL: {adnl}, host: {host}, BAG Id: {bag_id}, exc: {exc}", 
@@ -373,33 +376,41 @@ class Server:
                        adnl=peer["adnl_id"], host=host, remote_path=remote_path)
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.settings.webserver.request_timeout)) as session:
             try:
+                self.stats['call_remote'] += 1
                 async with await session.get(self._get_peer_uri(host, remote_path), 
                                             headers=self._get_peer_headers(host), 
                                             verify_ssl=self.settings.webserver.verify_ssl,
                                             allow_redirects=False) as resp:
+                    if self.settings.webserver.bearer_auth_response:
+                        await self.jwt_bearer.response_credentials(resp, host)
                     result['status'] = resp.status
                     result['response'] = await resp.read()
                     result['headers'] = resp.headers
-            except Exception as E: 
+            except Exception as E:
+                self.stats['call_remote_error'] += 1
+                if isinstance(E, ServerResponseAuthError):
+                    self.stats['remote_auth_error'] += 1
                 result['error'] = str(E)
                 logger.warning("Call storage remote peer error, ADNL: {adnl}, host: {host}, remote_path: {remote_path}, exc: {exc}", 
                                 adnl=peer["adnl_id"], host=host, remote_path=remote_path, exc=str(E))
         return result
 
     async def get_storage_peer_state(self, adnl_id: str, remote_path: str):
-        peer = [x for x in await self.storage.get_node_state() if x['adnl'] == adnl_id]
-        if len(peer) == 0:
+        peers = [x for x in await self.storage.get_node_state() if x['adnl'] == adnl_id]
+        if len(peers) == 0:            
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+        peer = peers[0]
         
         result = {
             'remote_state': await self._peer_remote_call(peer, remote_path),
+            'token': self.jwt_bearer.get_jwt_token(await self._get_peer_hostname(peer["ip_str"]))
         }
-        if result['remote_state']['status'] == status.HTTP_200_OK:
+        if result['remote_state'].get('status', 0) == status.HTTP_200_OK:
             result['remote_state']['response'] = json.loads(result['remote_state']['response'])
-        result.update(peer[0])
+        result.update(peer)
         return result    
     
-    async def get_nft_torrent_filename(self, address: str = None, bag_id: str = None, file_path: str = None, digest: str = None) -> str:
+    async def get_nft_torrent_content(self, address: str = None, bag_id: str = None, file_path: str = None, digest: str = None) -> FileResponse:
         torrent_info = await self.get_nft_torrent(address, bag_id=bag_id)
         bag_id = bag_id or parse_bag_id(torrent_info['torrent']['hash'])
        
@@ -417,7 +428,7 @@ class Server:
             peers = await self.storage.node_get_peers(bag_id)
             good_peers = [x for x in peers['peers'] if x['ready_parts'] == peers['total_parts']]
             if good_peers:
-                remote_result = await self._peer_remote_call(good_peers[0], f'/storage/torrent/{bag_id}/{files[0]["digest"]}')
+                remote_result = await self._peer_remote_call(good_peers[0], f'/storage/torrent/{bag_id}/c/{files[0]["digest"]}')
                 if remote_result['status'] == status.HTTP_200_OK:
                     return StreamingResponse(io.BytesIO(remote_result['response']), headers=remote_result['headers'])                
                 
@@ -449,7 +460,7 @@ class Server:
 
         image = nft_content.image()
         if nft_content.bag_id() and image and image[0] == ":":
-            return await self.get_nft_torrent_filename(address, bag_id=nft_content.bag_id(), digest=image[1:])
+            return await self.get_nft_torrent_content(address, bag_id=nft_content.bag_id(), digest=image[1:])
         if image:
             return RedirectResponse(image)
         if nft_content.image_data():
@@ -525,10 +536,10 @@ class Server:
 
         return torrent_info        
 
-    async def add_torrent(self, bag_id: str):
+    async def add_torrent(self, bag_id: str) -> JSONResponse:
         async with BagWriteLock(bag_id, self.bag_wlock):
-            return await self.storage.node_add(bag_id)
+            return JSONResponse(await self.storage.node_add(bag_id))
 
-    async def remove_torrent(self, bag_id: str):
+    async def remove_torrent(self, bag_id: str) -> JSONResponse:
         async with BagWriteLock(bag_id, self.bag_wlock):
-            return await self.storage.node_remove(bag_id)
+            return JSONResponse(await self.storage.node_remove(bag_id))
