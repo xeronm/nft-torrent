@@ -7,9 +7,10 @@ import shutil
 import tempfile
 import json
 import io
+from enum import Enum
 from collections import Counter
 
-from typing import Dict, List, Any
+from typing import Dict, List, Tuple, Any
 from loguru import logger
 
 from fastapi.exceptions import HTTPException
@@ -32,6 +33,30 @@ from NFTorrent.auth import NodeJWTBearer, ContractAPIKeyCookie
 from NFTorrent.address import parse_bag_id
 
 
+class BagWriteLock:
+
+    def __init__(self, bag_id: str, lock_index: Dict[str, asyncio.Lock]):
+        self.lock_index = lock_index
+        self.bag_id = bag_id
+
+    async def __aenter__(self):
+        self.lock = self.lock_index.get(self.bag_id)
+        if self.lock is None:
+            self.lock = asyncio.Lock()
+            self.lock.__ref_count = 0
+            self.lock_index[self.bag_id] = self.lock
+        self.lock.__ref_count += 1
+        await self.lock.acquire()
+        return None
+
+    async def __aexit__(self, exc_type, exc, tb):
+        self.lock.release()
+        self.lock.__ref_count -= 1
+        if self.lock.__ref_count == 0:
+            del self.lock_index[self.bag_id]
+        self.lock = None
+
+
 class Server:
 
     def __init__(self, settings: Settings = None, nft_collections: List[NftCollection] = None):
@@ -42,6 +67,7 @@ class Server:
         self.peer_hostnames = {}
         self.loop = None
         self.stats = Counter()
+        self.bag_wlock = {}
         # self.resolver: aiodns.DNSResolver = None
         self.jwt_bearer = NodeJWTBearer(subject=self.settings.storage.storage_public_addr,
                            jwt_secret=self.settings.webserver.jwt_secret,
@@ -147,11 +173,20 @@ class Server:
 
         return None
     
-    async def fetch_torrent_meta(self, bag_id: str, timeout: int = None):            
+    async def _fetch_torrent_meta(self, bag_id: str, timeout: int = None, noadd: bool = False):
         self.stats['fetch_meta'] += 1
         curr_time = st_time = time.monotonic()
-        timeout = timeout or self.settings.webserver.request_timeout
-        logger.warning("Fetching torrent meta, bag_id: {bag_id}, timeout: {timeout}", bag_id=bag_id, timeout=timeout)
+        timeout = timeout or self.settings.webserver.request_timeout - 1
+        if timeout < 0:
+            timeout = self.settings.webserver.request_timeout
+
+        if noadd:
+            logger.warning("Fetching torrent meta, bag_id: {bag_id}, timeout: {timeout}", bag_id=bag_id, timeout=timeout)
+        else:
+            self.stats['fetch_meta_add'] += 1
+            logger.warning("Torrent missed in the local storage, adding and fetching meta, bag_id: {bag_id}, timeout: {timeout}", bag_id=bag_id,  timeout=timeout)
+            await self.storage.node_add(bag_id, paused=True)
+
         try:
             meta_ready = False
             while curr_time < st_time + timeout:
@@ -185,32 +220,34 @@ class Server:
             if not meta_ready:
                 raise exceptions.TorrentMetaNotReady()                       
             logger.info("Torrent meta has been fetched, bag_id: {bag_id}", bag_id=bag_id)
-        except Exception as E:
-            logger.warning('Torrent meta fetch failed, and will be removed, bag_id: {bag_id}, exc: {exc}', bag_id=bag_id, exc=str(E))
+        except (asyncio.CancelledError, Exception) as E:
+            if isinstance(E, asyncio.CancelledError):
+                logger.warning('Torrent meta fetch canceled, and will be removed, bag_id: {bag_id}, exc: {exc}', bag_id=bag_id, exc=type(E).__name__)
+            else:
+                logger.warning('Torrent meta fetch failed, and will be removed, bag_id: {bag_id}, exc: {exc}', bag_id=bag_id, exc=str(E))
             await self.storage.node_remove(bag_id)
             self.stats['fetch_meta_error'] += 1
             raise
         return result
 
-
-    async def get_nft_torrent(self, address: str = None, bag_id: str = None, add_on_notfound: bool = True):
+    async def get_nft_torrent(self, address: str = None, bag_id: str = None, add_on_notfound: bool = True):        
         bag_id = bag_id or await self._get_nft_bag_id(address)
         if bag_id is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-        meta_ready = True
-        try:
-            result = await self.storage.node_get(bag_id)
-            if result['torrent']['total_size'] == "0":
-                meta_ready = False
-        except exceptions.TorrentNotFound:
-            self.stats['misses'] += 1
-            if not add_on_notfound:
-                raise
-            logger.warning("Torrent missed in the local storage, trying to add, bag_id: {bag_id}", bag_id=bag_id)
-            await self.storage.node_add(bag_id, paused=True)
-            meta_ready = False
-        if not meta_ready:
-            result = await self.fetch_torrent_meta(bag_id)        
+        
+        meta_ready = noadd = True        
+        async with BagWriteLock(bag_id, self.bag_wlock):
+            try:
+                result = await self.storage.node_get(bag_id)
+                if result['torrent']['total_size'] == "0":
+                    meta_ready = False
+            except exceptions.TorrentNotFound:
+                self.stats['misses'] += 1
+                if not add_on_notfound:
+                    raise
+                meta_ready = noadd = False
+            if not meta_ready:
+                await self._fetch_torrent_meta(bag_id, noadd=noadd)
 
         return result
 
@@ -246,7 +283,7 @@ class Server:
                                             headers=self._get_peer_headers(host), 
                                             verify_ssl=self.settings.webserver.verify_ssl,
                                             allow_redirects=False) as resp:
-                        if resp.status == status.HTTP_200_OK:
+                        if resp.status == status.HTTP_200_OK or resp.status == status.HTTP_409_CONFLICT:
                             replica_set.add(node["adnl_id"])
                         else:
                             self.stats['call_replicate_error'] += 1
@@ -263,9 +300,12 @@ class Server:
 
         if len(replica_set) < self.settings.storage.min_redundancy:
             logger.warning("Unable to apply redundancy policy to torrent, BAG Id: {bag_id}, replicas: {replicas}, redundancy: {min_redundancy}, calls: {calls_count}, errors: {calls_error}", 
-                    bag_id=bag_id, replicas=len(replica_set), min_redundancy=self.settings.storage.min_redundancy, calls_error=calls_error, calls_count=calls_count)         
+                    bag_id=bag_id, replicas=len(replica_set), min_redundancy=self.settings.storage.min_redundancy, calls_error=calls_error, calls_count=calls_count)
+        else:
+            logger.warning("Redundancy policy has been applied to torrent, BAG Id: {bag_id}, replicas: {replicas}, redundancy: {min_redundancy}, calls: {calls_count}, errors: {calls_error}", 
+                    bag_id=bag_id, replicas=len(replica_set), min_redundancy=self.settings.storage.min_redundancy, calls_error=calls_error, calls_count=calls_count)
 
-    async def _confirm_nft_torrent(self, address, old_bag_id, bag_id):        
+    async def _confirm_nft_torrent(self, address, old_bag_id, bag_id):
         curr_time = st_time = time.monotonic()
         nft_bag_id = None
         while st_time + self.settings.storage.confirmation_timeout > curr_time:
@@ -275,19 +315,21 @@ class Server:
                 break
             curr_time = time.monotonic()
         
-        if nft_bag_id != bag_id:
-            self.stats['create_rollback'] += 1
-            logger.warning("Newly created NFT Torrent removed due to confirmation timeout, NFT: {address}, bag_id: {bag_id}", 
-                           address=address, bag_id=bag_id)        
-            await self.storage.node_remove(bag_id)
-            return
-        
-        self.stats['create_confirm'] += 1        
-        logger.warning("Newly created NFT Torrent confirmed, NFT: {address}, bag_id: {bag_id}", 
-                       address=address, bag_id=bag_id)        
-        await self.storage.node_upload_resume(bag_id)
-        if bag_id is not None:
-            await self.storage.node_remove(old_bag_id)
+        async with BagWriteLock(bag_id, self.bag_wlock):
+            if nft_bag_id != bag_id:
+                self.stats['create_rollback'] += 1
+                logger.warning("Newly created NFT Torrent removed due to confirmation timeout, NFT: {address}, bag_id: {bag_id}", 
+                            address=address, bag_id=bag_id)        
+                await self.storage.node_remove(bag_id)
+                return
+            
+            self.stats['create_confirm'] += 1        
+            logger.warning("Newly created NFT Torrent confirmed, NFT: {address}, bag_id: {bag_id}", 
+                        address=address, bag_id=bag_id)        
+            await self.storage.node_upload_resume(bag_id)
+            if bag_id is not None:
+                await self.storage.node_remove(old_bag_id)
+
         await self._torrent_apply_redundancy_policy(bag_id)
 
     async def _get_peer_hostname(self, ip: str, force: bool = False):        
@@ -443,25 +485,26 @@ class Server:
                         file.file.close()
                 
                 torrent_description = f'nft:{address}'
-                try:
-                    torrent_info = await self.storage.node_create(os.path.join(target_path), 
-                                                            torrent_description, copy=True, 
-                                                            check_existance=False, 
-                                                            no_upload=True)
-                except exceptions.TorrentDuplicateHash as E:    
-                    self.stats['create_duplicate'] += 1
-                    torrent_info = await self.storage.node_get(E.bag_id)
-                    # torrent doesn't belong to our NFT
-                    if torrent_info['torrent']['description'] and torrent_info['torrent']['description'] != torrent_description:
-                        raise exceptions.TorrentForbidden()            
-                    # trying to recreate
-                    if not torrent_info['torrent']['completed']:
-                        self.stats['recreate'] += 1
-                        await self.storage.node_remove(E.bag_id)
+                async with BagWriteLock(bag_id, self.bag_wlock):
+                    try:
                         torrent_info = await self.storage.node_create(os.path.join(target_path), 
                                                                 torrent_description, copy=True, 
                                                                 check_existance=False, 
                                                                 no_upload=True)
+                    except exceptions.TorrentDuplicateHash as E:    
+                        self.stats['create_duplicate'] += 1
+                        torrent_info = await self.storage.node_get(E.bag_id)
+                        # torrent doesn't belong to our NFT
+                        if torrent_info['torrent']['description'] and torrent_info['torrent']['description'] != torrent_description:
+                            raise exceptions.TorrentForbidden()            
+                        # trying to recreate
+                        if not torrent_info['torrent']['completed']:
+                            self.stats['recreate'] += 1
+                            await self.storage.node_remove(E.bag_id)
+                            torrent_info = await self.storage.node_create(os.path.join(target_path), 
+                                                                    torrent_description, copy=True, 
+                                                                    check_existance=False, 
+                                                                    no_upload=True)
 
             new_bag_id = parse_bag_id(torrent_info['torrent']['hash'])
             if not torrent_info['torrent']['active_upload']:
@@ -481,3 +524,11 @@ class Server:
             raise
 
         return torrent_info        
+
+    async def add_torrent(self, bag_id: str):
+        async with BagWriteLock(bag_id, self.bag_wlock):
+            return await self.storage.node_add(bag_id)
+
+    async def remove_torrent(self, bag_id: str):
+        async with BagWriteLock(bag_id, self.bag_wlock):
+            return await self.storage.node_remove(bag_id)
