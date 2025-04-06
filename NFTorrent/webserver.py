@@ -5,8 +5,12 @@ import random
 import os
 import shutil
 import tempfile
+import json
+import io
+from enum import Enum
+from collections import Counter
 
-from typing import Dict, List, Any
+from typing import Dict, List, Tuple, Any
 from loguru import logger
 
 from fastapi.exceptions import HTTPException
@@ -29,6 +33,30 @@ from NFTorrent.auth import NodeJWTBearer, ContractAPIKeyCookie
 from NFTorrent.address import parse_bag_id
 
 
+class BagWriteLock:
+
+    def __init__(self, bag_id: str, lock_index: Dict[str, asyncio.Lock]):
+        self.lock_index = lock_index
+        self.bag_id = bag_id
+
+    async def __aenter__(self):
+        self.lock = self.lock_index.get(self.bag_id)
+        if self.lock is None:
+            self.lock = asyncio.Lock()
+            self.lock.__ref_count = 0
+            self.lock_index[self.bag_id] = self.lock
+        self.lock.__ref_count += 1
+        await self.lock.acquire()
+        return None
+
+    async def __aexit__(self, exc_type, exc, tb):
+        self.lock.release()
+        self.lock.__ref_count -= 1
+        if self.lock.__ref_count == 0:
+            del self.lock_index[self.bag_id]
+        self.lock = None
+
+
 class Server:
 
     def __init__(self, settings: Settings = None, nft_collections: List[NftCollection] = None):
@@ -38,6 +66,8 @@ class Server:
         self.storage: TonStorageCliManager = None
         self.peer_hostnames = {}
         self.loop = None
+        self.stats = Counter()
+        self.bag_wlock = {}
         # self.resolver: aiodns.DNSResolver = None
         self.jwt_bearer = NodeJWTBearer(subject=self.settings.storage.storage_public_addr,
                            jwt_secret=self.settings.webserver.jwt_secret,
@@ -59,12 +89,12 @@ class Server:
         self.loop = loop = asyncio.get_event_loop()
         logger.warning('Server startup initiated...')
         logger.warning("Parameters:\n"
-        " - Public address: {addr}\n"
-        " - API Root: {api_root}\n"
-        " - TWA: {domains}\n"
-        " - Allow Networks: {networks}\n"
-        " - DB Path: {dbpath}\n"
-        " - Temp dir: {tempdir}\n", 
+        " - webserver.allow_networks: {networks}\n"
+        " - webserver.api_root_path: {api_root}\n"
+        " - webserver.storage_public_addr: {addr}\n"
+        " - webserver.twa_domains: {domains}\n"
+        " - storage.storage_db_path: {dbpath}\n"
+        " - storage.storage_temp_dir: {tempdir}\n", 
                     addr=self.settings.storage.storage_public_addr, 
                     api_root=self.settings.webserver.api_root_path,
                     domains=self.settings.webserver.twa_domains,
@@ -121,7 +151,6 @@ class Server:
             bag_id = nft_content.bag_id()
         return bag_id
 
-
     async def _nft_query_delete_lru(self, bag_id: str, peers: Dict, torrent_info: Dict):
         description = torrent_info['torrent']['description']
         if not description.startswith('nft:'):
@@ -143,20 +172,82 @@ class Server:
             asyncio.create_task(self._torrent_apply_redundancy_policy(bag_id, peers))
 
         return None
+    
+    async def _fetch_torrent_meta(self, bag_id: str, timeout: int = None, noadd: bool = False):
+        self.stats['fetch_meta'] += 1
+        curr_time = st_time = time.monotonic()
+        timeout = timeout or self.settings.webserver.request_timeout - 1
+        if timeout < 0:
+            timeout = self.settings.webserver.request_timeout
 
-    async def get_nft_torrent(self, address: str, bag_id: str = None, add_on_notfound: bool = True):
+        if noadd:
+            logger.warning("Fetching torrent meta, bag_id: {bag_id}, timeout: {timeout}", bag_id=bag_id, timeout=timeout)
+        else:
+            self.stats['fetch_meta_add'] += 1
+            logger.warning("Torrent missed in the local storage, adding and fetching meta, bag_id: {bag_id}, timeout: {timeout}", bag_id=bag_id,  timeout=timeout)
+            await self.storage.node_add(bag_id, paused=True)
+
+        try:
+            meta_ready = False
+            while curr_time < st_time + timeout:
+                await asyncio.sleep(1)
+                try:
+                    result = await self.storage.node_get(bag_id)
+                    total_size = int(result['torrent']['total_size'])
+                    if total_size > self.settings.storage.storage_bag_size_limit:
+                        raise exceptions.TorrentSizeLimit(self.settings.storage.storage_bag_size_limit)
+                    if total_size > 0:
+                        meta_ready = True
+                        break
+                except exceptions.TorrentNotFound:
+                    pass
+
+            if not meta_ready:
+                raise exceptions.TorrentMetaNotReady()
+            await self.storage.node_download_resume(bag_id)
+            if int(result['torrent']['files_count']) == 0:
+                meta_ready = False
+                while curr_time < st_time + timeout:
+                    await asyncio.sleep(1)
+                    try:
+                        result = await self.storage.node_get(bag_id)
+                        if int(result['torrent']['files_count']) > 0:
+                            meta_ready = True
+                            break
+                    except exceptions.TorrentNotFound:
+                        pass
+
+            if not meta_ready:
+                raise exceptions.TorrentMetaNotReady()                       
+            logger.info("Torrent meta has been fetched, bag_id: {bag_id}", bag_id=bag_id)
+        except (asyncio.CancelledError, Exception) as E:
+            if isinstance(E, asyncio.CancelledError):
+                logger.warning('Torrent meta fetch canceled, and will be removed, bag_id: {bag_id}, exc: {exc}', bag_id=bag_id, exc=type(E).__name__)
+            else:
+                logger.warning('Torrent meta fetch failed, and will be removed, bag_id: {bag_id}, exc: {exc}', bag_id=bag_id, exc=str(E))
+            await self.storage.node_remove(bag_id)
+            self.stats['fetch_meta_error'] += 1
+            raise
+        return result
+
+    async def get_nft_torrent(self, address: str = None, bag_id: str = None, add_on_notfound: bool = True):        
         bag_id = bag_id or await self._get_nft_bag_id(address)
         if bag_id is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)    
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
         
-        try:
-            result = await self.storage.node_get(bag_id)
-        except exceptions.TorrentNotFound:
-            if not add_on_notfound:
-                raise
-            await self.storage.node_add(bag_id)
-            await asyncio.sleep(2)
-            result = await self.storage.node_get(bag_id)
+        meta_ready = noadd = True        
+        async with BagWriteLock(bag_id, self.bag_wlock):
+            try:
+                result = await self.storage.node_get(bag_id)
+                if result['torrent']['total_size'] == "0":
+                    meta_ready = False
+            except exceptions.TorrentNotFound:
+                self.stats['misses'] += 1
+                if not add_on_notfound:
+                    raise
+                meta_ready = noadd = False
+            if not meta_ready:
+                await self._fetch_torrent_meta(bag_id, noadd=noadd)
 
         return result
 
@@ -178,34 +269,43 @@ class Server:
         node_state = await self.storage.get_node_state()
         random.shuffle(node_state)
 
+        calls_count = calls_error = 0
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.settings.storage.request_timeout * 2)) as session:
             for node in node_state:
-                host = await self._get_peer_hostname(node["ip_str"].split(':')[0])
+                host = await self._get_peer_hostname(node["ip_str"])
+                calls_count += 1
+                self.stats['call_replicate'] += 1
                 try:
                     logger.info("Add torrent to storage peer, ADNL: {adnl}, host: {host}, BAG Id: {bag_id}", 
                                 adnl=node["adnl_id"], host=host, bag_id=bag_id)
                     
-
                     async with await session.post(self._get_peer_uri(host, f'/storage/torrent/{bag_id}'), 
                                             headers=self._get_peer_headers(host), 
                                             verify_ssl=self.settings.webserver.verify_ssl,
                                             allow_redirects=False) as resp:
-                        if resp.status == status.HTTP_200_OK:
+                        if resp.status == status.HTTP_200_OK or resp.status == status.HTTP_409_CONFLICT:
                             replica_set.add(node["adnl_id"])
                         else:
+                            self.stats['call_replicate_error'] += 1
+                            calls_error += 1
                             logger.warning("Add torrent to storage peer error, ADNL: {adnl}, host: {host}, BAG Id: {bag_id}, status: {status}, body: {body}", 
                                            adnl=node["adnl_id"], host=host, bag_id=bag_id, status=resp.status, body=await resp.read())
                 except Exception as E: 
+                    self.stats['call_replicate_error'] += 1                    
+                    calls_error += 1
                     logger.warning("Add torrent to storage peer error, ADNL: {adnl}, host: {host}, BAG Id: {bag_id}, exc: {exc}", 
                                 adnl=node["adnl_id"], host=host, bag_id=bag_id, exc=str(E))
                 if len(replica_set) >= self.settings.storage.min_redundancy:
                     break
 
         if len(replica_set) < self.settings.storage.min_redundancy:
-            logger.warning("Unable to apply redundancy policy to torrent, BAG Id: {bag_id}, replicas: {replicas}, min_redundancy: {min_redundancy}", 
-                    bag_id=bag_id, replicas=len(replica_set), min_redundancy=self.settings.storage.min_redundancy)         
+            logger.warning("Unable to apply redundancy policy to torrent, BAG Id: {bag_id}, replicas: {replicas}, redundancy: {min_redundancy}, calls: {calls_count}, errors: {calls_error}", 
+                    bag_id=bag_id, replicas=len(replica_set), min_redundancy=self.settings.storage.min_redundancy, calls_error=calls_error, calls_count=calls_count)
+        else:
+            logger.warning("Redundancy policy has been applied to torrent, BAG Id: {bag_id}, replicas: {replicas}, redundancy: {min_redundancy}, calls: {calls_count}, errors: {calls_error}", 
+                    bag_id=bag_id, replicas=len(replica_set), min_redundancy=self.settings.storage.min_redundancy, calls_error=calls_error, calls_count=calls_count)
 
-    async def _confirm_nft_torrent(self, address, old_bag_id, bag_id):        
+    async def _confirm_nft_torrent(self, address, old_bag_id, bag_id):
         curr_time = st_time = time.monotonic()
         nft_bag_id = None
         while st_time + self.settings.storage.confirmation_timeout > curr_time:
@@ -215,17 +315,21 @@ class Server:
                 break
             curr_time = time.monotonic()
         
-        if nft_bag_id != bag_id:
-            logger.warning("Newly created NFT Torrent removed due to confirmation timeout, NFT: {address}, bag_id: {bag_id}", 
-                           address=address, bag_id=bag_id)        
-            await self.storage.node_remove(bag_id)
-            return
-        
-        logger.warning("Newly created NFT Torrent confirmed, NFT: {address}, bag_id: {bag_id}", 
-                       address=address, bag_id=bag_id)        
-        await self.storage.node_upload_resume(bag_id)
-        if bag_id is not None:
-            await self.storage.node_remove(old_bag_id)
+        async with BagWriteLock(bag_id, self.bag_wlock):
+            if nft_bag_id != bag_id:
+                self.stats['create_rollback'] += 1
+                logger.warning("Newly created NFT Torrent removed due to confirmation timeout, NFT: {address}, bag_id: {bag_id}", 
+                            address=address, bag_id=bag_id)        
+                await self.storage.node_remove(bag_id)
+                return
+            
+            self.stats['create_confirm'] += 1        
+            logger.warning("Newly created NFT Torrent confirmed, NFT: {address}, bag_id: {bag_id}", 
+                        address=address, bag_id=bag_id)        
+            await self.storage.node_upload_resume(bag_id)
+            if bag_id is not None:
+                await self.storage.node_remove(old_bag_id)
+
         await self._torrent_apply_redundancy_policy(bag_id)
 
     async def _get_peer_hostname(self, ip: str, force: bool = False):        
@@ -233,16 +337,17 @@ class Server:
         # if hostinfo is None or force:
         #     hostinfo = await self.resolver.gethostbyaddr(ip)
         #     self.peer_hostnames[ip] = hostinfo
-        return ip
+        return ip.split(':')[0]
 
     def _get_peer_uri(self, host: str, path: str):
         authority = f'{host}:{self.settings.webserver.port}' if self.settings.webserver.port else host
-        if self.settings.webserver.api_root_path[-1] == '/' and path[0] == '/':
-            path = self.settings.webserver.api_root_path + path[1:]
-        elif self.settings.webserver.api_root_path[-1] != '/' and path[0] != '/':
-            path = self.settings.webserver.api_root_path + '/' + path
+        api_root = self.settings.webserver.remote_api_root or self.settings.webserver.api_root_path
+        if api_root[-1] == '/' and path[0] == '/':
+            path = api_root + path[1:]
+        elif api_root[-1] != '/' and path[0] != '/':
+            path = api_root + '/' + path
         else:
-            path = self.settings.webserver.api_root_path + path        
+            path = api_root + path        
         schema = 'https' if self.settings.webserver.enable_ssl else 'http'
         return f'{schema}://{authority}{path}'
 
@@ -260,38 +365,44 @@ class Server:
             'tonlib': bool(tonlib_state),
             'storage': bool(stotage_state),
         }
-    
-    async def get_storage_peer_state(self, adnl_id: str, remote_path: str):
-        peer = [x for x in await self.storage.get_node_state() if x['adnl'] == adnl_id]
-        if len(peer) == 0:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-        
-        state = {}
-        host = await self._get_peer_hostname(peer[0]["ip_str"].split(':')[0])
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.settings.storage.request_timeout * 2)) as session:
+
+    async def _peer_remote_call(self, peer: Dict[str, Any], remote_path: str):
+        host = await self._get_peer_hostname(peer["ip_str"])
+        result = {}
+        logger.info("Call storage remote peer, ADNL: {adnl}, host: {host}, remote_path: {remote_path}", 
+                       adnl=peer["adnl_id"], host=host, remote_path=remote_path)
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.settings.webserver.request_timeout)) as session:
             try:
                 async with await session.get(self._get_peer_uri(host, remote_path), 
                                             headers=self._get_peer_headers(host), 
                                             verify_ssl=self.settings.webserver.verify_ssl,
                                             allow_redirects=False) as resp:
-                    state['status'] = resp.status
-                    state['response'] = await resp.json()
+                    result['status'] = resp.status
+                    result['response'] = await resp.read()
+                    result['headers'] = resp.headers
             except Exception as E: 
-                state['error'] = str(E)
-                logger.warning("Call storage peer error, ADNL: {adnl}, host: {host}, exc: {exc}", 
-                                adnl=peer[0]["adnl_id"], host=host, exc=str(E))
+                result['error'] = str(E)
+                logger.warning("Call storage remote peer error, ADNL: {adnl}, host: {host}, remote_path: {remote_path}, exc: {exc}", 
+                                adnl=peer["adnl_id"], host=host, remote_path=remote_path, exc=str(E))
+        return result
 
+    async def get_storage_peer_state(self, adnl_id: str, remote_path: str):
+        peer = [x for x in await self.storage.get_node_state() if x['adnl'] == adnl_id]
+        if len(peer) == 0:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+        
         result = {
-            'remote_state': state,
+            'remote_state': await self._peer_remote_call(peer, remote_path),
         }
+        if result['remote_state']['status'] == status.HTTP_200_OK:
+            result['remote_state']['response'] = json.loads(result['remote_state']['response'])
         result.update(peer[0])
         return result    
     
-    async def get_nft_torrent_filename(self, address: str, bag_id: str = None, file_path: str = None, digest: str = None) -> str:
+    async def get_nft_torrent_filename(self, address: str = None, bag_id: str = None, file_path: str = None, digest: str = None) -> str:
         torrent_info = await self.get_nft_torrent(address, bag_id=bag_id)
-        if not torrent_info['torrent']['completed'] and int(torrent_info['torrent']['files_count']) == 0:
-            raise exceptions.TorrentStorageError("Torrent meta not ready")
-        
+        bag_id = bag_id or parse_bag_id(torrent_info['torrent']['hash'])
+       
         files = None
         if file_path is not None:
             file_path = os.path.normpath(file_path)
@@ -303,15 +414,24 @@ class Server:
             raise exceptions.TorrentFileNotFound()
         
         if files[0]['size'] != files[0]['downloaded_size']:
-            # TODO: Try to locate peer with ready parts and proxy request
+            peers = await self.storage.node_get_peers(bag_id)
+            good_peers = [x for x in peers['peers'] if x['ready_parts'] == peers['total_parts']]
+            if good_peers:
+                remote_result = await self._peer_remote_call(good_peers[0], f'/storage/torrent/{bag_id}/{files[0]["digest"]}')
+                if remote_result['status'] == status.HTTP_200_OK:
+                    return StreamingResponse(io.BytesIO(remote_result['response']), headers=remote_result['headers'])                
+                
             raise exceptions.TorrentStorageError("Torrent file not ready")
         
-        bag_id = parse_bag_id(torrent_info['torrent']['hash'])
-        target_file = os.path.join(
+        target_path = os.path.join(
             self.settings.storage.storage_db_torrent_path or os.path.join(self.settings.storage.storage_db_path, 'torrent/torrent-files'), 
-            bag_id,
-            self.settings.storage.torrent_dirname,
-            files[0]['name'])
+            bag_id)
+        torrent_dir = os.path.join(target_path, torrent_info['torrent']['dir_name'])
+        if not os.path.isdir(torrent_dir):
+            # Try to fallback
+            torrent_dir = os.path.join(target_path, self.settings.storage.torrent_dirname)
+
+        target_file = os.path.join(torrent_dir, files[0]['name'])
         if not os.path.isfile(target_file):            
             logger.warning("Torrent file not exists in daemon storage, bag_id: {bag_id}, file={filename}", bag_id=bag_id, filename=target_file)
             raise exceptions.TorrentStorageError("Torrent file not exists in daemon storage")
@@ -333,9 +453,7 @@ class Server:
         if image:
             return RedirectResponse(image)
         if nft_content.image_data():
-            def _data_stream():
-                yield nft_content.image_data()
-            response = StreamingResponse(_data_stream(), media_type='image/webp', headers=headers)
+            response = StreamingResponse(io.BytesIO(nft_content.image_data()), media_type='image/webp', headers=headers)
             return response
             
         # TODO: Generate dynamic default image with pets Name
@@ -347,50 +465,70 @@ class Server:
 
         if len(node_state) < self.settings.storage.min_redundancy - 1:
             raise exceptions.TorrentStorageError("Local storage node unable to comply required redundancy")
+        total_size = sum([f.size for f in files])
+        if total_size > self.settings.storage.storage_bag_size_limit:
+            raise exceptions.TorrentSizeLimit(self.settings.storage.storage_bag_size_limit)
 
         torrent_info = None
-        with tempfile.TemporaryDirectory(dir=self.settings.storage.storage_temp_dir) as tmpdirname:
-            target_path = os.path.join(tmpdirname, self.settings.storage.torrent_dirname)
-            logger.warning("Creating new NFT Torrent, NFT: {address}, path: {target_path}, bag_id: {bag_id}", 
-                           address=address, target_path=target_path, bag_id=bag_id)
-            os.mkdir(target_path)
-            for file in files:
-                try:            
-                    with open(os.path.join(target_path, file.filename), 'wb') as f:
-                        shutil.copyfileobj(file.file, f)            
-                finally:
-                    file.file.close()
-            
-            torrent_description = f'nft:{address}'
-            try:
-                torrent_info = await self.storage.node_create(os.path.join(target_path), 
-                                                        torrent_description, copy=True, 
-                                                        check_existance=False, 
-                                                        no_upload=True)
-            except exceptions.TorrentDuplicateHash as E:            
-                torrent_info = await self.storage.node_get(E.bag_id)
-                # torrent doesn't belong to our NFT
-                if torrent_info['torrent']['description'] and torrent_info['torrent']['description'] != torrent_description:
-                    raise exceptions.TorrentForbidden()            
-                # trying to recreate
-                if not torrent_info['torrent']['completed']:                
-                    await self.storage.node_remove(E.bag_id)
-                    torrent_info = await self.storage.node_create(os.path.join(target_path), 
-                                                            torrent_description, copy=True, 
-                                                            check_existance=False, 
-                                                            no_upload=True)
+        try:
+            self.stats['create'] += 1
+            with tempfile.TemporaryDirectory(dir=self.settings.storage.storage_temp_dir) as tmpdirname:
+                target_path = os.path.join(tmpdirname, self.settings.storage.torrent_dirname)
+                logger.warning("Creating new NFT Torrent, NFT: {address}, path: {target_path}, nft bag_id: {bag_id}, size={size}", 
+                            address=address, target_path=target_path, bag_id=bag_id, size=total_size)
+                os.mkdir(target_path)
+                for file in files:
+                    try:            
+                        with open(os.path.join(target_path, file.filename), 'wb') as f:
+                            shutil.copyfileobj(file.file, f)            
+                    finally:
+                        file.file.close()
+                
+                torrent_description = f'nft:{address}'
+                async with BagWriteLock(bag_id, self.bag_wlock):
+                    try:
+                        torrent_info = await self.storage.node_create(os.path.join(target_path), 
+                                                                torrent_description, copy=True, 
+                                                                check_existance=False, 
+                                                                no_upload=True)
+                    except exceptions.TorrentDuplicateHash as E:    
+                        self.stats['create_duplicate'] += 1
+                        torrent_info = await self.storage.node_get(E.bag_id)
+                        # torrent doesn't belong to our NFT
+                        if torrent_info['torrent']['description'] and torrent_info['torrent']['description'] != torrent_description:
+                            raise exceptions.TorrentForbidden()            
+                        # trying to recreate
+                        if not torrent_info['torrent']['completed']:
+                            self.stats['recreate'] += 1
+                            await self.storage.node_remove(E.bag_id)
+                            torrent_info = await self.storage.node_create(os.path.join(target_path), 
+                                                                    torrent_description, copy=True, 
+                                                                    check_existance=False, 
+                                                                    no_upload=True)
 
-        new_bag_id = parse_bag_id(torrent_info['torrent']['hash'])
-        if not torrent_info['torrent']['active_upload']:
-            if bag_id != new_bag_id:
-                logger.info("Waiting for confirmation newly created NFT Torrent, NFT: {address}, new bag_id: {bag_id}", 
-                            address=address, bag_id=new_bag_id)
-                self.loop.create_task(self._confirm_nft_torrent(address, bag_id, new_bag_id))
-            else:
-                logger.warning("Newly created NFT Torrent already confirmed, NFT: {address}, bag_id: {bag_id}", 
-                            address=address, bag_id=bag_id)            
-                await self.storage.node_upload_resume(new_bag_id)
-                torrent_info['torrent']['active_upload'] = True
-                self.loop.create_task(self._torrent_apply_redundancy_policy(new_bag_id))
+            new_bag_id = parse_bag_id(torrent_info['torrent']['hash'])
+            if not torrent_info['torrent']['active_upload']:
+                if bag_id != new_bag_id:
+                    logger.info("Waiting for confirmation newly created NFT Torrent, NFT: {address}, new bag_id: {bag_id}", 
+                                address=address, bag_id=new_bag_id)
+                    self.loop.create_task(self._confirm_nft_torrent(address, bag_id, new_bag_id))
+                else:
+                    self.stats['create_confirm'] += 1
+                    logger.warning("Newly created NFT Torrent already confirmed, NFT: {address}, bag_id: {bag_id}", 
+                                address=address, bag_id=bag_id)            
+                    await self.storage.node_upload_resume(new_bag_id)
+                    torrent_info['torrent']['active_upload'] = True
+                    self.loop.create_task(self._torrent_apply_redundancy_policy(new_bag_id))
+        except:
+            self.stats['create_error'] += 1
+            raise
 
         return torrent_info        
+
+    async def add_torrent(self, bag_id: str):
+        async with BagWriteLock(bag_id, self.bag_wlock):
+            return await self.storage.node_add(bag_id)
+
+    async def remove_torrent(self, bag_id: str):
+        async with BagWriteLock(bag_id, self.bag_wlock):
+            return await self.storage.node_remove(bag_id)

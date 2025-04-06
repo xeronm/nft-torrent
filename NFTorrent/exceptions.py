@@ -4,12 +4,20 @@ from fastapi import status
 
 from NFTorrent.address import parse_bag_id
 
+
 class TorrentFileNotFound(HTTPException):
 
     def __init__(self, detail: Any = None):
         super().__init__(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, 
                          detail=detail or 'Torrent File not found')
-      
+
+
+class TorrentSizeLimit(HTTPException):
+
+    def __init__(self, size_limit):
+        super().__init__(status_code=status.HTTP_400_BAD_REQUEST, 
+                         detail=f"Torrent size limit exceeded, size limit={size_limit}")
+
 
 class TorrentForbidden(HTTPException):
 
@@ -24,6 +32,13 @@ class TorrentStorageError(HTTPException):
         super().__init__(status_code=status.HTTP_502_BAD_GATEWAY, 
                          detail=detail or 'Storage daemon error')
 
+
+class TorrentMetaNotReady(HTTPException):
+
+    def __init__(self):
+        super().__init__(status_code=status.HTTP_502_BAD_GATEWAY, 
+                         detail='Torrent metadata not ready')
+        
 
 class TorrentClientError(HTTPException):    
 
@@ -50,6 +65,7 @@ class TorrentClientError(HTTPException):
             raise TorrentDuplicateHash(bag_id=parse_bag_id(error[len(TorrentDuplicateHash.client_message):]))
         else:
             raise TorrentClientError(error)
+
 
 class TorrentNotFound(TorrentClientError):
     client_message = 'Query error: No such torrent'

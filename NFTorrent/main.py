@@ -36,7 +36,6 @@ app = FastAPI(
 )
 
 
-
 @app.on_event("startup")
 async def startup():
     await ws.startup()
@@ -98,7 +97,7 @@ async def healthcheck()-> models.HealthCheckResult:
 
 
 @app.get('/tonlib/state', dependencies=[Depends(ws.jwt_bearer)], tags=['liteserver'], 
-         response_model=models.TonlibManagerState)
+         response_model=models.TonlibManagerState, )
 @wrap_result
 async def get_tonlib_worker_state():
     """
@@ -116,7 +115,9 @@ async def get_storage_state():
     """
     Get storage state.
     """    
-    return ws.storage.get_storage_state()
+    result = ws.storage.get_storage_state()
+    result['stats'].update(ws.stats)
+    return result
 
 
 @app.get('/storage/peers', dependencies=[Depends(ws.jwt_bearer)], tags=['storage'],
@@ -138,8 +139,19 @@ async def get_storage_node_peer_state(request: models.StoragePeerMethod = Depend
     return await ws.get_storage_peer_state(request.adnl_id, '/storage/state')
 
 
+@app.get('/storage/torrent', dependencies=[Depends(ws.jwt_bearer)], 
+         response_model_exclude_none=True, tags=['storage'])
+@wrap_result
+async def get_torrent():
+    """
+    List Torrents.
+    """
+    result = await ws.storage.node_list()
+    return result
 
-@app.get('/storage/torrent/{bag_id}', dependencies=[Depends(ws.jwt_bearer)], response_model_exclude_none=True, tags=['storage'])
+
+@app.get('/storage/torrent/{bag_id}', dependencies=[Depends(ws.jwt_bearer)], 
+         response_model_exclude_none=True, tags=['storage'])
 @wrap_result
 async def get_torrent(request: models.StorageTorrentMethod = Depends()):
     """
@@ -149,7 +161,18 @@ async def get_torrent(request: models.StorageTorrentMethod = Depends()):
     return result
 
 
-@app.get('/storage/torrent/{bag_id}/peers', dependencies=[Depends(ws.jwt_bearer)], response_model_exclude_none=True, tags=['storage'])
+@app.get('/storage/torrent/{bag_id}/{digest}', dependencies=[Depends(ws.jwt_bearer)], 
+         response_model_exclude_none=True, tags=['storage'])
+@wrap_result
+async def get_torrent_content(request: models.StorageTorrentContentMethod = Depends()):
+    """
+    Get Torrent content.
+    """
+    return await ws.get_nft_torrent_filename(bag_id=request.bag_id, digest=request.digest)
+
+
+@app.get('/storage/torrent/{bag_id}/peers', dependencies=[Depends(ws.jwt_bearer)], 
+         response_model_exclude_none=True, tags=['storage'])
 @wrap_result
 async def get_torrent_peers(request: models.StorageTorrentMethod = Depends()):
     """
@@ -159,14 +182,25 @@ async def get_torrent_peers(request: models.StorageTorrentMethod = Depends()):
     return result
 
 
-@app.post('/storage/torrent/{bag_id}', dependencies=[Depends(ws.jwt_bearer)], response_model_exclude_none=True, tags=['storage'])
+@app.post('/storage/torrent/{bag_id}', dependencies=[Depends(ws.jwt_bearer)], 
+          response_model_exclude_none=True, tags=['storage'])
 @wrap_result
 async def add_torrent(request: models.StorageTorrentMethod = Depends()):
     """
     Add Torrent.
     """
-    # TODO Validate adnl_id and ip_str
-    result = await ws.storage.node_add(request.bag_id)
+    result = await ws.add_torrent(request.bag_id)
+    return result
+
+
+@app.delete('/storage/torrent/{bag_id}', dependencies=[Depends(ws.jwt_bearer)], 
+          response_model_exclude_none=True, tags=['storage'])
+@wrap_result
+async def remove_torrent(request: models.StorageTorrentMethod = Depends()):
+    """
+    Remove Torrent.
+    """
+    result = await ws.remove_torrent(request.bag_id)
     return result
 
 
