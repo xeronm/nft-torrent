@@ -36,7 +36,6 @@ app = FastAPI(
 )
 
 
-
 @app.on_event("startup")
 async def startup():
     await ws.startup()
@@ -98,7 +97,7 @@ async def healthcheck()-> models.HealthCheckResult:
 
 
 @app.get('/tonlib/state', dependencies=[Depends(ws.jwt_bearer)], tags=['liteserver'], 
-         response_model=models.TonlibManagerState)
+         response_model=models.TonlibManagerState, )
 @wrap_result
 async def get_tonlib_worker_state():
     """
@@ -190,7 +189,7 @@ async def add_torrent(request: models.StorageTorrentMethod = Depends()):
     """
     Add Torrent.
     """
-    result = await ws.storage.node_add(request.bag_id)
+    result = await ws.add_torrent(request.bag_id)
     return result
 
 
@@ -201,7 +200,7 @@ async def remove_torrent(request: models.StorageTorrentMethod = Depends()):
     """
     Remove Torrent.
     """
-    result = await ws.storage.node_remove(request.bag_id)
+    result = await ws.remove_torrent(request.bag_id)
     return result
 
 
