@@ -250,7 +250,7 @@ class ContractAPIKeyCookie(APIKeyCookie):
             'exp': expires
         }
         token = jwt.encode(payload, self.jwt_secret, algorithm=self.jwt_algorithm)
-        response = Response(status_code=status.HTTP_200_OK)
+        response = Response(payload, status_code=status.HTTP_200_OK)
         response.set_cookie(self.cookie_name, token, expires=expires, secure=True, httponly=True)
         return response
     
