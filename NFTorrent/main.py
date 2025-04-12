@@ -212,7 +212,7 @@ async def remove_torrent(request: models.StorageTorrentMethod = Depends()):
     return result
 
 
-@app.get('/account/auth', tags=['account'])
+@app.get('/account/authPayload', tags=['account'])
 async def get_account_auth_payload() -> models.AuthPayload:
     """
     Get authentication payload
@@ -226,6 +226,13 @@ async def create_account_auth_session(body: models.AuthData) -> Optional[str]:
     Auhtenticate account signature and create session 
     """
     return ws.jwt_session.auth_session(body.account, body.proof) or "Ok"
+
+@app.get('/account/auth', tags=['account'])
+async def get_account_auth(jwt_payload: JWTPayload = Depends(ws.jwt_session)) -> Optional[JWTPayload]:
+    """
+    Verify session token
+    """
+    return jwt_payload if jwt_payload is not None else None
 
 
 @app.get('/c/{address}', response_model_exclude_none=True, tags=['nft-content'])
