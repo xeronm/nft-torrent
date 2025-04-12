@@ -221,11 +221,11 @@ async def get_account_auth_payload() -> models.AuthPayload:
 
 
 @app.post('/account/auth', tags=['account'])
-async def create_account_auth_session(body: models.AuthData) -> Optional[str]:
+async def create_account_auth_session(body: models.AuthData) -> Optional[JWTPayload]:
     """
     Auhtenticate account signature and create session 
     """
-    return ws.jwt_session.auth_session(body.account, body.proof) or "Ok"
+    return ws.jwt_session.auth_session(body.account, body.proof)
 
 @app.get('/account/auth', tags=['account'])
 async def get_account_auth(jwt_payload: JWTPayload = Depends(ws.jwt_session)) -> Optional[JWTPayload]:

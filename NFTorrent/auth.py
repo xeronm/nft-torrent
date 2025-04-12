@@ -10,7 +10,8 @@ from aiohttp import ClientResponse
 
 from nacl.signing import VerifyKey
 from pydantic import BaseModel
-from fastapi import Request, HTTPException, status, Response
+from fastapi import Request, HTTPException, status
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, APIKeyCookie
 
 from pytonlib.utils.address import detect_address
@@ -250,7 +251,7 @@ class ContractAPIKeyCookie(APIKeyCookie):
             'exp': expires
         }
         token = jwt.encode(payload, self.jwt_secret, algorithm=self.jwt_algorithm)
-        response = Response(payload, status_code=status.HTTP_200_OK)
+        response = JSONResponse(payload, status_code=status.HTTP_200_OK)
         response.set_cookie(self.cookie_name, token, expires=expires, secure=True, httponly=True)
         return response
     
