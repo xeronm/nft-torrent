@@ -14,7 +14,6 @@ from pytonlib import TonlibException
 from NFTorrent import __meta__
 from NFTorrent import models
 from NFTorrent.webserver import Server
-from NFTorrent.auth import JWTPayload
 
 ws = Server()
 
@@ -100,7 +99,7 @@ def wrap_result(func):
 
 # API
 @app.get('/healthcheck', include_in_schema=False)
-async def healthcheck()-> models.HealthCheckResult:
+async def healthcheck() -> models.HealthCheckResult:
     return await ws.get_healthcheck()
 
 
@@ -221,18 +220,18 @@ async def get_account_auth_payload() -> models.AuthPayload:
 
 
 @app.post('/account/auth', tags=['account'])
-async def create_account_auth_session(body: models.AuthData) -> Optional[JWTPayload]:
+async def create_account_auth_session(body: models.AuthData) -> Optional[models.JWTPayload]:
     """
     Auhtenticate account signature and create session 
     """
     return ws.jwt_session.auth_session(body.account, body.proof)
 
 @app.get('/account/auth', tags=['account'])
-async def get_account_auth(jwt_payload: JWTPayload = Depends(ws.jwt_session)) -> Optional[JWTPayload]:
+async def get_account_auth_session(jwt_payload: models.JWTPayload = Depends(ws.jwt_session)) -> models.AuthSession:
     """
-    Verify session token
-    """
-    return jwt_payload if jwt_payload is not None else None
+    Get session state
+    """    
+    return models.AuthSession(node=await ws.get_healthcheck(), sess=jwt_payload if jwt_payload is not None else None)
 
 
 @app.get('/c/{address}', response_model_exclude_none=True, tags=['nft-content'])
@@ -282,7 +281,7 @@ async def get_nft_torrent_file(request: models.NftStorageTorrentMethod = Depends
 
 
 @app.post('/nft/{address}/torrent', response_model_exclude_none=True, tags=['nft'])
-async def create_nft_torrent(request: models.NftTorrentCreate = Depends(), jwt_payload: JWTPayload = Depends(ws.jwt_session)):
+async def create_nft_torrent(request: models.NftTorrentCreate = Depends(), jwt_payload: models.JWTPayload = Depends(ws.jwt_session)):
     """
     Create NFT Torrent.
     """

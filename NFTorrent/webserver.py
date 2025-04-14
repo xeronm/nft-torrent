@@ -23,7 +23,7 @@ from pyTON.cache import CacheManager, RedisCacheManager, DisabledCacheManager
 from pyTON.settings import RedisCacheSettings
 
 from NFTorrent.pyTON.manager import TonlibManager
-from NFTorrent.models import NftCollection, NftContent
+from NFTorrent.models import NftCollection, NftContent, HealthCheckResult
 from NFTorrent.settings import Settings
 from NFTorrent import exceptions
 from NFTorrent.manager import TonStorageCliManager
@@ -360,14 +360,16 @@ class Server:
         }
     
     # API
-    async def get_healthcheck(self):
+    async def get_healthcheck(self) -> HealthCheckResult:
         tonlib_state = sum([1 for x in self.tonlib.get_workers_state().values() if x['is_working']])
         stotage_state = sum([1 for x in self.storage.get_workers_state().values() if x['is_healthy']])
 
-        return {
-            'tonlib': bool(tonlib_state),
-            'storage': bool(stotage_state),
-        }
+        return HealthCheckResult(
+            tonlib=bool(tonlib_state),
+            storage=bool(stotage_state),
+            redundancy=bool(stotage_state >= self.settings.storage.min_redundancy),
+            load=round(self.storage.storage_lru.size * 100 / self.storage.settings.storage_max_size, 2)
+        )
 
     async def _peer_remote_call(self, peer: Dict[str, Any], remote_path: str):
         host = await self._get_peer_hostname(peer["ip_str"])
