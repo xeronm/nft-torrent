@@ -244,9 +244,7 @@ class ContractAPIKeyCookie(APIKeyCookie):
             'exp': expires
         }
         token = jwt.encode(payload, self.jwt_secret, algorithm=self.jwt_algorithm)
-        response = JSONResponse(payload, status_code=status.HTTP_200_OK)
-        response.set_cookie(self.cookie_name, token, expires=expires, secure=True, httponly=True)
-        return response
+        return models.JWTPayload(**payload), token
     
 
     # NFTorrent=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0aWQiOiI0NjA0MGFhYSIsInN1YiI6IkVRQUc2WDhGRXM0MWlqM0hFV21zNUJYdUYvV0JEYit1VTR4OC9IVWd1VUNlbThRbCIsImF1ZCI6WyJORlRvcnJlbnQiXSwiZXhwIjoxNzQ0ODI0Njc3LjI4NDk5MjJ9.nW-eraHFWlJKMYaBRgN3PYpNYT6OS6zx386BqKTT44E; 

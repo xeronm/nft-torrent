@@ -5,7 +5,7 @@ from typing import List, Optional
 from fastapi import FastAPI, Request
 from fastapi.exceptions import ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, Response
 from fastapi import status
 from fastapi.params import Depends
 
@@ -220,16 +220,20 @@ async def get_account_auth_payload() -> models.AuthPayload:
 
 
 @app.post('/account/auth', tags=['account'])
-async def create_account_auth_session(body: models.AuthData) -> Optional[models.JWTPayload]:
+async def create_account_auth_session(body: models.AuthData) -> models.AuthSession:
     """
     Auhtenticate account signature and create session 
     """
-    return ws.jwt_session.auth_session(body.account, body.proof)
+    payload, token = ws.jwt_session.auth_session(body.account, body.proof)
+    response = JSONResponse(models.AuthSession(node=await ws.get_healthcheck(), sess=payload).dict(), status_code=status.HTTP_200_OK)
+    response.set_cookie(ws.jwt_session.cookie_name, token, expires=payload.exp, secure=True, httponly=True)
+    return response
+
 
 @app.get('/account/auth', tags=['account'])
 async def get_account_auth_session(jwt_payload: models.JWTPayload = Depends(ws.jwt_session)) -> models.AuthSession:
     """
-    Get session state
+    Get authenticated session state
     """    
     return models.AuthSession(node=await ws.get_healthcheck(), sess=jwt_payload if jwt_payload is not None else None)
 
