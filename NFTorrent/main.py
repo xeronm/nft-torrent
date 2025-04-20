@@ -250,7 +250,7 @@ async def get_account_auth(jwt_payload: JWTPayload = Depends(ws.jwt_session)) ->
     return jwt_payload if jwt_payload is not None else None
 
 
-@app.get('/api/v1/c/{address}', response_model_exclude_none=True, tags=['nft-content'])
+@app.get('/c/{address}', response_model_exclude_none=True, tags=['nft-content'])
 @wrap_result
 async def get_nft_content_default_image(request: models.NftMethod = Depends()) -> FileResponse:
     """
@@ -259,7 +259,7 @@ async def get_nft_content_default_image(request: models.NftMethod = Depends()) -
     return await ws.get_default_image(request.address)
 
 
-@app.get('/api/v1/c/{address}/{digest}', response_model_exclude_none=True, tags=['nft-content'])
+@app.get('/c/{address}/{digest}', response_model_exclude_none=True, tags=['nft-content'])
 @wrap_result
 async def get_nft_content(request: models.NftContentMethod = Depends()) -> FileResponse:
     """
