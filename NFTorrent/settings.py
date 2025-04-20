@@ -43,7 +43,8 @@ class TonStorageCliSettings:
     storage_temp_dir: str = None
     storage_db_torrent_path: str = None
     storage_size_pressure = 1000
-    storage_bag_size_limit = 4*1024*1024
+    storage_max_size = None
+    storage_bag_size_limit = 8*1024*1024
     request_timeout: int = 5
     manifest_bag_id: str = None
     num_workers: int = 16
@@ -62,6 +63,7 @@ class TonStorageCliSettings:
         obj.storage_temp_dir = os.environ.get('TON_STORAGE_TEMP_DIR', None)        
         obj.storage_db_torrent_path = os.environ.get('TON_STORAGE_DB_TORRENT_PATH', None)
         obj.storage_size_pressure = int(os.environ.get('TON_STORAGE_SIZE_PRESSURE', cls.storage_size_pressure))
+        obj.storage_max_size = int(os.environ.get('TON_STORAGE_MAX_SIZE', round(obj.storage_size_pressure * 1.5)))
         obj.storage_bag_size_limit = int(os.environ.get('TON_STORAGE_BAG_SIZE_LIMIT', cls.storage_bag_size_limit))
         obj.request_timeout = int(os.environ.get('TON_STORAGE_REQUEST_TIMEOUT', cls.request_timeout))
         obj.num_workers = int(os.environ.get('TON_STORAGE_NUM_WORKERS', cls.num_workers))

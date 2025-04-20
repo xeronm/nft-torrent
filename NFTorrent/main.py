@@ -1,7 +1,8 @@
 import asyncio
 from functools import wraps
 import time
-from typing import List, Optional
+import dataclasses
+from typing import List, Dict
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import ValidationError
@@ -15,8 +16,7 @@ from pytonlib import TonlibException
 from NFTorrent import __meta__
 from NFTorrent import models
 from NFTorrent.webserver import Server
-from NFTorrent.auth import JWTPayload
-from NFTorrent.middlewares import StatisticsMiddleware, StatisticsStore, dict_to_influx
+from NFTorrent.middlewares import StatisticsMiddleware, StatisticsStore
 
 ws = Server()
 
@@ -37,6 +37,35 @@ app = FastAPI(
 )
 
 stats = StatisticsStore()
+
+
+def dataclass_to_influx(instance):
+    kv = []
+    for field in dataclasses.fields(instance):
+        value = getattr(instance, field.name, None)
+        if value is None:
+            continue
+        if issubclass(field.type, str):
+            value = '"' + value.replace('"', '\\"') + '"'
+        kv.append(f'{field.name}={value}')
+    return ','.join(kv)
+
+
+def dict_to_influx(instance: Dict):
+    kv = []
+    for k, v in instance.items():
+        value = v
+        if value is None:
+            continue
+        if isinstance(v, dict):
+            continue
+        elif isinstance(v, bool):
+            value = int(value)
+        elif isinstance(v, str):
+            value = '"' + value.replace('"', '\\"') + '"'
+        kv.append(f'{k}={value}')
+    return ','.join(kv)
+
 
 @app.on_event("startup")
 async def startup():
@@ -131,9 +160,12 @@ async def statistics(request: Request):
         for w in storage['workers'].values() 
     ]
 
+    http_stats = [ f'NFTorrentHttp,{dataclass_to_influx(k)} {dataclass_to_influx(v)} {_timestamp}' for k, v in stats.items() ]
+
+
     return '\n'.join([
         f'NFTorrentStorage {dict_to_influx(_storage)} {_timestamp}',
-    ] + workers_stats + liteservers_stats + stats.as_influx_dbline())
+    ] + workers_stats + liteservers_stats + http_stats)
 
 
 @app.get('/api/v1/tonlib/state', dependencies=[Depends(ws.jwt_bearer)], tags=['liteserver'], 
@@ -256,18 +288,22 @@ async def get_account_auth_payload() -> models.AuthPayload:
 
 
 @app.post('/api/v1/account/auth', tags=['account'])
-async def create_account_auth_session(body: models.AuthData) -> Optional[str]:
+async def create_account_auth_session(body: models.AuthData) -> models.AuthSession:
     """
     Auhtenticate account signature and create session 
     """
-    return ws.jwt_session.auth_session(body.account, body.proof) or "Ok"
+    payload, token = ws.jwt_session.auth_session(body.account, body.proof)
+    response = JSONResponse(models.AuthSession(node=await ws.get_healthcheck(), sess=payload).dict(), status_code=status.HTTP_200_OK)
+    response.set_cookie(ws.jwt_session.cookie_name, token, expires=payload.exp, secure=True, httponly=True)
+    return response
+
 
 @app.get('/api/v1/account/auth', tags=['account'])
-async def get_account_auth(jwt_payload: JWTPayload = Depends(ws.jwt_session)) -> Optional[JWTPayload]:
+async def get_account_auth_session(jwt_payload: models.JWTPayload = Depends(ws.jwt_session)) -> models.AuthSession:
     """
-    Verify session token
-    """
-    return jwt_payload if jwt_payload is not None else None
+    Get authenticated session state
+    """    
+    return models.AuthSession(node=await ws.get_healthcheck(), sess=jwt_payload if jwt_payload is not None else None)
 
 
 @app.get('/c/{address}', response_model_exclude_none=True, tags=['nft-content'])
@@ -317,7 +353,7 @@ async def get_nft_torrent_file(request: models.NftStorageTorrentMethod = Depends
 
 
 @app.post('/api/v1/nft/{address}/torrent', response_model_exclude_none=True, tags=['nft'])
-async def create_nft_torrent(request: models.NftTorrentCreate = Depends(), jwt_payload: JWTPayload = Depends(ws.jwt_session)):
+async def create_nft_torrent(request: models.NftTorrentCreate = Depends(), jwt_payload: models.JWTPayload = Depends(ws.jwt_session)):
     """
     Create NFT Torrent.
     """

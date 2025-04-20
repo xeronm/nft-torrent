@@ -8,8 +8,10 @@ from fastapi import UploadFile
 from pytonlib.utils.address import prepare_address, detect_address
 from NFTorrent.address import parse_bag_id, parse_adnl_id
 
+
 class TvmStructure:
     pass
+
 
 class NftContent(TvmStructure):
 
@@ -25,6 +27,7 @@ class NftContent(TvmStructure):
     def image_data(self):
         pass
 
+
 class NftCollection:
 
     def __init__(self, nft_content_class: NftContent, address: str, image: str = None):
@@ -36,7 +39,6 @@ class NftCollection:
     @property
     def ntf_content(self):
         return self.nft_content_class.__name__
-
 
 
 class ProblemDetail(BaseModel):
@@ -170,6 +172,8 @@ class Account(BaseModel):
 class HealthCheckResult(BaseModel):
     tonlib: bool
     storage: bool
+    redundancy: bool
+    load: float
 
 
 class TonProof(BaseModel):
@@ -186,3 +190,14 @@ class AuthPayload(BaseModel):
 class AuthData(BaseModel):
     account: Account
     proof: TonProof
+
+
+class JWTPayload(BaseModel):
+    sub: str
+    aud: List[str]
+    exp: int
+
+
+class AuthSession(BaseModel):
+    node: HealthCheckResult
+    sess: Optional[JWTPayload]

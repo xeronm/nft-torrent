@@ -23,7 +23,7 @@ from pyTON.cache import CacheManager, RedisCacheManager, DisabledCacheManager
 from pyTON.settings import RedisCacheSettings
 
 from NFTorrent.pyTON.manager import TonlibManager
-from NFTorrent.models import NftCollection, NftContent
+from NFTorrent.models import NftCollection, NftContent, HealthCheckResult
 from NFTorrent.settings import Settings
 from NFTorrent import exceptions
 from NFTorrent.manager import TonStorageCliManager
@@ -93,13 +93,15 @@ class Server:
         " - webserver.storage_public_addr: {addr}\n"
         " - webserver.twa_domains: {domains}\n"
         " - storage.storage_db_path: {dbpath}\n"
-        " - storage.storage_temp_dir: {tempdir}\n", 
+        " - storage.storage_temp_dir: {tempdir}\n"
+        " - storage.min_redundancy: {redundancy}\n",
                     addr=self.settings.storage.storage_public_addr, 
                     api_root=self.settings.webserver.api_root_path,
                     domains=self.settings.webserver.twa_domains,
                     networks=self.settings.webserver.allow_networks,
                     dbpath=self.settings.storage.storage_db_path,
-                    tempdir=self.settings.storage.storage_temp_dir)
+                    tempdir=self.settings.storage.storage_temp_dir,
+                    redundancy=self.settings.storage.min_redundancy)
 
         # self.resolver = aiodns.DNSResolver(loop=self.loop)
 
@@ -360,14 +362,16 @@ class Server:
         }
     
     # API
-    async def get_healthcheck(self):
+    async def get_healthcheck(self) -> HealthCheckResult:
         tonlib_state = sum([1 for x in self.tonlib.get_workers_state().values() if x['is_working']])
-        stotage_state = sum([1 for x in self.storage.get_workers_state().values() if x['is_healthy']])
+        stotage_state = sum([1 for x in self.storage.get_workers_state().values() if x['is_healthy']])        
 
-        return {
-            'tonlib': bool(tonlib_state),
-            'storage': bool(stotage_state),
-        }
+        return HealthCheckResult(
+            tonlib=bool(tonlib_state),
+            storage=bool(stotage_state),
+            redundancy=bool(len(await self.storage.get_node_state()) >= self.settings.storage.min_redundancy),
+            load=round(self.storage.storage_lru.size * 100 / self.storage.settings.storage_max_size, 2)
+        )
 
     async def _peer_remote_call(self, peer: Dict[str, Any], remote_path: str):
         host = await self._get_peer_hostname(peer["ip_str"])
@@ -474,7 +478,7 @@ class Server:
         bag_id = await self._get_nft_bag_id(address, owner=owner)
         node_state = await self.storage.get_node_state()
 
-        if len(node_state) < self.settings.storage.min_redundancy - 1:
+        if len(node_state) < self.settings.storage.min_redundancy:
             raise exceptions.TorrentStorageError("Local storage node unable to comply required redundancy")
         total_size = sum([f.size for f in files])
         if total_size > self.settings.storage.storage_bag_size_limit:

@@ -9,20 +9,14 @@ from jwt.exceptions import InvalidTokenError
 from aiohttp import ClientResponse
 
 from nacl.signing import VerifyKey
-from pydantic import BaseModel
-from fastapi import Request, HTTPException, status, Response
+from fastapi import Request, HTTPException, status
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, APIKeyCookie
 
 from pytonlib.utils.address import detect_address
 from NFTorrent import models
 
 from loguru import logger
-
-
-class JWTPayload(BaseModel):
-    sub: str
-    aud: List[str]
-    exp: int
 
 class InvalidSubjectError(InvalidTokenError):
     pass
@@ -141,7 +135,7 @@ class NodeJWTBearer(HTTPBearer):
 
         if subject != self.subject and subject not in self._node_state_map:
             raise InvalidSubjectError('Subject not known')
-        return JWTPayload(**payload)
+        return models.JWTPayload(**payload)
 
 
 class ContractAPIKeyCookie(APIKeyCookie):
@@ -186,7 +180,7 @@ class ContractAPIKeyCookie(APIKeyCookie):
                         exc=str(E))
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid or expired token")
         
-        return JWTPayload(**payload)
+        return models.JWTPayload(**payload)
         
     def get_auth_payload(self) -> str:
         expires = time.time() + self.auth_payload_expires_timeout
@@ -250,9 +244,7 @@ class ContractAPIKeyCookie(APIKeyCookie):
             'exp': expires
         }
         token = jwt.encode(payload, self.jwt_secret, algorithm=self.jwt_algorithm)
-        response = Response(payload, status_code=status.HTTP_200_OK)
-        response.set_cookie(self.cookie_name, token, expires=expires, secure=True, httponly=True)
-        return response
+        return models.JWTPayload(**payload), token
     
 
     # NFTorrent=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0aWQiOiI0NjA0MGFhYSIsInN1YiI6IkVRQUc2WDhGRXM0MWlqM0hFV21zNUJYdUYvV0JEYit1VTR4OC9IVWd1VUNlbThRbCIsImF1ZCI6WyJORlRvcnJlbnQiXSwiZXhwIjoxNzQ0ODI0Njc3LjI4NDk5MjJ9.nW-eraHFWlJKMYaBRgN3PYpNYT6OS6zx386BqKTT44E; 
