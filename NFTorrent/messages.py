@@ -19,11 +19,11 @@ def date_mask_to_string(n: int) -> str:
             _chars[j] = chr(((n >> i) & 0xF) + 48)
             if (i == 16) or (i == 8):
                 j += 1
-                if (n >> (i - 8)) & 0xFF:
-                    _chars[j] = "-"
-                else:
-                    i = 0
+                _chars[j] = "-"                
+                if (n >> (i - 8)) & 0xFF == 0:
+                    j += 1
                     _chars[j] = "*"                    
+                    i = 0
             j += 1
             i -= 4
         return ''.join(_chars)

@@ -20,18 +20,6 @@ class StatisticMeasurements:
     duration: float = 0
 
 
-def dataclass_to_influx(instance):
-    kv = []
-    for field in fields(instance):
-        value = getattr(instance, field.name, None)
-        if value is None:
-            continue
-        if issubclass(field.type, str):
-            value = '"' + value.replace('"', '\\"') + '"'
-        kv.append(f'{field.name}={value}')
-    return ','.join(kv)
-
-
 class StatisticsStore(defaultdict):
 
     def __init__(self):
@@ -41,11 +29,6 @@ class StatisticsStore(defaultdict):
         _timestamp = int(time.time() * 1000000)
         return [ {'tags': k, 'fields': v, 'timestamp': _timestamp} for k, v in self.items() ]
     
-    def as_influx_dbline(self):
-        _timestamp = int(time.time() * 1000000)
-        lines = [ f'NFTorrentStats,{dataclass_to_influx(k)} {dataclass_to_influx(v)} {_timestamp}' for k, v in self.items() ]
-        return lines
-
 
 class StatisticsMiddleware(BaseHTTPMiddleware):
 
