@@ -15,6 +15,7 @@ from NFTorrent import __meta__
 from NFTorrent import models
 from NFTorrent.webserver import Server
 from NFTorrent.auth import JWTPayload
+from NFTorrent.middlewares import StatisticsMiddleware, StatisticsStore
 
 ws = Server()
 
@@ -31,9 +32,10 @@ app = FastAPI(
         504: {'description': 'Server Timeout'}
     },
     root_path=ws.settings.webserver.api_root_path,
-    openapi_tags=tags_metadata
+    openapi_tags=tags_metadata,
 )
 
+stats = StatisticsStore()
 
 @app.on_event("startup")
 async def startup():
@@ -90,6 +92,9 @@ async def add_bearer_response_auth_header(request: Request, call_next):
     return response
 
 
+app.add_middleware(StatisticsMiddleware, stats_store=stats)
+
+
 def wrap_result(func):
     @wraps(func)
     async def wrapper(*args, **kwargs):
@@ -100,14 +105,18 @@ def wrap_result(func):
 
 # API
 @app.get('/healthcheck', include_in_schema=False)
-async def healthcheck()-> models.HealthCheckResult:
+async def healthcheck() -> models.HealthCheckResult:
     return await ws.get_healthcheck()
+
+@app.get('/stats', include_in_schema=False)
+async def healthcheck():
+    return stats.as_list()
 
 
 @app.get('/tonlib/state', dependencies=[Depends(ws.jwt_bearer)], tags=['liteserver'], 
          response_model=models.TonlibManagerState, )
 @wrap_result
-async def get_tonlib_worker_state():
+async def get_tonlib_state():
     """
     Get liteservers state.
     """       
