@@ -278,7 +278,7 @@ class Server:
                     logger.info("Add torrent to storage peer, ADNL: {adnl}, host: {host}, BAG Id: {bag_id}", 
                                 adnl=node["adnl_id"], host=host, bag_id=bag_id)
                     
-                    async with await session.post(self._get_peer_uri(host, f'/storage/torrent/{bag_id}'), 
+                    async with await session.post(self._get_peer_uri(host, f'/api/v1/storage/torrent/{bag_id}'), 
                                             headers=self._get_peer_headers(host), 
                                             verify_ssl=self.settings.webserver.verify_ssl,
                                             allow_redirects=False) as resp:
@@ -428,7 +428,7 @@ class Server:
             peers = await self.storage.node_get_peers(bag_id)
             good_peers = [x for x in peers['peers'] if x['ready_parts'] == peers['total_parts']]
             if good_peers:
-                remote_result = await self._peer_remote_call(good_peers[0], f'/storage/torrent/{bag_id}/c/{files[0]["digest"]}')
+                remote_result = await self._peer_remote_call(good_peers[0], f'/api/v1/storage/torrent/{bag_id}/c/{files[0]["digest"]}')
                 if remote_result['status'] == status.HTTP_200_OK:
                     return StreamingResponse(io.BytesIO(remote_result['response']), headers=remote_result['headers'])                
                 
