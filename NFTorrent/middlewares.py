@@ -32,6 +32,22 @@ def dataclass_to_influx(instance):
     return ','.join(kv)
 
 
+def dict_to_influx(instance: Dict):
+    kv = []
+    for k, v in instance.items():
+        value = v
+        if value is None:
+            continue
+        if isinstance(v, dict):
+            continue
+        elif isinstance(v, bool):
+            value = int(value)
+        elif isinstance(v, str):
+            value = '"' + value.replace('"', '\\"') + '"'
+        kv.append(f'{k}={value}')
+    return ','.join(kv)
+
+
 class StatisticsStore(defaultdict):
 
     def __init__(self):

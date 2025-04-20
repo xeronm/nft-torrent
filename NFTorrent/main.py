@@ -1,5 +1,6 @@
 import asyncio
 from functools import wraps
+import time
 from typing import List, Optional
 
 from fastapi import FastAPI, Request
@@ -15,7 +16,7 @@ from NFTorrent import __meta__
 from NFTorrent import models
 from NFTorrent.webserver import Server
 from NFTorrent.auth import JWTPayload
-from NFTorrent.middlewares import StatisticsMiddleware, StatisticsStore
+from NFTorrent.middlewares import StatisticsMiddleware, StatisticsStore, dict_to_influx
 
 ws = Server()
 
@@ -109,14 +110,30 @@ async def healthcheck() -> models.HealthCheckResult:
     return await ws.get_healthcheck()
 
 
-@app.get('/stats', include_in_schema=False)
-async def healthcheck(request: Request):
-    return stats.as_list()
+@app.get('/stats', response_class=PlainTextResponse, include_in_schema=False)
+async def statistics(request: Request):
+    _timestamp = int(time.time() * 1000000)
+    storage = ws.storage.get_storage_state()
+    _storage = {
+        'size': storage['size'],
+        'size_pressure': storage['size_pressure'],
+    }
+    _storage.update(storage["stats"])    
+    _storage.update(ws.stats)
 
+    liteservers_stats = [
+        f'NFTorrentLiteservers,{dict_to_influx({"id": ls["ls_index"]})} {dict_to_influx(ls)} {_timestamp}' 
+        for ls in ws.tonlib.get_workers_state().values()
+    ]
 
-@app.get('/stats/influxdb', response_class=PlainTextResponse, include_in_schema=False)
-async def healthcheck(request: Request):
-    return '\n'.join(stats.as_influx_dbline())
+    workers_stats = [ 
+        f'NFTorrentStorageWorkers,{dict_to_influx({"id": w["client_id"]})} {dict_to_influx(w)} {_timestamp}' 
+        for w in storage['workers'].values() 
+    ]
+
+    return '\n'.join([
+        f'NFTorrentStorage {dict_to_influx(_storage)} {_timestamp}',
+    ] + workers_stats + liteservers_stats + stats.as_influx_dbline())
 
 
 @app.get('/api/v1/tonlib/state', dependencies=[Depends(ws.jwt_bearer)], tags=['liteserver'], 
@@ -139,7 +156,10 @@ async def get_storage_state():
     Get storage state.
     """    
     result = ws.storage.get_storage_state()
-    result['stats'].update(ws.stats)
+    _storage_stats = {}
+    _storage_stats.update(result["stats"])    
+    _storage_stats.update(ws.stats)
+    result['stats'] = _storage_stats
     return result
 
 
