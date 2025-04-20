@@ -366,6 +366,7 @@ class TonStorageCliManager:
         return {
             'workers': self.get_workers_state(),
             'size': self.storage_lru.size,
+            'max_size': self.settings.storage_max_size,
             'size_pressure': self.settings.storage_size_pressure,
             'stats': self.stats,
         }

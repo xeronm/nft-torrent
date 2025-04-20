@@ -145,7 +145,8 @@ async def statistics(request: Request):
     storage = ws.storage.get_storage_state()
     _storage = {
         'size': storage['size'],
-        'size_pressure': storage['size_pressure'],
+        'max_size': storage['max_size'],
+        'size_pressure': storage['size_pressure'],        
     }
     _storage.update(storage["stats"])    
     _storage.update(ws.stats)
