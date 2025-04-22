@@ -248,7 +248,7 @@ class Server:
                     raise
                 meta_ready = noadd = False
             if not meta_ready:
-                await self._fetch_torrent_meta(bag_id, noadd=noadd)
+                result = await self._fetch_torrent_meta(bag_id, noadd=noadd)
 
         return result
 
