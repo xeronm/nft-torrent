@@ -1,10 +1,12 @@
 import base64
 import binascii
-from pytonlib.utils.address import prepare_address, calcCRC
+
+from pytonlib.utils.address import calcCRC
+
 
 def adnl_id_encode(adnl_id: bytes, upper_case: bool = False) -> str:
     if len(adnl_id) != 32:
-        raise ValueError('Invalid ADNL id length, 32 bytes expected')    
+        raise ValueError('Invalid ADNL id length, 32 bytes expected')
     buffer = b'\x2d' + adnl_id
     adnl_enc = base64.b32encode(buffer + calcCRC(buffer))[1:].decode()
     return adnl_enc if upper_case else adnl_enc.lower()
@@ -12,7 +14,7 @@ def adnl_id_encode(adnl_id: bytes, upper_case: bool = False) -> str:
 
 def adnl_id_decode(id: str) -> bytes:
     if len(id) != 55:
-        raise ValueError('Invalid ADNL id length, 55 chars expected')    
+        raise ValueError('Invalid ADNL id length, 55 chars expected')
     buffer = chr(0x66) + id
     adnl_dec = base64.b32decode(buffer.upper())
     if adnl_dec[0] != 0x2d:
@@ -39,9 +41,9 @@ def parse_adnl_id(adnl_id: bytes | str) -> str:
             try:
                 buf = base64.b64decode(adnl_id, validate=True)
             except binascii.Error:
-                valid = False                   
+                valid = False
         if not valid or len(buf) != 32:
-            raise ValueError('Invalid adnl id str: should be 32 bytes hex or base64 encoded')        
+            raise ValueError('Invalid adnl id str: should be 32 bytes hex or base64 encoded')
     else:
         buf = adnl_id
     return adnl_id_encode(buf)
@@ -57,18 +59,18 @@ def parse_bag_id(bag_id: int | str | bytes) -> str:
         hex_bag_id = bag_id.hex()
     else:
         valid = True
-        if len(bag_id) == 64: # HEX representation
+        if len(bag_id) == 64:  # HEX representation
             try:
-                buf = bytes.fromhex(bag_id)            
+                buf = bytes.fromhex(bag_id)
             except ValueError:
                 valid = False
             hex_bag_id = bag_id
-        else: # base64 representation
+        else:  # base64 representation
             try:
                 buf = base64.b64decode(bag_id, validate=True)
                 hex_bag_id = buf.hex()
             except binascii.Error:
-                buf = None            
+                buf = None
         if buf is None or len(buf) != 32:
             valid = False
         if not valid:
