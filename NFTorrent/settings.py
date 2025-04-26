@@ -1,12 +1,13 @@
 import os
-from typing import List
 from dataclasses import dataclass
 from importlib import import_module
+from typing import List
 
 from pyTON import settings
 
 from NFTorrent.address import parse_bag_id
 from NFTorrent.models import NftCollection
+
 
 def import_string(dotted_path):
     """
@@ -26,7 +27,7 @@ def import_string(dotted_path):
         raise ImportError('Module "%s" does not define a "%s" attribute/class' % (
             module_path, class_name)
         ) from err
-    
+
 
 def _value_from_file(value: str):
     if value and value.startswith('file:'):
@@ -34,9 +35,10 @@ def _value_from_file(value: str):
             return f.readline().strip()
     return value
 
+
 @dataclass
 class TonStorageCliSettings:
-    storage_public_addr: str    
+    storage_public_addr: str
     storage_cli_binary: str
     storage_daemon_addr: str
     storage_db_path: str
@@ -49,18 +51,18 @@ class TonStorageCliSettings:
     manifest_bag_id: str = None
     num_workers: int = 16
     restart_timeout: int = 30
-    confirmation_timeout = 60 
+    confirmation_timeout = 60
     min_redundancy = 3
     torrent_dirname: str = 'nftdata'
 
     @classmethod
     def from_environment(cls):
         obj = cls.__new__(cls)
-        obj.storage_public_addr = os.environ.get('TON_STORAGE_PUBLIC_ADDR', None)        
+        obj.storage_public_addr = os.environ.get('TON_STORAGE_PUBLIC_ADDR', None)
         obj.storage_cli_binary = os.environ.get('TON_STORAGE_CLI_BINARY', './storage-daemon-cli')
         obj.storage_daemon_addr = os.environ.get('TON_STORAGE_DAEMON_ADDR', '127.0.0.1:5555')
         obj.storage_db_path = os.environ.get('TON_STORAGE_DB_PATH', './storage-db')
-        obj.storage_temp_dir = os.environ.get('TON_STORAGE_TEMP_DIR', None)        
+        obj.storage_temp_dir = os.environ.get('TON_STORAGE_TEMP_DIR', None)
         obj.storage_db_torrent_path = os.environ.get('TON_STORAGE_DB_TORRENT_PATH', None)
         obj.storage_size_pressure = int(os.environ.get('TON_STORAGE_SIZE_PRESSURE', cls.storage_size_pressure))
         obj.storage_max_size = int(os.environ.get('TON_STORAGE_MAX_SIZE', round(obj.storage_size_pressure * 1.5)))
@@ -112,7 +114,7 @@ class WebServerSettings:
         obj.real_ip_header = settings.strtobool(os.environ.get('HTTP_REAL_IP_HEADER', 'true'))
         obj.request_timeout = int(os.environ.get('HTTP_REQUEST_TIMEOUT', cls.request_timeout))
         obj.twa_domains = [x.strip() for x in os.environ.get('HTTP_TWA_DOMAINS', '').split(',') if x.strip()]
-        obj.nft_collections = import_string(os.environ.get('HTTP_NFT_COLLECTIONS', 'NFTorrent.collections.collections'))
+        obj.nft_collections = import_string(os.environ.get('HTTP_NFT_COLLECTIONS', 'NFTorrent.collections.collections'))  # noqa: E501
         obj.allow_networks = [x.strip() for x in os.environ.get('HTTP_ALLOW_NETWORKS', '').split(',') if x.strip()]
 
         return obj
@@ -127,7 +129,7 @@ class Settings:
 
     @classmethod
     def from_environment(cls):
-        obj = cls.__new__(cls)        
+        obj = cls.__new__(cls)
         obj.storage = TonStorageCliSettings.from_environment()
         obj.webserver = WebServerSettings.from_environment()
         _pyton = settings.Settings.from_environment()

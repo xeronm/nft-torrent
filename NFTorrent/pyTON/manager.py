@@ -1,11 +1,11 @@
 from typing import Dict
 
-from pyTON.manager import TonlibManager as _TonlibManager
-from pytonlib.utils.tokens import parse_nft_item_data
-from pytonlib.utils.address import detect_address
-from pytonlib import TonlibError
-from fastapi.exceptions import HTTPException
 from fastapi import status
+from fastapi.exceptions import HTTPException
+from pyTON.manager import TonlibManager as _TonlibManager
+from pytonlib import TonlibError
+from pytonlib.utils.address import detect_address
+from pytonlib.utils.tokens import parse_nft_item_data
 from tonpy.types import CellSlice
 
 from NFTorrent.models import NftCollection
@@ -26,13 +26,13 @@ class TonlibManager(_TonlibManager):
             addr = await self.dispatch_request(method, collection_address, item_index)
         except TonlibError:
             addr = await self.dispatch_archival_request(method, collection_address, item_index)
-        return addr    
+        return addr
 
     async def get_nft_data(self, address: str, skip_verification: bool = False, owner: str = None):
         nft_data_result = await self.raw_run_method(address, 'get_nft_data', [], None)
         if nft_data_result['stack'] is None or len(nft_data_result['stack']) != 5:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Smart contract is not NFT")
-        
+
         nft_data = parse_nft_item_data(nft_data_result['stack'])
         if owner is not None and detect_address(nft_data['owner'])['raw_form'] != detect_address(owner)['raw_form']:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="NFT owner mistmach")
@@ -46,12 +46,13 @@ class TonlibManager(_TonlibManager):
         if not skip_verification:
             verified_nft_address = await self.get_nft_item_address(nft_data['collection_address'], nft_data['index'])
             if detect_address(verified_nft_address)['raw_form'] != detect_address(address)['raw_form']:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Verification with NFT collection failed")
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                    detail="Verification with NFT collection failed")
 
         # print(nft_data['individual_content'])
         nft_data['individual_content'] = nft_collection.nft_content_class(CellSlice(nft_data['individual_content']))
         return nft_data, nft_collection
-    
 
     def setup_cache(self):
-        pass    
+        self.raw_run_method = self.cache_manager.cached(expire=5)(self.raw_run_method)
+        self.get_nft_data = self.cache_manager.cached(expire=60)(self.get_nft_data)

@@ -1,12 +1,13 @@
 import abc
-from typing import Optional, List, Dict
 from enum import IntEnum
-from pydantic import BaseModel, Field, validator
-from fastapi.params import Path, File
-from fastapi import UploadFile
+from typing import Dict, List, Optional
 
-from pytonlib.utils.address import prepare_address, detect_address
-from NFTorrent.address import parse_bag_id, parse_adnl_id
+from fastapi import UploadFile
+from fastapi.params import File, Path
+from pydantic import BaseModel, Field, validator
+from pytonlib.utils.address import detect_address, prepare_address
+
+from NFTorrent.address import parse_adnl_id, parse_bag_id
 
 
 class TvmStructure:
@@ -18,11 +19,11 @@ class NftContent(TvmStructure):
     @abc.abstractmethod
     def bag_id(self):
         pass
-    
+
     @abc.abstractmethod
     def image(self):
         pass
-    
+
     @abc.abstractmethod
     def image_data(self):
         pass
@@ -64,14 +65,14 @@ class StorageTorrentContentMethod(BaseModel):
     @validator('bag_id')
     def validate_contract_address(cls, v):
         return parse_bag_id(v)
-        
+
 
 class StoragePeerMethod(BaseModel):
     adnl_id: str = Path(description="ADNL id")
 
     @validator('adnl_id')
     def validate_adnl_address(cls, v):
-        return parse_adnl_id(v)    
+        return parse_adnl_id(v)
 
 
 class NftMethod(BaseModel):
@@ -81,7 +82,7 @@ class NftMethod(BaseModel):
     def validate_contract_address(cls, v):
         try:
             return prepare_address(v)
-        except:
+        except Exception:
             raise ValueError('Ivalid TON contract address format')
 
 
@@ -93,7 +94,7 @@ class NftContentMethod(BaseModel):
     def validate_contract_address(cls, v):
         try:
             return prepare_address(v)
-        except:
+        except Exception:
             raise ValueError('Ivalid TON contract address format')
 
 
@@ -108,7 +109,7 @@ class NftTorrentCreate(NftMethod):
 class LiteserverId(BaseModel):
     _type: str = Field(..., alias="@type")
     key: str
-    
+
 
 class TonlibWorkerState(BaseModel):
     ls_index: int
@@ -143,13 +144,13 @@ class StorageManagerState(BaseModel):
     stats: Dict[str, int]
     size: int
     size_pressure: int
-    
+
 
 class NodePeerInfo(BaseModel):
     adnl_id: str = Field(..., description='Raw ADNL id address (decoded) form')
     ip_str: str = Field(..., description='IP address an port of TON Storage server')
     adnl: str = Field(..., description='User-friendly ADNL address (encoded) form')
-    
+
 
 class CHAIN(IntEnum):
     MAINNET = -239
@@ -165,7 +166,7 @@ class Account(BaseModel):
     def validate_contract_address(cls, v):
         try:
             return prepare_address(v)
-        except:
+        except Exception:
             raise ValueError('Ivalid TON contract address format')
 
 

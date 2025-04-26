@@ -1,18 +1,21 @@
 import time
 from collections import defaultdict
-from typing import Dict, Optional
-from dataclasses import dataclass, fields
+from dataclasses import dataclass
+from typing import Optional
 
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint, DispatchFunction
+from starlette.middleware.base import (BaseHTTPMiddleware, DispatchFunction,
+                                       RequestResponseEndpoint)
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.types import ASGIApp
+
 
 @dataclass(frozen=True)
 class StatisticTags:
     path: str
     method: str
     status: int
+
 
 @dataclass
 class StatisticMeasurements:
@@ -27,13 +30,14 @@ class StatisticsStore(defaultdict):
 
     def as_list(self):
         _timestamp = int(time.time() * 1000000)
-        return [ {'tags': k, 'fields': v, 'timestamp': _timestamp} for k, v in self.items() ]
-    
+        return [{'tags': k, 'fields': v, 'timestamp': _timestamp}
+                for k, v in self.items()]
+
 
 class StatisticsMiddleware(BaseHTTPMiddleware):
 
     def __init__(self, app: ASGIApp, stats_store: StatisticsStore = None, dispatch: Optional[DispatchFunction] = None):
-        super().__init__(app, dispatch=dispatch)        
+        super().__init__(app, dispatch=dispatch)
         self._stats = stats_store
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
