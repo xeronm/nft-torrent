@@ -18,7 +18,7 @@ Feel free to support me with TON: `UQDJJHWJKrt7ZKiRzXz2TpzJMxJ5RrWffTqXL8769EXa_
 
 1. Build Docker image
 ```sh
-pip intsall tox
+pip intsall tox tox-docker
 tox -e build
 tox -e image
 ```

@@ -92,12 +92,14 @@ class NftMutableMetaData(TvmStructure):
 class PetMemoryNftContent(NftContent):
 
     def __init__(self, cs: CellSlice):
+        setattr(self, '@type', self.__class__.__name__)
         _sc0 = cs
         _sc1 = _sc0.load_ref(as_cs=True)
         self.imm_data = PetMemoryNftImmutableData(_sc1)
         _sc2 = _sc1.load_ref(as_cs=True)
         self.data = NftMutableMetaData(_sc2)
-        self.fee_due_time = _sc2.load_uint(32) 
+        self.fee_due_time = _sc2.load_uint(32)
+
 
     def bag_id(self):
         return self.data.bag_id

@@ -54,4 +54,5 @@ class TonlibManager(_TonlibManager):
     
 
     def setup_cache(self):
-        pass    
+        self.raw_run_method = self.cache_manager.cached(expire=5)(self.raw_run_method)
+        self.get_nft_data = self.cache_manager.cached(expire=60)(self.get_nft_data)

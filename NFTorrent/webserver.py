@@ -19,9 +19,10 @@ from fastapi import UploadFile
 
 from pytonlib.utils.address import prepare_address, detect_address
 
-from pyTON.cache import CacheManager, RedisCacheManager, DisabledCacheManager
+from pyTON.cache import DisabledCacheManager
 from pyTON.settings import RedisCacheSettings
 
+from NFTorrent.cache import RedisCacheManager
 from NFTorrent.pyTON.manager import TonlibManager
 from NFTorrent.models import NftCollection, NftContent, HealthCheckResult
 from NFTorrent.settings import Settings
@@ -94,20 +95,22 @@ class Server:
         " - webserver.twa_domains: {domains}\n"
         " - storage.storage_db_path: {dbpath}\n"
         " - storage.storage_temp_dir: {tempdir}\n"
-        " - storage.min_redundancy: {redundancy}\n",
+        " - storage.min_redundancy: {redundancy}\n"
+        " - cache.enabled: {cache_enabled}\n",
                     addr=self.settings.storage.storage_public_addr, 
                     api_root=self.settings.webserver.api_root_path,
                     domains=self.settings.webserver.twa_domains,
                     networks=self.settings.webserver.allow_networks,
                     dbpath=self.settings.storage.storage_db_path,
                     tempdir=self.settings.storage.storage_temp_dir,
-                    redundancy=self.settings.storage.min_redundancy)
+                    redundancy=self.settings.storage.min_redundancy,
+                    cache_enabled=self.settings.cache.enabled)
 
         # self.resolver = aiodns.DNSResolver(loop=self.loop)
 
         cache_manager = None
         if self.settings.cache.enabled:
-            if isinstance(self.settings.pyton.cache, RedisCacheSettings):
+            if isinstance(self.settings.cache, RedisCacheSettings):
                 cache_manager = RedisCacheManager(self.settings.cache)
             else:
                 raise RuntimeError('Only Redis cache supported')

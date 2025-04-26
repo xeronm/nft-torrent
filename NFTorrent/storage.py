@@ -108,7 +108,7 @@ class TonStorageCli:
                     output += buffer
                     if match_error is not None and len(output) >= len(match_error):
                         if output.startswith(match_error):
-                            return {'error': buffer.strip()}
+                            return {'@type': 'error', 'error': buffer.strip()}
                         match_error = None
 
                     if output.find(match, pos) >= 0:
@@ -137,7 +137,7 @@ class TonStorageCli:
                     output += buffer
                     if match_error is not None and len(output) >= len(match_error):
                         if output.startswith(match_error):
-                            return {'error': buffer.strip()}
+                            return {'@type': 'error', 'error': buffer.strip()}
                         match_error = None
 
                     for ch in buffer:

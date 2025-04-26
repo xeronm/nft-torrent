@@ -107,26 +107,8 @@ class TonStorageCliManager:
         self.threadpool_executor.shutdown()
 
     def setup_cache(self):
-        pass
-        # self.raw_get_transactions = self.cache_manager.cached(expire=5)(self.raw_get_transactions)
-        # self.get_transactions = self.cache_manager.cached(expire=15, check_error=False)(self.get_transactions)
-        # self.raw_get_account_state = self.cache_manager.cached(expire=5)(self.raw_get_account_state)
-        # self.generic_get_account_state = self.cache_manager.cached(expire=5)(self.generic_get_account_state)
-        # self.raw_cmd_method = self.cache_manager.cached(expire=5)(self.raw_cmd_method)
-        # self.raw_estimate_fees = self.cache_manager.cached(expire=5)(self.raw_estimate_fees)
-        # self.getMasterchainInfo = self.cache_manager.cached(expire=1)(self.getMasterchainInfo)
-        # self.getMasterchainBlockSignatures = self.cache_manager.cached(expire=5)(self.getMasterchainBlockSignatures)
-        # self.getShardBlockProof = self.cache_manager.cached(expire=5)(self.getShardBlockProof)
-        # self.lookupBlock = self.cache_manager.cached(expire=600)(self.lookupBlock)
-        # self.getShards = self.cache_manager.cached(expire=600)(self.getShards)
-        # self.raw_getBlockTransactions = self.cache_manager.cached(expire=600)(self.raw_getBlockTransactions)
-        # self.getBlockTransactions = self.cache_manager.cached(expire=600)(self.getBlockTransactions)
-        # self.getBlockHeader = self.cache_manager.cached(expire=600)(self.getBlockHeader)
-        # self.get_config_param = self.cache_manager.cached(expire=5)(self.get_config_param)
-        # self.get_token_data = self.cache_manager.cached(expire=15)(self.get_token_data)
-        # self.tryLocateTxByOutcomingMessage = self.cache_manager.cached(expire=600, check_error=False)(self.tryLocateTxByOutcomingMessage)
-        # self.tryLocateTxByIncomingMessage = self.cache_manager.cached(expire=600, check_error=False)(self.tryLocateTxByIncomingMessage)
-
+        self.node_list = self.cache_manager.cached(expire=15)(self.node_list)
+        self.node_get = self.cache_manager.cached(expire=600)(self.node_get)
 
     def terminate_worker(self, client_id: int, timeout: float = 0):
         wctl = self.workers[client_id]
@@ -454,7 +436,6 @@ class TonStorageCliManager:
         for f in torrent_info['files']:
             digest = hashlib.shake_256((bag_id + f['name']).encode()).digest(15)
             f['digest'] = base64.b32encode(digest).decode().lower()    
-
 
     async def node_get_state(self):
         method = 'node_get_state'
