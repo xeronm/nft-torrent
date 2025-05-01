@@ -8,7 +8,7 @@ from typing import Any, Dict
 
 from loguru import logger
 
-from NFTorrent.address import parse_adnl_id, parse_bag_id
+from NFTorrent.blockchain.address import parse_adnl_id, parse_bag_id
 from NFTorrent.settings import TonStorageCliSettings
 
 

@@ -2,7 +2,7 @@ import unittest
 
 from tonpy.types import CellSlice
 
-from NFTorrent.messages import PetMemoryNftContent
+from NFTorrent.collections import PetMemoryNftContent
 
 
 class TestPetMemoryNftContent(unittest.TestCase):

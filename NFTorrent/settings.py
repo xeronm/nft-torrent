@@ -5,8 +5,8 @@ from typing import List
 
 from pyTON import settings
 
-from NFTorrent.address import parse_bag_id
-from NFTorrent.models import NftCollection
+from NFTorrent.blockchain.address import parse_bag_id
+from NFTorrent.modelsbase import CollectionConfig
 
 
 def import_string(dotted_path):
@@ -74,10 +74,8 @@ class TonStorageCliSettings:
         obj.min_redundancy = int(os.environ.get('TON_STORAGE_MIN_REDUNDANCY', cls.min_redundancy))
         obj.torrent_dirname = os.environ.get('TON_STORAGE_TORRENT_DIRNAME', cls.torrent_dirname)
         obj.manifest_bag_id = parse_bag_id(_value_from_file(os.environ.get('TON_STORAGE_MANIFEST_BAG_ID', None)))
-
         if not obj.storage_public_addr:
             raise ValueError('Environemnt variable "TON_STORAGE_PUBLIC_ADDR" is required')
-
         return obj
 
 
@@ -87,6 +85,7 @@ class WebServerSettings:
     jwt_secret: str
     jwt_algorithm: str
     port: int = None
+    debug: bool = False
     remote_api_root: str = None
     twa_domains: List[str] = None
     enable_ssl: bool = True
@@ -95,7 +94,7 @@ class WebServerSettings:
     real_ip_header: bool = True
     allow_networks: List[str] = None
     request_timeout: int = 10
-    nft_collections: List[NftCollection] = None
+    collection_config: CollectionConfig = None
 
     @classmethod
     def from_environment(cls):
@@ -114,9 +113,35 @@ class WebServerSettings:
         obj.real_ip_header = settings.strtobool(os.environ.get('HTTP_REAL_IP_HEADER', 'true'))
         obj.request_timeout = int(os.environ.get('HTTP_REQUEST_TIMEOUT', cls.request_timeout))
         obj.twa_domains = [x.strip() for x in os.environ.get('HTTP_TWA_DOMAINS', '').split(',') if x.strip()]
-        obj.nft_collections = import_string(os.environ.get('HTTP_NFT_COLLECTIONS', 'NFTorrent.collections.collections'))  # noqa: E501
+        obj.collection_config = import_string(os.environ.get('HTTP_COLLECTION_CONFIG', 'NFTorrent.collections.config'))  # noqa: E501
         obj.allow_networks = [x.strip() for x in os.environ.get('HTTP_ALLOW_NETWORKS', '').split(',') if x.strip()]
+        return obj
 
+
+@dataclass
+class IndexDbSettings:
+    enabled: bool
+    database_url: str
+    timeout: int = 30
+    bulk_size: int = 100
+    num_workers: int = 4
+
+    @classmethod
+    def from_environment(cls):
+        obj = cls.__new__(cls)
+        obj.enabled = settings.strtobool(os.environ.get('INDEXDB_ENABLED', 'false'))
+        database_backend = os.environ.get('INDEXDB_DATABASE_BACKEND', 'postgresql+psycopg2')
+        database_user = os.environ.get('INDEXDB_DATABASE_USER', 'postgres')
+        database_password = os.environ.get('INDEXDB_DATABASE_PASSWORD', 'postgres')
+        database_name = os.environ.get('INDEXDB_DATABASE_NAME', 'postgres')
+        database_host = os.environ.get('INDEXDB_DATABASE_HOST', 'localhost')
+        database_port = os.environ.get('INDEXDB_DATABASE_PORT', None)
+        if database_port:
+            database_host = f'{database_host}:{database_port}'
+        obj.database_url = f'{database_backend}://{database_user}:{database_password}@{database_host}/{database_name}'
+        obj.timeout = int(os.environ.get('INDEXDB_TIMEOUT', cls.timeout))
+        obj.bulk_size = int(os.environ.get('INDEXDB_BULK_SIZE', cls.bulk_size))
+        obj.num_workers = int(os.environ.get('INDEXDB_NUM_WORKERS', cls.num_workers))
         return obj
 
 
@@ -126,6 +151,7 @@ class Settings:
     webserver: WebServerSettings
     cache: settings.CacheSettings
     storage: TonStorageCliSettings
+    indexdb: IndexDbSettings
 
     @classmethod
     def from_environment(cls):
@@ -135,5 +161,5 @@ class Settings:
         _pyton = settings.Settings.from_environment()
         obj.tonlib = _pyton.tonlib
         obj.cache = _pyton.cache
-
+        obj.indexdb = IndexDbSettings.from_environment()
         return obj

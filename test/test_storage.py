@@ -1,6 +1,6 @@
 import unittest
 
-from NFTorrent.storage import (TonStorageCli, TonStorageCliSettings,
+from NFTorrent.storage.storage import (TonStorageCli, TonStorageCliSettings,
                                TonStorageLru, parse_bag_id)
 
 

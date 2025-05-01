@@ -2,7 +2,7 @@ import base64
 import binascii
 import unittest
 
-from NFTorrent.address import adnl_id_decode, adnl_id_encode
+from NFTorrent.blockchain.address import adnl_id_decode, adnl_id_encode
 
 
 class TestAdnl(unittest.TestCase):
