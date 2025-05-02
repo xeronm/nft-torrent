@@ -14,24 +14,23 @@ from fastapi import UploadFile, status
 from fastapi.exceptions import HTTPException
 from fastapi.responses import (FileResponse, JSONResponse, RedirectResponse,
                                StreamingResponse)
-
 from loguru import logger
 from pyTON.cache import DisabledCacheManager
 from pyTON.settings import RedisCacheSettings
 from pytonlib.utils.address import prepare_address
 
 from NFTorrent import exceptions
-from NFTorrent.blockchain.address import parse_bag_id
 from NFTorrent.auth import (ContractAPIKeyCookie, NodeJWTBearer,
                             ServerResponseAuthError)
+from NFTorrent.blockchain.address import parse_bag_id
 from NFTorrent.cache import RedisCacheManager
 from NFTorrent.exceptions import TorrentClientError
-from NFTorrent.storage.manager import TonStorageCliManager
+from NFTorrent.indexer.indexdb import IndexDb
 from NFTorrent.models import HealthCheckResult
 from NFTorrent.modelsbase import CollectionConfig
 from NFTorrent.pyTON.manager import TonlibManager
 from NFTorrent.settings import Settings
-from NFTorrent.indexer.indexdb import IndexDb
+from NFTorrent.storage.manager import TonStorageCliManager
 
 
 class BagWriteLock:
@@ -110,14 +109,6 @@ class Server:
                        cache_enabled=self.settings.cache.enabled,
                        database_url=self.settings.indexdb.database_url)
 
-
-        if self.settings.indexdb.enabled:
-            self.indexer = IndexDb(self.settings.indexdb,
-                                   loop=loop,
-                                   collection_config=self.collection_config)
-
-        # self.resolver = aiodns.DNSResolver(loop=self.loop)
-
         cache_manager = None
         if self.settings.cache.enabled:
             if isinstance(self.settings.cache, RedisCacheSettings):
@@ -133,11 +124,15 @@ class Server:
                                         cache_manager=cache_manager,
                                         loop=loop,
                                         collection_config=self.collection_config)
-            if self.indexer is not None:
-                self.indexer.tonlib = self.tonlib
+
+            if self.settings.indexdb.enabled:
+                self.indexer = IndexDb(self.settings.indexdb,
+                                       cache_manager=cache_manager,
+                                       loop=loop,
+                                       tonlib=self.tonlib,
+                                       collection_config=self.collection_config)
         else:
             logger.warning("Tonlib disabled, liteserver_config required")
-
 
         if self.settings.storage.num_workers:
             self.storage = TonStorageCliManager(self.settings.storage,

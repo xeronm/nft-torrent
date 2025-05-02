@@ -122,7 +122,7 @@ class WebServerSettings:
 class IndexDbSettings:
     enabled: bool
     database_url: str
-    timeout: int = 30
+    indexer_timeout: int = 30
     bulk_size: int = 100
     num_workers: int = 4
 
@@ -139,7 +139,7 @@ class IndexDbSettings:
         if database_port:
             database_host = f'{database_host}:{database_port}'
         obj.database_url = f'{database_backend}://{database_user}:{database_password}@{database_host}/{database_name}'
-        obj.timeout = int(os.environ.get('INDEXDB_TIMEOUT', cls.timeout))
+        obj.indexer_timeout = int(os.environ.get('INDEXDB_INDEXER_TIMEOUT', cls.indexer_timeout))
         obj.bulk_size = int(os.environ.get('INDEXDB_BULK_SIZE', cls.bulk_size))
         obj.num_workers = int(os.environ.get('INDEXDB_NUM_WORKERS', cls.num_workers))
         return obj

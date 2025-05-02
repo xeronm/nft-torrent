@@ -1,18 +1,18 @@
-from typing import Dict
+import asyncio
 import random
 import time
-import asyncio
 from collections import Counter
+from typing import Dict
 
 from loguru import logger
-
 from pyTON.manager import TonlibManager as _TonlibManager
 from pytonlib import TonlibError
 from pytonlib.utils.address import detect_address
-from pytonlib.utils.tokens import parse_nft_item_data, parse_nft_collection_data
+from pytonlib.utils.tokens import (parse_nft_collection_data,
+                                   parse_nft_item_data)
 from tonpy.types import CellSlice
 
-from NFTorrent.modelsbase import CollectionConfig, NftItemData, CollectionData
+from NFTorrent.modelsbase import CollectionConfig, CollectionData, NftItemData
 
 
 class ContractRequestError(Exception):
@@ -38,7 +38,7 @@ class TonlibManager(_TonlibManager):
         self.workers[ls_index]['tasks_count'] += 1
 
         logger.info("Sending request method: {method}, task_id: {task_id}, ls_index: {ls_index}",
-            method=method, task_id=task_id, ls_index=ls_index)
+                    method=method, task_id=task_id, ls_index=ls_index)
         await self.loop.run_in_executor(self.threadpool_executor, self.workers[ls_index]['worker'].input_queue.put,
                                         (task_id, timeout, method, args, kwargs))
 
@@ -57,7 +57,7 @@ class TonlibManager(_TonlibManager):
             self.stats[stat_method] += 1
             ls_index = self.select_worker()
             return await self.dispatch_request_to_worker(method, ls_index, *args, **kwargs)
-        except Exception as E:
+        except Exception:
             self.stats[f'{stat_method}_error'] += 1
             raise
 
@@ -106,7 +106,8 @@ class TonlibManager(_TonlibManager):
         collection_data = parse_nft_collection_data(collection_data_result['stack'])
 
         collection_info_result = await self.raw_run_method(address, 'info', [], None)
-        collection_data['collection_info'] = self.collection_config.collection_info_class.from_tvm(collection_info_result['stack'])
+        info_class = self.collection_config.collection_info_class
+        collection_data['collection_info'] = info_class.from_tvm(collection_info_result['stack'])
         collection_data['address'] = detect_address(address)['bounceable']['b64url']
         return CollectionData(**collection_data)
 

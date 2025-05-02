@@ -5,12 +5,25 @@ services:
     networks:
       - internal
 
+  db:
+    image: postgres:latest
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+    ports:
+      - 5432:5432
+    volumes:
+      - ./index-db:/var/lib/postgresql/data
+    networks:
+      - internal
+
   storage:
     image: nft-torrent:0.1.0
     restart: unless-stopped
     volumes:
       - ./storage-db:/storage-db
-      - /tmp/uploads:/uploads      
+      - /tmp/uploads:/uploads
     command: ./storage-daemon -v 3 -p 5555 -C /run/secrets/liteserver_config -D /storage-db -I ${TON_STORAGE_PUBLIC_ADDR}:3333
     secrets:
       - liteserver_config
@@ -29,12 +42,15 @@ services:
       TON_STORAGE_PUBLIC_ADDR: ${TON_STORAGE_PUBLIC_ADDR}
       TON_STORAGE_DAEMON_ADDR: storage:5555
       TON_STORAGE_TEMP_DIR: /uploads
-      TON_STORAGE_MANIFEST_BAG_ID: file:/run/secrets/storage_manifest      
+      TON_STORAGE_MANIFEST_BAG_ID: file:/run/secrets/storage_manifest
       TON_API_TONLIB_REQUEST_TIMEOUT: 20
       TON_API_TONLIB_LITESERVER_CONFIG: /run/secrets/liteserver_config
       TON_API_CACHE_ENABLED: 1
       TON_API_CACHE_REDIS_ENDPOINT: cache
       TON_API_CACHE_REDIS_TIMEOUT: 2
+      INDEXDB_ENABLED: 1
+      INDEXDB_INDEXER_TIMEOUT: 30
+      INDEXDB_DATABASE_HOST: db
       HTTP_API_ROOT_PATH: ${HTTP_API_ROOT_PATH}
       HTTP_API_JWT_SECRET: file:/run/secrets/jwt_key
       HTTP_TWA_DOMAINS: localhost:9000
@@ -49,14 +65,14 @@ services:
       - storage_manifest
       - jwt_key
     ports:
-      - 8002:8002      
+      - 8002:8002
     networks:
       - internal
     healthcheck:
       test: curl -sS http://127.0.0.1:8002/healthcheck || echo 1
       interval: 15s
       timeout: 3s
-      retries: 5      
+      retries: 5
     depends_on:
       - storage
       - cache

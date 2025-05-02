@@ -1,6 +1,7 @@
 from bitstring import BitArray
 from tonpy.types import CellSlice
 
+
 # BCD encoded date mask
 # 4 octets - year; 2 Octets - month; 2 octets - day; 0x00 - means unspecified or unknown
 #    0x20250100 - means 2025-01-*

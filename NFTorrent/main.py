@@ -5,7 +5,7 @@ from functools import wraps
 from typing import Dict, List
 
 from fastapi import FastAPI, Request, status
-from fastapi.exceptions import RequestValidationError, HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.params import Depends
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from pytonlib import TonlibException
@@ -13,8 +13,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from NFTorrent import __meta__, models
 from NFTorrent.middlewares import StatisticsMiddleware, StatisticsStore
-from NFTorrent.webserver import Server
 from NFTorrent.pyTON.manager import ContractRequestError
+from NFTorrent.webserver import Server
 
 ws = Server()
 
@@ -390,7 +390,7 @@ async def create_nft_torrent(request: models.NftTorrentCreate = Depends(),
 
 if ws.settings.indexdb.enabled:
     @app.get('/api/v1/collection', response_model_exclude_none=True, tags=['collection'],
-            dependencies=[Depends(ws.jwt_session)])
+             dependencies=[Depends(ws.jwt_session)])
     async def list_collections() -> List[models.CollectionData]:
         """
         List Collections Info.
@@ -401,11 +401,18 @@ if ws.settings.indexdb.enabled:
             for x in ws.indexer.collections.values()
         ]
 
-
     @app.get('/api/v1/collection/items', response_model_exclude_none=True, tags=['collection'],
-            dependencies=[Depends(ws.jwt_session)])
-    async def list_collection_nft_items(request: models.CollectionItemsMethod = Depends()) -> List[models.NftItemHeader]:
+             dependencies=[Depends(ws.jwt_session)])
+    async def list_collection_nft_items(request: models.CollectionItemsMethod = Depends()) -> List[models.NftItemHeader]:  # noqa: E501
         """
         List Collection NFT items.
         """
         return await ws.indexer.collection_query(**request.dict())
+
+    @app.get('/api/v1/collection/feed', response_model_exclude_none=True, tags=['collection'],
+             dependencies=[Depends(ws.jwt_session)])
+    async def collection_random_feed(request: models.CollectionItemsMethod = Depends()) -> List[models.NftItemHeader]:
+        """
+        Collection NFT radnom feed.
+        """
+        return await ws.indexer.collection_random_feed(**request.dict())

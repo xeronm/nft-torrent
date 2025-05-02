@@ -1,5 +1,5 @@
 from enum import IntEnum
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 
 from fastapi import UploadFile
 from fastapi.params import File, Path, Query

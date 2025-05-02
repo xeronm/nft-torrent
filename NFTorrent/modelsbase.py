@@ -1,9 +1,10 @@
 import abc
-from dataclasses import dataclass, field
-from tonpy.types import CellSlice
-from typing import List, Any, Type, Dict
+from dataclasses import dataclass
+from typing import Any, List, Type
+
 from pytonlib.utils.address import detect_address
 from sqlmodel import Field, SQLModel
+from tonpy.types import CellSlice
 
 
 class BaseCollectionModel(SQLModel, table=False):

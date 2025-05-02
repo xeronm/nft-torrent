@@ -1,7 +1,11 @@
 import datetime
-from sqlmodel import Field, UniqueConstraint, Relationship
-from .modelsbase import NftItemData, NftItemHeader, BaseCollectionModel, BaseNftModel
-from .blockchain.models import PetMemoryNftContent, GeoPoint, PetMemoryNftImmutableData, NftMutableMetaData
+
+from sqlmodel import Field, UniqueConstraint
+
+from .blockchain.models import (GeoPoint, NftMutableMetaData,
+                                PetMemoryNftContent, PetMemoryNftImmutableData)
+from .modelsbase import (BaseCollectionModel, BaseNftModel, NftItemData,
+                         NftItemHeader)
 
 
 class PetsCollection(BaseCollectionModel, table=True):
@@ -48,7 +52,7 @@ class PetMemoryNft(BaseNftModel, table=True):
     @classmethod
     def from_nftmodel(cls, collection_id: int, data: NftItemData):
         if not isinstance(data.individual_content, PetMemoryNftContent):
-            raise ValueError(f'invalid individual_content type="{type(content)}", PetMemoryNftContent required.')
+            raise ValueError(f'invalid individual_content type="{type(data.individual_content)}", PetMemoryNftContent required.')  # noqa: E501
         content: PetMemoryNftContent = data.individual_content
         return PetMemoryNft(
             collection_id=collection_id,
@@ -61,9 +65,12 @@ class PetMemoryNft(BaseNftModel, table=True):
             species_name=content.imm_data.species_name,
             breed=content.imm_data.breed,
             country=content.imm_data.country_code,
-            geo_point_is_south=content.imm_data.geo_point.is_south if content.imm_data.geo_point is not None else None,
-            geo_point_latitude=content.imm_data.geo_point.latitude if content.imm_data.geo_point is not None else None,
-            geo_point_longitude=content.imm_data.geo_point.longitude if content.imm_data.geo_point is not None else None,
+            geo_point_is_south=(content.imm_data.geo_point.is_south
+                                if content.imm_data.geo_point is not None else None),
+            geo_point_latitude=(content.imm_data.geo_point.latitude
+                                if content.imm_data.geo_point is not None else None),
+            geo_point_longitude=(content.imm_data.geo_point.longitude
+                                 if content.imm_data.geo_point is not None else None),
             location=content.imm_data.location,
             birth_date=content.imm_data.birth_date,
             death_date=content.imm_data.death_date,

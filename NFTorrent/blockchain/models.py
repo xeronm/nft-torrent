@@ -1,10 +1,12 @@
 import codecs
 from dataclasses import dataclass
 from typing import List
+
 from tonpy.types import CellSlice
+
+from ..modelsbase import BaseNftContent
 from .address import parse_bag_id
 from .encoders import bcd2c_to_string, date_mask_to_string, flatten_snake_cell
-from ..modelsbase import BaseNftContent
 
 
 @dataclass
@@ -38,9 +40,9 @@ class GeoPoint:
     @classmethod
     def from_tvm(cls, v: int):
         obj = cls.__new__(cls)
-        obj.is_south=(v >> 47) & 1 == 1
-        obj.latitude=((v >> 24) & 0x7FFFFF) * 90 / (1 << 23)
-        obj.longitude=(v & 0xFFFFFF) * 360 / (1 << 24)
+        obj.is_south = (v >> 47) & 1 == 1
+        obj.latitude = ((v >> 24) & 0x7FFFFF) * 90 / (1 << 23)
+        obj.longitude = (v & 0xFFFFFF) * 360 / (1 << 24)
         return obj
 
 

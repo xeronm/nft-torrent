@@ -23,7 +23,7 @@ from NFTorrent.blockchain.address import parse_bag_id
 from NFTorrent.settings import TonStorageCliSettings
 from NFTorrent.storage.storage import TonStorageLru
 from NFTorrent.storage.worker import (TonStorageCliWorker, WorkerCliTask,
-                              WorkerCliTaskResult, WorkerStatusNotify)
+                                      WorkerCliTaskResult, WorkerStatusNotify)
 
 
 @dataclass

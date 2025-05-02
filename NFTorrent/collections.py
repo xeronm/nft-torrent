@@ -1,6 +1,6 @@
+from NFTorrent.blockchain.models import PetMemoryNftContent, PetsCollectionInfo
+from NFTorrent.dbmodels import PetMemoryNft, PetsCollection
 from NFTorrent.modelsbase import CollectionConfig, CollectionInstance
-from NFTorrent.blockchain.models import PetsCollectionInfo, PetMemoryNftContent
-from NFTorrent.dbmodels import PetsCollection, PetMemoryNft
 
 config = CollectionConfig(
     collection_info_class=PetsCollectionInfo,
