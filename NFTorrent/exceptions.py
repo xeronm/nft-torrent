@@ -3,7 +3,7 @@ from typing import Any
 from fastapi import status
 from fastapi.exceptions import HTTPException
 
-from NFTorrent.address import parse_bag_id
+from NFTorrent.blockchain.address import parse_bag_id
 
 
 class TorrentFileNotFound(HTTPException):

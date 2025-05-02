@@ -1,6 +1,9 @@
 ton-http-api~=2.0.0
+# pydantic~=2.0.0
 python-multipart
 tonpy
 aiohttp
 pyjwt
 PyNaCl
+sqlmodel
+psycopg2-binary

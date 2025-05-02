@@ -1,45 +1,12 @@
-import abc
 from enum import IntEnum
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import UploadFile
-from fastapi.params import File, Path
+from fastapi.params import File, Path, Query
 from pydantic import BaseModel, Field, validator
-from pytonlib.utils.address import detect_address, prepare_address
+from pytonlib.utils.address import prepare_address
 
-from NFTorrent.address import parse_adnl_id, parse_bag_id
-
-
-class TvmStructure:
-    pass
-
-
-class NftContent(TvmStructure):
-
-    @abc.abstractmethod
-    def bag_id(self):
-        pass
-
-    @abc.abstractmethod
-    def image(self):
-        pass
-
-    @abc.abstractmethod
-    def image_data(self):
-        pass
-
-
-class NftCollection:
-
-    def __init__(self, nft_content_class: NftContent, address: str, image: str = None):
-        self.nft_content_class = nft_content_class
-        self.address = prepare_address(address)
-        self.raw_address = detect_address(self.address)['raw_form']
-        self.image = image
-
-    @property
-    def ntf_content(self):
-        return self.nft_content_class.__name__
+from NFTorrent.blockchain.address import parse_adnl_id, parse_bag_id
 
 
 class ProblemDetail(BaseModel):
@@ -86,7 +53,7 @@ class NftMethod(BaseModel):
             raise ValueError('Ivalid TON contract address format')
 
 
-class NftContentMethod(BaseModel):
+class BaseNftContentMethod(BaseModel):
     address: str = Path(description="Address of NFT item")
     digest: str = Path(description="Content digest")
 
@@ -125,8 +92,19 @@ class TonlibWorkerState(BaseModel):
     tasks_count: int
 
 
+class IndexDbWorkerState(BaseModel):
+    address: str
+    next_index: int
+    stats: Dict[str, int]
+
+
 class TonlibManagerState(BaseModel):
-    liteservers: Dict[str, TonlibWorkerState]
+    workers: Dict[str, TonlibWorkerState]
+    stats: Dict[str, int]
+
+
+class IndexDbState(BaseModel):
+    collections: Dict[str, IndexDbWorkerState]
 
 
 class StorageWorkerState(BaseModel):
@@ -202,3 +180,35 @@ class JWTPayload(BaseModel):
 class AuthSession(BaseModel):
     node: HealthCheckResult
     sess: Optional[JWTPayload]
+
+
+class CollectionData(BaseModel):
+    address: str
+    owner_address: str
+    next_item_index: int
+    collection_content: Any = None
+    collection_info: Any = None
+
+
+class NftItemData(BaseModel):
+    address: str
+    init: bool
+    index: int
+    owner_address: str
+    collection_address: str = None
+    individual_content: Any = None
+
+
+class NftItemHeader(BaseModel):
+    address: str
+    index: int
+    owner_address: str
+    collection_address: str = None
+
+
+class CollectionItemsMethod(BaseModel):
+    lang: str = Query(default=None)
+    country: str = Query(default=None)
+    species: str = Query(default=None)
+    limit: int = Query(default=100)
+    offset: int = Query(default=0)

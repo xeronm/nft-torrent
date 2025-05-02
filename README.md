@@ -5,7 +5,7 @@ Provides following HTTP API Gateway functions:
 - read NFT `individual_content` data for known NFT collections
 - read/write refrenced by NFT BAG ID off-chain NFT files from Torrent maintained with TON Storage
 - maintain Torrent redundacy policy
-- keep storage limits by cleaning non-pinned Torrents by LRU policy 
+- keep storage limits by cleaning non-pinned Torrents by LRU policy
 
 NFT Contract example: https://github.com/xeronm/pets-memorial
 
@@ -43,4 +43,4 @@ sudo useradd -r -g nftorrent --uid=9001 --home-dir=/home/nftorrent --shell=/sbin
 docker compose up -d
 ```
 
-5. Create 
+5. Create

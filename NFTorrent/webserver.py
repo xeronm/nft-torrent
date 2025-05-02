@@ -17,18 +17,20 @@ from fastapi.responses import (FileResponse, JSONResponse, RedirectResponse,
 from loguru import logger
 from pyTON.cache import DisabledCacheManager
 from pyTON.settings import RedisCacheSettings
-from pytonlib.utils.address import detect_address, prepare_address
+from pytonlib.utils.address import prepare_address
 
 from NFTorrent import exceptions
-from NFTorrent.address import parse_bag_id
 from NFTorrent.auth import (ContractAPIKeyCookie, NodeJWTBearer,
                             ServerResponseAuthError)
+from NFTorrent.blockchain.address import parse_bag_id
 from NFTorrent.cache import RedisCacheManager
 from NFTorrent.exceptions import TorrentClientError
-from NFTorrent.manager import TonStorageCliManager
-from NFTorrent.models import HealthCheckResult, NftCollection, NftContent
+from NFTorrent.indexer.indexdb import IndexDb
+from NFTorrent.models import HealthCheckResult
+from NFTorrent.modelsbase import CollectionConfig
 from NFTorrent.pyTON.manager import TonlibManager
 from NFTorrent.settings import Settings
+from NFTorrent.storage.manager import TonStorageCliManager
 
 
 class BagWriteLock:
@@ -57,14 +59,12 @@ class BagWriteLock:
 
 class Server:
 
-    def __init__(self, settings: Settings = None, nft_collections: List[NftCollection] = None):
+    def __init__(self, settings: Settings = None, collection_config: CollectionConfig = None):
         self.settings = settings or Settings.from_environment()
-        self.nft_collections = {
-            x.raw_address: x
-            for x in nft_collections or self.settings.webserver.nft_collections
-        }
+        self.collection_config = collection_config or self.settings.webserver.collection_config
         self.tonlib: TonlibManager = None
         self.storage: TonStorageCliManager = None
+        self.indexer: IndexDb = None
         self.peer_hostnames = {}
         self.loop = None
         self.stats = Counter()
@@ -97,7 +97,8 @@ class Server:
                        " - storage.storage_db_path: {dbpath}\n"
                        " - storage.storage_temp_dir: {tempdir}\n"
                        " - storage.min_redundancy: {redundancy}\n"
-                       " - cache.enabled: {cache_enabled}\n",
+                       " - cache.enabled: {cache_enabled}\n"
+                       " - indexdb.url: {database_url}",
                        addr=self.settings.storage.storage_public_addr,
                        api_root=self.settings.webserver.api_root_path,
                        domains=self.settings.webserver.twa_domains,
@@ -105,9 +106,8 @@ class Server:
                        dbpath=self.settings.storage.storage_db_path,
                        tempdir=self.settings.storage.storage_temp_dir,
                        redundancy=self.settings.storage.min_redundancy,
-                       cache_enabled=self.settings.cache.enabled)
-
-        # self.resolver = aiodns.DNSResolver(loop=self.loop)
+                       cache_enabled=self.settings.cache.enabled,
+                       database_url=self.settings.indexdb.database_url)
 
         cache_manager = None
         if self.settings.cache.enabled:
@@ -123,7 +123,14 @@ class Server:
                                         dispatcher=None,
                                         cache_manager=cache_manager,
                                         loop=loop,
-                                        nft_collections=self.nft_collections)
+                                        collection_config=self.collection_config)
+
+            if self.settings.indexdb.enabled:
+                self.indexer = IndexDb(self.settings.indexdb,
+                                       cache_manager=cache_manager,
+                                       loop=loop,
+                                       tonlib=self.tonlib,
+                                       collection_config=self.collection_config)
         else:
             logger.warning("Tonlib disabled, liteserver_config required")
 
@@ -141,14 +148,16 @@ class Server:
 
     async def shutdown(self):
         logger.warning('Server shutdown initiated...')
+        if self.indexer is not None:
+            await self.indexer.shutdown()
         await asyncio.wait([
             self.tonlib.shutdown(),
             self.storage.shutdown(),
         ], return_when=asyncio.ALL_COMPLETED)
 
     async def _get_nft_bag_id(self, address: str, skip_verification: bool = False, owner: str = None):
-        nft_data, _ = await self.tonlib.get_nft_data(address, skip_verification, owner=owner)
-        nft_content = nft_data['individual_content']
+        nft_data = await self.tonlib.get_nft_data(address, skip_verification, owner=owner)
+        nft_content = nft_data.individual_content
 
         bag_id = None
         if nft_content is not None:
@@ -164,8 +173,8 @@ class Server:
         except ValueError:
             return 'Invalid NFT reference'
 
-        nft_data, _ = await self.tonlib.get_nft_data(address)
-        nft_content = nft_data['individual_content']
+        nft_data = await self.tonlib.get_nft_data(address)
+        nft_content = nft_data.individual_content
         nft_bag_id = nft_content.bag_id()
 
         if nft_bag_id != bag_id:
@@ -479,12 +488,12 @@ class Server:
 
     async def get_default_image(self, address: str):
         headers = {"Cache-Control": "public, max-age=3600"}
-        nft_collection = self.nft_collections.get(detect_address(address)['raw_form'])
+        nft_collection = self.collection_config.get_collection(address)
         if nft_collection is not None:
             return FileResponse(nft_collection.image, headers=headers)
 
-        nft_data, nft_collection = await self.tonlib.get_nft_data(address)
-        nft_content: NftContent = nft_data['individual_content']
+        nft_data = await self.tonlib.get_nft_data(address)
+        nft_content = nft_data.individual_content
 
         image = nft_content.image()
         if nft_content.bag_id() and image and image[0] == ":":

@@ -1,7 +1,7 @@
 import unittest
 
-from NFTorrent.storage import (TonStorageCli, TonStorageCliSettings,
-                               TonStorageLru, parse_bag_id)
+from NFTorrent.storage.storage import (TonStorageCli, TonStorageCliSettings,
+                                       TonStorageLru, parse_bag_id)
 
 
 def settings(test_case: str):

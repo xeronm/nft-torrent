@@ -5,7 +5,7 @@ from functools import wraps
 from typing import Dict, List
 
 from fastapi import FastAPI, Request, status
-from fastapi.exceptions import ValidationError
+from fastapi.exceptions import RequestValidationError
 from fastapi.params import Depends
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from pytonlib import TonlibException
@@ -13,6 +13,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from NFTorrent import __meta__, models
 from NFTorrent.middlewares import StatisticsMiddleware, StatisticsStore
+from NFTorrent.pyTON.manager import ContractRequestError
 from NFTorrent.webserver import Server
 
 ws = Server()
@@ -81,7 +82,7 @@ async def http_exception_handler(request, exc):
     return JSONResponse(res.dict(exclude_none=True), status_code=res.status)
 
 
-@app.exception_handler(ValidationError)
+@app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request, exc):
     res = models.ProblemDetail(
         title=type(exc).__name__,
@@ -102,6 +103,12 @@ async def timeout_exception_handler(request, exc):
 async def tonlib_error_result_exception_handler(request, exc):
     res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@app.exception_handler(ContractRequestError)
+async def invalid_contract_result_exception_handler(request, exc):
+    res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_400_BAD_REQUEST)
+    return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_400_BAD_REQUEST)
 
 
 @app.exception_handler(Exception)
@@ -140,6 +147,13 @@ async def healthcheck() -> models.HealthCheckResult:
 @app.get('/stats', response_class=PlainTextResponse, include_in_schema=False)
 async def statistics(request: Request):
     _timestamp = int(time.time() * 1000000)
+
+    tonlib = ws.tonlib.get_tonlib_state()
+    liteservers_stats = [
+        f'NFTorrentLiteservers,{dict_to_influx({"id": ls["ls_index"]})} {dict_to_influx(ls)} {_timestamp}'
+        for ls in tonlib['workers'].values()
+    ]
+
     storage = ws.storage.get_storage_state()
     _storage = {
         'size': storage['size'],
@@ -148,11 +162,6 @@ async def statistics(request: Request):
     }
     _storage.update(storage["stats"])
     _storage.update(ws.stats)
-
-    liteservers_stats = [
-        f'NFTorrentLiteservers,{dict_to_influx({"id": ls["ls_index"]})} {dict_to_influx(ls)} {_timestamp}'
-        for ls in ws.tonlib.get_workers_state().values()
-    ]
 
     workers_stats = [
         f'NFTorrentStorageWorkers,{dict_to_influx({"id": w["client_id"]})} {dict_to_influx(w)} {_timestamp}'
@@ -166,6 +175,7 @@ async def statistics(request: Request):
 
     return '\n'.join([
         f'NFTorrentStorage {dict_to_influx(_storage)} {_timestamp}',
+        f'NFTorrentTonlib {dict_to_influx(tonlib["stats"])} {_timestamp}',
     ] + workers_stats + liteservers_stats + http_stats)
 
 
@@ -176,9 +186,17 @@ async def get_tonlib_state():
     """
     Get liteservers state.
     """
-    return {
-        'liteservers': ws.tonlib.get_workers_state()
-    }
+    return ws.tonlib.get_tonlib_state()
+
+
+@app.get('/api/v1/indexdb/state', dependencies=[Depends(ws.jwt_bearer)], tags=['indexdb'],
+         response_model=models.IndexDbState, )
+@wrap_result
+async def get_indexdb_state():
+    """
+    Get IndexDB state.
+    """
+    return {'collections': ws.indexer.get_indexdb_state()}
 
 
 @app.get('/api/v1/storage/state', dependencies=[Depends(ws.jwt_bearer)], tags=['storage'],
@@ -319,7 +337,7 @@ async def get_nft_content_default_image(request: models.NftMethod = Depends()) -
 
 @app.get('/c/{address}/{digest}', response_model_exclude_none=True, tags=['nft-content'])
 @wrap_result
-async def get_nft_content(request: models.NftContentMethod = Depends()) -> FileResponse:
+async def get_nft_content(request: models.BaseNftContentMethod = Depends()) -> FileResponse:
     """
     Get NFT content by digest.
     """
@@ -330,11 +348,11 @@ async def get_nft_content(request: models.NftContentMethod = Depends()) -> FileR
          response_model_exclude_none=True,
          dependencies=[Depends(ws.jwt_session)], tags=['nft'])
 @wrap_result
-async def get_nft_data(request: models.NftMethod = Depends()):
+async def get_nft_data(request: models.NftMethod = Depends()) -> models.NftItemData:
     """
     Get NFT Data information.
     """
-    nft_data, _ = await ws.tonlib.get_nft_data(request.address)
+    nft_data = await ws.tonlib.get_nft_data(request.address)
     return nft_data
 
 
@@ -368,3 +386,33 @@ async def create_nft_torrent(request: models.NftTorrentCreate = Depends(),
     """
     return await ws.create_nft_torrent(request.address, request.files,
                                        owner=jwt_payload.sub if jwt_payload is not None else None)
+
+
+if ws.settings.indexdb.enabled:
+    @app.get('/api/v1/collection', response_model_exclude_none=True, tags=['collection'],
+             dependencies=[Depends(ws.jwt_session)])
+    async def list_collections() -> List[models.CollectionData]:
+        """
+        List Collections Info.
+        """
+        return [
+            x.collection_data if x.collection_data else
+            await ws.tonlib.get_collection_data(x.nft_collection.address)
+            for x in ws.indexer.collections.values()
+        ]
+
+    @app.get('/api/v1/collection/items', response_model_exclude_none=True, tags=['collection'],
+             dependencies=[Depends(ws.jwt_session)])
+    async def list_collection_nft_items(request: models.CollectionItemsMethod = Depends()) -> List[models.NftItemHeader]:  # noqa: E501
+        """
+        List Collection NFT items.
+        """
+        return await ws.indexer.collection_query(**request.dict())
+
+    @app.get('/api/v1/collection/feed', response_model_exclude_none=True, tags=['collection'],
+             dependencies=[Depends(ws.jwt_session)])
+    async def collection_random_feed(request: models.CollectionItemsMethod = Depends()) -> List[models.NftItemHeader]:
+        """
+        Collection NFT radnom feed.
+        """
+        return await ws.indexer.collection_random_feed(**request.dict())

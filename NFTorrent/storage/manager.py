@@ -19,11 +19,11 @@ from loguru import logger
 from pyTON.cache import CacheManager, DisabledCacheManager
 
 from NFTorrent import exceptions
-from NFTorrent.address import parse_bag_id
+from NFTorrent.blockchain.address import parse_bag_id
 from NFTorrent.settings import TonStorageCliSettings
-from NFTorrent.storage import TonStorageLru
-from NFTorrent.worker import (TonStorageCliWorker, WorkerCliTask,
-                              WorkerCliTaskResult, WorkerStatusNotify)
+from NFTorrent.storage.storage import TonStorageLru
+from NFTorrent.storage.worker import (TonStorageCliWorker, WorkerCliTask,
+                                      WorkerCliTaskResult, WorkerStatusNotify)
 
 
 @dataclass
