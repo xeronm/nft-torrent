@@ -409,8 +409,7 @@ if ws.settings.indexdb.enabled:
         """
         return await ws.indexer.collection_query(**request.dict())
 
-    @app.get('/api/v1/collection/feed', response_model_exclude_none=True, tags=['collection'],
-             dependencies=[Depends(ws.jwt_session)])
+    @app.get('/api/v1/collection/feed', response_model_exclude_none=True, tags=['collection'])
     async def collection_random_feed(request: models.CollectionItemsMethod = Depends()) -> List[models.NftItemHeader]:
         """
         Collection NFT radnom feed.
