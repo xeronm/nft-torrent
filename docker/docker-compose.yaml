@@ -56,7 +56,6 @@ services:
       HTTP_TWA_DOMAINS: localhost:9000
       HTTP_ALLOW_NETWORKS: 127.0.0.1/32,192.168.0.0/16
       HTTP_REQUEST_TIMEOUT: 20
-      HTTP_NFT_COLLECTIONS: NFTorrent.collections.collections
     volumes:
       - ./storage-db:/storage-db
       - /tmp/uploads:/uploads

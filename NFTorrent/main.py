@@ -173,10 +173,17 @@ async def statistics(request: Request):
         for k, v in stats.items()
     ]
 
+    indexer_stats = []
+    if ws.indexer is not None:
+        indexer_stats = [
+            f'NFTorrentIndexer,address={k} {dict_to_influx(dict(**item["stats"], next_index=item["next_index"]))} {_timestamp}'
+            for k, item in ws.indexer.get_indexdb_state().items()
+        ]
+
     return '\n'.join([
         f'NFTorrentStorage {dict_to_influx(_storage)} {_timestamp}',
         f'NFTorrentTonlib {dict_to_influx(tonlib["stats"])} {_timestamp}',
-    ] + workers_stats + liteservers_stats + http_stats)
+    ] + workers_stats + liteservers_stats + indexer_stats + http_stats)
 
 
 @app.get('/api/v1/tonlib/state', dependencies=[Depends(ws.jwt_bearer)], tags=['liteserver'],
