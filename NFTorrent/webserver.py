@@ -98,7 +98,7 @@ class Server:
                        " - storage.storage_temp_dir: {tempdir}\n"
                        " - storage.min_redundancy: {redundancy}\n"
                        " - cache.enabled: {cache_enabled}\n"
-                       " - indexdb.url: {database_url}",
+                       " - indexdb.enabled: {indexdb_enabled}\n",
                        addr=self.settings.storage.storage_public_addr,
                        api_root=self.settings.webserver.api_root_path,
                        domains=self.settings.webserver.twa_domains,
@@ -107,7 +107,7 @@ class Server:
                        tempdir=self.settings.storage.storage_temp_dir,
                        redundancy=self.settings.storage.min_redundancy,
                        cache_enabled=self.settings.cache.enabled,
-                       database_url=self.settings.indexdb.database_url)
+                       indexdb_enabled=self.settings.indexdb.enabled)
 
         cache_manager = None
         if self.settings.cache.enabled:

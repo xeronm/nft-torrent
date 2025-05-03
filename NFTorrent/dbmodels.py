@@ -1,4 +1,7 @@
 import datetime
+import pickle
+import base64
+from typing import List
 
 from sqlmodel import Field, UniqueConstraint
 
@@ -43,6 +46,8 @@ class PetMemoryNft(BaseNftModel, table=True):
     description: str | None = Field(default=None, max_length=256)
     image: str | None = Field(default=None, max_length=256)
     image_data: str | None = Field(default=None)
+    #
+    icons: bytes | None = Field(default=None)
 
     __tablename__ = 'pet_memory_nft'
     __table_args__ = (
@@ -118,7 +123,14 @@ class PetMemoryNft(BaseNftModel, table=True):
                            collection_address=collection_address)
 
     def to_nftheader(self, collection_address: str) -> NftItemHeader:
+        icons: List[str] = None
+        if self.icons is not None:
+            icons = pickle.loads(self.icons)
+            icons = [base64.encodebytes(x) for x in icons]
         return NftItemHeader(address=self.address,
                              index=self.index,
                              owner_address=self.owner,
-                             collection_address=collection_address)
+                             collection_address=collection_address,
+                             image=self.image,
+                             image_data=self.image_data,
+                             icons=icons)

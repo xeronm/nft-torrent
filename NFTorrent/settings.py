@@ -125,6 +125,10 @@ class IndexDbSettings:
     indexer_timeout: int = 30
     bulk_size: int = 100
     num_workers: int = 4
+    icon_size: int = 240
+    icon_format: str = 'webp'
+    nftorrent_apiroot: str = None
+    http_timeout: int = 30
 
     @classmethod
     def from_environment(cls):
@@ -142,6 +146,10 @@ class IndexDbSettings:
         obj.indexer_timeout = int(os.environ.get('INDEXDB_INDEXER_TIMEOUT', cls.indexer_timeout))
         obj.bulk_size = int(os.environ.get('INDEXDB_BULK_SIZE', cls.bulk_size))
         obj.num_workers = int(os.environ.get('INDEXDB_NUM_WORKERS', cls.num_workers))
+        obj.icon_size = int(os.environ.get('INDEXDB_ICON_SIZE', cls.icon_size))
+        obj.icon_format = os.environ.get('INDEXDB_ICON_FORMAT', cls.icon_format)
+        obj.nftorrent_apiroot = os.environ.get('INDEXDB_NFTORRENT_APIROOT')
+        obj.http_timeout = int(os.environ.get('INDEXDB_HTTP_TIMEOUT', cls.http_timeout))
         return obj
 
 

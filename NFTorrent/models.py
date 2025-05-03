@@ -204,6 +204,9 @@ class NftItemHeader(BaseModel):
     index: int
     owner_address: str
     collection_address: str = None
+    image: str = None
+    image_data: str = None
+    icons: List[str] = None
 
 
 class CollectionItemsMethod(BaseModel):
