@@ -7,3 +7,4 @@ pyjwt
 PyNaCl
 sqlmodel
 psycopg2-binary
+pillow

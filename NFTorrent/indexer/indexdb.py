@@ -2,6 +2,11 @@ import asyncio
 import math
 import random
 import traceback
+import aiohttp
+import io
+import pickle
+from PIL import Image
+from fastapi import status
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -23,6 +28,9 @@ class BaseCollectionModel(SQLModel, table=False):
     id: int = Field(default=None, primary_key=True)
     address: str = Field(unique=True, max_length=48)
     index: int = Field()
+    image: str | None = Field(default=None, max_length=256)
+    bag_id: str | None = Field(default=None)
+    icons: bytes | None = Field(default=None)
 
 
 @dataclass
@@ -31,6 +39,34 @@ class CollectionTaskData:
     collection_data: CollectionData = None
     instance: BaseCollectionModel = None
     stats: Dict[str, int] = field(default_factory=Counter)
+
+
+def _covert_image(buffer: bytes, size: int, format: str) -> bytes:
+    img = Image.open(io.BytesIO(buffer))
+    # 1. Resize min dimension to `size`
+    x, y = img.size
+    if x > size and y > size:
+        m, n = x/size, y/size
+        x0 = y0 = size
+        if m > n:
+            x0 = math.ceil(x/n)
+        elif n > m:
+            y0 = math.ceil(y/m)
+        img = img.resize([x0, y0])
+
+    # 2. Crop center
+    x, y = img.size
+    x0 = y0 = 0
+    if x > size:
+        x0 = (x-size)//2
+    if y > size:
+        y0 = (y-size)//2
+    img = img.crop((x0, y0, x0 + size, y0 + size))
+
+    bufferOut = io.BytesIO()
+    img.save(bufferOut, format)
+    return bufferOut.getvalue()
+
 
 
 class IndexDb:
@@ -105,26 +141,27 @@ class IndexDb:
 
                 next_index = data.collection_data.next_item_index
                 if data.instance.index > next_index:
-                    logger.error("IndexDb[nft_indexer:{address}]: collection On-Chain next_index={new_index} less than IndexDB next_index={index}",  # noqa: E501
+                    logger.error("IndexDb[nft_indexer:{address}]: collection On-Chain index less than IndexDB, db_index: {index}, chain_index: {new_index}",  # noqa: E501
                                  address=address, index=data.instance.index, new_index=next_index)
                 elif data.instance.index < next_index:
-                    logger.info('IndexDb[nft_indexer:{address}]: collection IndexDB next_index={index}, On-Chain next_index={new_index}',  # noqa: E501
+                    logger.info('IndexDb[nft_indexer:{address}]: collection IndexDB, db_index: {index}, chain_index: {new_index}',  # noqa: E501
                                 address=address, index=data.instance.index, new_index=next_index)
                     bulk = []
                     while data.instance.index < next_index and len(bulk) < self.settings.bulk_size:
                         nft_address = await self.tonlib.get_nft_item_address(address, data.instance.index)
-                        logger.info('IndexDb[nft_indexer:{address}]: indexing NFT with address={nft_address}',
+                        logger.info('IndexDb[nft_indexer:{address}]: indexing NFT, address: {nft_address}',
                                     address=address, nft_address=nft_address)
                         try:
                             nft_data = await self.tonlib.get_nft_data(nft_address, skip_verification=True)
                             if nft_data.index != data.instance.index:
                                 raise ContractRequestError("NFT index mistmath")
                             model_class = self.collection_config.dbmodel_nft_class
+
                             bulk.append(model_class.from_nftmodel(collection_id=data.instance.id,
                                                                   data=nft_data))
                         except ContractRequestError as E:
                             data.stats['nft_index_error'] += 1
-                            logger.warning("IndexDb[nft_indexer:{address}]: Contract request error, address: {nft_address}, index={index}, {exc}",  # noqa: E501
+                            logger.warning("IndexDb[nft_indexer:{address}]: Contract request error, address: {nft_address}, index: {index}, {exc}",  # noqa: E501
                                            address=address,
                                            nft_address=nft_address,
                                            index=data.instance.index,
@@ -132,6 +169,7 @@ class IndexDb:
                         data.instance.index += 1
 
                     if len(bulk):
+                        await self.collection_nft_make_icons(bulk)
                         await self.loop.run_in_executor(self.threadpool_executor,
                                                         self.sync_collection_nft_bulk_insert, data.instance, bulk)
                         data.stats['nft_index_count'] += len(bulk)
@@ -147,7 +185,51 @@ class IndexDb:
                                 address=address, exc=traceback.format_exc())
                 await asyncio.sleep(self.restart_timeout)
 
-    def sync_collection_nft_bulk_insert(self, instance: BaseCollectionModel, bulk: List[SQLModel]):
+    async def collection_nft_make_icons(self, instances: List[BaseCollectionModel]):
+
+        for instance in instances:
+            image_uri = None
+            if instance.bag_id is not None and self.settings.nftorrent_apiroot:
+                image_uri = self.settings.nftorrent_apiroot
+                if image_uri != '/':
+                    image_uri += '/'
+                image_uri += f'c/{instance.address}'
+            elif instance.image is not None:
+                image_uri = instance.image
+
+            if image_uri is None:
+                continue
+            timeout = aiohttp.ClientTimeout(total=self.settings.http_timeout)
+            buffer = None
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                try:
+                    logger.info("IndexDb: getting image for NFT icons, address: {address}, uri: {image_uri}",
+                               address=instance.address, image_uri=image_uri)
+                    async with await session.get(image_uri) as resp:
+                        if resp.status != status.HTTP_200_OK:
+                            logger.warning("IndexDb: NFT icons, get http image error, address: {address}, status: {status}, text: {text}",
+                                            address=instance.address, status=resp.status, text=await resp.text())
+                        else:
+                            buffer = await resp.read()
+                except Exception as E:
+                    logger.warning("IndexDb: NFT icons, get http image error, address: {address}, {exc}",
+                            address=instance.address, exc=str(E))
+
+            if buffer is None:
+                continue
+            try:
+                buffer = await self.loop.run_in_executor(self.threadpool_executor,
+                                                         _covert_image,
+                                                         buffer,
+                                                         self.settings.icon_size,
+                                                         self.settings.icon_format)
+            except Exception as E:
+                logger.warning("IndexDb: NFT icons convert error, address: {address}, {exc}",
+                        address=instance.address, exc=str(E))
+
+            instance.icons = pickle.dumps([buffer])
+
+    def sync_collection_nft_bulk_insert(self, instance: BaseCollectionModel, bulk: List[BaseCollectionModel]):
         with Session(self.dbengine) as session:
             for nft_instance in bulk:
                 session.add(nft_instance)
