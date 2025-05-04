@@ -206,7 +206,7 @@ class NftItemHeader(BaseModel):
     collection_address: str = None
     image: str = None
     image_data: str = None
-    icons: List[str] = None
+    icons: Dict[str, List[str]] = None
 
 
 class CollectionItemsMethod(BaseModel):
@@ -215,3 +215,4 @@ class CollectionItemsMethod(BaseModel):
     species: str = Query(default=None)
     limit: int = Query(default=100)
     offset: int = Query(default=0)
+    icon_size: str = Query(default='small')

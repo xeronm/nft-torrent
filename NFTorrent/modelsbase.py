@@ -1,6 +1,6 @@
 import abc
 from dataclasses import dataclass
-from typing import Any, List, Type
+from typing import Any, Dict, List, Type
 
 from pytonlib.utils.address import detect_address
 from sqlmodel import Field, SQLModel
@@ -25,7 +25,7 @@ class BaseNftModel(SQLModel, table=False):
         pass
 
     @abc.abstractmethod
-    def to_nftheader(self, collection_address: str):
+    def to_nftheader(self, collection_address: str, icon_size: str = None):
         pass
 
 
@@ -121,4 +121,4 @@ class NftItemHeader:
     collection_address: str = None
     image: str = None
     image_data: str = None
-    icons: List[str] = None
+    icons: Dict[str, List[str]] = None

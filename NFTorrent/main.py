@@ -176,7 +176,7 @@ async def statistics(request: Request):
     indexer_stats = []
     if ws.indexer is not None:
         indexer_stats = [
-            f'NFTorrentIndexer,address={k} {dict_to_influx(dict(**item["stats"], next_index=item["next_index"]))} {_timestamp}'
+            f'NFTorrentIndexer,address={k} {dict_to_influx(dict(**item["stats"], next_index=item["next_index"]))} {_timestamp}'  # noqa: E501
             for k, item in ws.indexer.get_indexdb_state().items()
         ]
 

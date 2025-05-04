@@ -1,18 +1,18 @@
 import asyncio
+import io
 import math
+import pickle
 import random
 import traceback
-import aiohttp
-import io
-import pickle
-from PIL import Image
-from fastapi import status
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence
 
+import aiohttp
+from fastapi import status
 from loguru import logger
+from PIL import Image
 from pyTON.cache import CacheManager, DisabledCacheManager
 from sqlalchemy.exc import NoResultFound
 from sqlmodel import Field, Session, SQLModel, create_engine, select
@@ -29,6 +29,7 @@ class BaseCollectionModel(SQLModel, table=False):
     address: str = Field(unique=True, max_length=48)
     index: int = Field()
     image: str | None = Field(default=None, max_length=256)
+    image_data: bytes | None = Field(default=None)
     bag_id: str | None = Field(default=None)
     icons: bytes | None = Field(default=None)
 
@@ -66,7 +67,6 @@ def _covert_image(buffer: bytes, size: int, format: str) -> bytes:
     bufferOut = io.BytesIO()
     img.save(bufferOut, format)
     return bufferOut.getvalue()
-
 
 
 class IndexDb:
@@ -197,37 +197,42 @@ class IndexDb:
             elif instance.image is not None:
                 image_uri = instance.image
 
-            if image_uri is None:
-                continue
-            timeout = aiohttp.ClientTimeout(total=self.settings.http_timeout)
             buffer = None
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                try:
-                    logger.info("IndexDb: getting image for NFT icons, address: {address}, uri: {image_uri}",
-                               address=instance.address, image_uri=image_uri)
-                    async with await session.get(image_uri) as resp:
-                        if resp.status != status.HTTP_200_OK:
-                            logger.warning("IndexDb: NFT icons, get http image error, address: {address}, status: {status}, text: {text}",
-                                            address=instance.address, status=resp.status, text=await resp.text())
-                        else:
-                            buffer = await resp.read()
-                except Exception as E:
-                    logger.warning("IndexDb: NFT icons, get http image error, address: {address}, {exc}",
-                            address=instance.address, exc=str(E))
+            if image_uri is not None:
+                timeout = aiohttp.ClientTimeout(total=self.settings.http_timeout)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    try:
+                        logger.info("IndexDb: getting image for NFT icons, address: {address}, uri: {image_uri}",
+                                    address=instance.address, image_uri=image_uri)
+                        async with await session.get(image_uri) as resp:
+                            if resp.status != status.HTTP_200_OK:
+                                logger.warning("IndexDb: NFT icons, get http image error, address: {address}, status: {status}, text: {text}",  # noqa: E501
+                                               address=instance.address, status=resp.status, text=await resp.text())
+                            else:
+                                buffer = await resp.read()
+                    except Exception as E:
+                        logger.warning("IndexDb: NFT icons, get http image error, address: {address}, {exc}",
+                                       address=instance.address, exc=str(E))
+            elif instance.image_data is not None:
+                buffer = instance.image_data
 
             if buffer is None:
                 continue
             try:
-                buffer = await self.loop.run_in_executor(self.threadpool_executor,
+                small = await self.loop.run_in_executor(self.threadpool_executor,
+                                                        _covert_image,
+                                                        buffer,
+                                                        self.settings.icon_size_small,
+                                                        self.settings.icon_format)
+                medium = await self.loop.run_in_executor(self.threadpool_executor,
                                                          _covert_image,
                                                          buffer,
-                                                         self.settings.icon_size,
+                                                         self.settings.icon_size_medium,
                                                          self.settings.icon_format)
+                instance.icons = pickle.dumps({'small': [small], 'medium': [medium]})
             except Exception as E:
                 logger.warning("IndexDb: NFT icons convert error, address: {address}, {exc}",
-                        address=instance.address, exc=str(E))
-
-            instance.icons = pickle.dumps([buffer])
+                               address=instance.address, exc=str(E))
 
     def sync_collection_nft_bulk_insert(self, instance: BaseCollectionModel, bulk: List[BaseCollectionModel]):
         with Session(self.dbengine) as session:
@@ -276,7 +281,7 @@ class IndexDb:
                 select_stmt = select_stmt.limit(limit)
             return session.exec(select_stmt).all()
 
-    async def collection_query(self, **kwargs):
+    async def collection_query(self, icon_size: str = None, **kwargs):
 
         def _warped_func(kwargs):
             return self.sync_collection_query(**kwargs)
@@ -284,7 +289,7 @@ class IndexDb:
         _collections = {x.instance.id: x.instance.address for x in self.collections.values()}
 
         result = await self.loop.run_in_executor(self.threadpool_executor, _warped_func, kwargs)
-        return [x.to_nftheader(_collections.get(x.collection_id)) for x in result]
+        return [x.to_nftheader(_collections.get(x.collection_id), icon_size=icon_size) for x in result]
 
     def sync_collection_random_feed(self, limit: int = 100, **kwargs):
         model_class = self.collection_config.dbmodel_nft_class
@@ -322,7 +327,7 @@ class IndexDb:
         random.shuffle(result)
         return result[:limit]
 
-    async def collection_random_feed(self, offset: int, **kwargs):
+    async def collection_random_feed(self, offset: int, icon_size: str = None, **kwargs):
 
         def _warped_func(kwargs):
             return self.sync_collection_random_feed(**kwargs)
@@ -330,4 +335,4 @@ class IndexDb:
         _collections = {x.instance.id: x.instance.address for x in self.collections.values()}
 
         result = await self.loop.run_in_executor(self.threadpool_executor, _warped_func, kwargs)
-        return [x.to_nftheader(_collections.get(x.collection_id)) for x in result]
+        return [x.to_nftheader(_collections.get(x.collection_id), icon_size=icon_size) for x in result]

@@ -1,7 +1,7 @@
+import base64
 import datetime
 import pickle
-import base64
-from typing import List
+from typing import Dict, List
 
 from sqlmodel import Field, UniqueConstraint
 
@@ -45,7 +45,7 @@ class PetMemoryNft(BaseNftModel, table=True):
     uri: str | None = Field(default=None, max_length=1000)
     description: str | None = Field(default=None, max_length=256)
     image: str | None = Field(default=None, max_length=256)
-    image_data: str | None = Field(default=None)
+    image_data: bytes | None = Field(default=None)
     #
     icons: bytes | None = Field(default=None)
 
@@ -85,7 +85,7 @@ class PetMemoryNft(BaseNftModel, table=True):
             uri=content.data.uri,
             description=content.data.description,
             image=content.data.image,
-            image_data=content.data.image_data
+            image_data=content.image_data()
         )
 
     def to_nftmodel(self, collection_address: str) -> NftItemData:
@@ -122,15 +122,19 @@ class PetMemoryNft(BaseNftModel, table=True):
                            individual_content=content,
                            collection_address=collection_address)
 
-    def to_nftheader(self, collection_address: str) -> NftItemHeader:
-        icons: List[str] = None
+    def to_nftheader(self, collection_address: str, icon_size: str = None) -> NftItemHeader:
+        icons: Dict[str, List[str]] = None
         if self.icons is not None:
             icons = pickle.loads(self.icons)
-            icons = [base64.encodebytes(x) for x in icons]
+            icons = {
+                k: [base64.encodebytes(x) for x in v]
+                for k, v in icons.items()
+                if not icon_size or icon_size == 'all' or k == icon_size
+            }
         return NftItemHeader(address=self.address,
                              index=self.index,
                              owner_address=self.owner,
                              collection_address=collection_address,
                              image=self.image,
-                             image_data=self.image_data,
+                             image_data=None,
                              icons=icons)

@@ -68,7 +68,7 @@ services:
     networks:
       - internal
     healthcheck:
-      test: curl -sS http://127.0.0.1:8002/healthcheck || echo 1
+      test: curl -sf http://127.0.0.1:8002/healthcheck
       interval: 15s
       timeout: 3s
       retries: 5
