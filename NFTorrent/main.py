@@ -363,6 +363,17 @@ async def get_nft_data(request: models.NftMethod = Depends()) -> models.NftItemD
     return nft_data
 
 
+@app.get('/api/v1/nft/{address}/address',
+         response_model_exclude_none=True,
+         dependencies=[Depends(ws.jwt_session)], tags=['nft'])
+@wrap_result
+async def get_nft_address_information(request: models.NftMethod = Depends()):
+    """
+    Get NFT Address information.
+    """
+    return await ws.tonlib.raw_get_account_state(request.address)
+
+
 @app.get('/api/v1/nft/{address}/torrent',
          response_model_exclude_none=True,
          dependencies=[Depends(ws.jwt_session)], tags=['nft'])

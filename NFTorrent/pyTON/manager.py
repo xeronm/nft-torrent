@@ -112,7 +112,12 @@ class TonlibManager(_TonlibManager):
         return CollectionData(**collection_data)
 
     def setup_cache(self):
+        # short-term
         self.raw_run_method = self.cache_manager.cached(expire=5)(self.raw_run_method)
+        # mid-term
+        self.raw_get_account_state = self.cache_manager.cached(expire=15)(self.raw_get_account_state)
+        self.generic_get_account_state = self.cache_manager.cached(expire=15)(self.generic_get_account_state)
         self.get_nft_data = self.cache_manager.cached(expire=60)(self.get_nft_data)
         self.get_collection_data = self.cache_manager.cached(expire=60)(self.get_collection_data)
+        # long-term
         self.get_nft_item_address = self.cache_manager.cached(expire=600)(self.get_nft_item_address)
