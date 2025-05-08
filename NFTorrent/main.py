@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.params import Depends
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pytonlib import TonlibException
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -128,7 +129,13 @@ async def add_bearer_response_auth_header(request: Request, call_next):
 
 
 app.add_middleware(StatisticsMiddleware, stats_store=stats)
-
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ws.settings.webserver.twa_domains,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 def wrap_result(func):
     @wraps(func)
