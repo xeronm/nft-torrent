@@ -131,7 +131,7 @@ async def add_bearer_response_auth_header(request: Request, call_next):
 app.add_middleware(StatisticsMiddleware, stats_store=stats)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[f'https://{x}' for x in ws.settings.webserver.twa_domains],
+    allow_origins=ws.settings.webserver.allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

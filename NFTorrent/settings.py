@@ -88,6 +88,7 @@ class WebServerSettings:
     debug: bool = False
     remote_api_root: str = None
     twa_domains: List[str] = None
+    allow_origins: List[str] = None
     enable_ssl: bool = True
     verify_ssl: bool = True
     bearer_auth_response: bool = True
@@ -113,6 +114,7 @@ class WebServerSettings:
         obj.real_ip_header = settings.strtobool(os.environ.get('HTTP_REAL_IP_HEADER', 'true'))
         obj.request_timeout = int(os.environ.get('HTTP_REQUEST_TIMEOUT', cls.request_timeout))
         obj.twa_domains = [x.strip() for x in os.environ.get('HTTP_TWA_DOMAINS', '').split(',') if x.strip()]
+        obj.allow_origins = [x.strip() for x in os.environ.get('HTTP_ALLOW_ORIGINS', '').split(',') if x.strip()]
         obj.collection_config = import_string(os.environ.get('HTTP_COLLECTION_CONFIG', 'NFTorrent.collections.config'))  # noqa: E501
         obj.allow_networks = [x.strip() for x in os.environ.get('HTTP_ALLOW_NETWORKS', '').split(',') if x.strip()]
         return obj
