@@ -16,6 +16,7 @@ from NFTorrent import __meta__, models
 from NFTorrent.middlewares import StatisticsMiddleware, StatisticsStore
 from NFTorrent.pyTON.manager import ContractRequestError
 from NFTorrent.webserver import Server
+from NFTorrent.auth import set_cookie
 
 ws = Server()
 
@@ -328,7 +329,8 @@ async def create_account_auth_session(body: models.AuthData) -> models.AuthSessi
     payload, token = ws.jwt_session.auth_session(body.account, body.proof)
     response = JSONResponse(models.AuthSession(node=await ws.get_healthcheck(), sess=payload).dict(),
                             status_code=status.HTTP_200_OK)
-    response.set_cookie(ws.jwt_session.cookie_name, token, expires=payload.exp, secure=True, httponly=True)
+    set_cookie(response, ws.jwt_session.cookie_name, token, expires=payload.exp, secure=True, httponly=True,
+               samesite='none', partitioned=True)
     return response
 
 

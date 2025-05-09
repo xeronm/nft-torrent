@@ -3,7 +3,11 @@ import hashlib
 import ipaddress
 import struct
 import time
-from typing import Any, Callable, Dict, List
+import http.cookies
+from datetime import datetime
+from typing import Any, Callable, Dict, List, Literal
+from email.utils import format_datetime
+from http.cookies import Morsel
 
 import jwt
 from aiohttp import ClientResponse
@@ -207,7 +211,7 @@ class ContractAPIKeyCookie(APIKeyCookie):
             raise SignatureVerificationError("Signature expired")
 
         if proof.domain not in self.domains:
-            raise SignatureVerificationError("Invalid domain")
+            raise SignatureVerificationError(f"Invalid domain: {proof.domain}")
 
         message = b''.join([
             b'ton-proof-item-v2/',
@@ -252,3 +256,49 @@ class ContractAPIKeyCookie(APIKeyCookie):
         }
         token = jwt.encode(payload, self.jwt_secret, algorithm=self.jwt_algorithm)
         return models.JWTPayload(**payload), token
+
+
+Morsel._reversed['partitioned'] = 'Partitioned'
+Morsel._flags.add('partitioned')
+
+def set_cookie(
+    request: Request,
+    key: str,
+    value: str = "",
+    max_age: int | None = None,
+    expires: datetime | str | int | None = None,
+    path: str | None = "/",
+    domain: str | None = None,
+    secure: bool = False,
+    httponly: bool = False,
+    samesite: Literal["lax", "strict", "none"] | None = "lax",
+    partitioned: bool = False,
+) -> None:
+    cookie: http.cookies.BaseCookie[str] = http.cookies.SimpleCookie()
+    cookie[key] = value
+    if max_age is not None:
+        cookie[key]["max-age"] = max_age
+    if expires is not None:
+        if isinstance(expires, datetime):
+            cookie[key]["expires"] = format_datetime(expires, usegmt=True)
+        else:
+            cookie[key]["expires"] = expires
+    if path is not None:
+        cookie[key]["path"] = path
+    if domain is not None:
+        cookie[key]["domain"] = domain
+    if secure:
+        cookie[key]["secure"] = True
+    if httponly:
+        cookie[key]["httponly"] = True
+    if samesite is not None:
+        assert samesite.lower() in [
+            "strict",
+            "lax",
+            "none",
+        ], "samesite must be either 'strict', 'lax' or 'none'"
+        cookie[key]["samesite"] = samesite
+    if partitioned:
+        cookie[key]["partitioned"] = True
+    cookie_val = cookie.output(header="").strip()
+    request.raw_headers.append((b"set-cookie", cookie_val.encode("latin-1")))
