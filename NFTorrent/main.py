@@ -1,9 +1,11 @@
 import asyncio
 import dataclasses
 import time
+import aiohttp
 from functools import wraps
 from typing import Dict, List
 
+import aiohttp.client_exceptions
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.params import Depends
@@ -17,6 +19,7 @@ from NFTorrent.middlewares import StatisticsMiddleware, StatisticsStore
 from NFTorrent.pyTON.manager import ContractRequestError
 from NFTorrent.webserver import Server
 from NFTorrent.auth import set_cookie
+from NFTorrent.ipfs import IpfsException
 
 ws = Server()
 
@@ -95,6 +98,12 @@ async def validation_exception_handler(request, exc):
     return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
 
+@app.exception_handler(aiohttp.client_exceptions.ClientError)
+async def client_exception_handler(request, exc):
+    res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_502_BAD_GATEWAY)
+    return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_502_BAD_GATEWAY)
+
+
 @app.exception_handler(asyncio.TimeoutError)
 async def timeout_exception_handler(request, exc):
     res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_504_GATEWAY_TIMEOUT)
@@ -103,6 +112,12 @@ async def timeout_exception_handler(request, exc):
 
 @app.exception_handler(TonlibException)
 async def tonlib_error_result_exception_handler(request, exc):
+    res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@app.exception_handler(IpfsException)
+async def ipfs_exception_handler(request, exc):
     res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 

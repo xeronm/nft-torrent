@@ -56,7 +56,7 @@ class CidWriteLock:
         self.lock = None
 
 
-class IpfsRpcException(Exception):
+class IpfsException(Exception):
     pass
 
 class IpfsRpcManager:
@@ -96,7 +96,7 @@ class IpfsRpcManager:
         # self.node_list = self.cache_manager.cached(expire=15)(self.node_list)
         # self.node_get = self.cache_manager.cached(expire=600)(self.node_get)
 
-    async def get_nft_cid(self, address: str, skip_verification: bool = False, owner: str = None):
+    async def get_nft_cid(self, address: str, skip_verification: bool = False, owner: str = None, raise_error: bool = False):
         nft_data = await self.tonlib.get_nft_data(address, skip_verification, owner=owner)
         nft_content = nft_data.individual_content
 
@@ -105,7 +105,7 @@ class IpfsRpcManager:
             image = nft_content.image()
             if image:
                 cid, _, _ = parse_uri(image)
-        if not cid:
+        if raise_error and not cid:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
         return cid
 
@@ -115,13 +115,13 @@ class IpfsRpcManager:
             path += f'&name={name}'
         async with self.client.post(path) as resp:
             if resp.status != status.HTTP_200_OK:
-                raise IpfsRpcException(f'Error response: status={resp.status}, text={await resp.text()}')
+                raise IpfsException(f'Error response: status={resp.status}, text={await resp.text()}')
             return await resp.json()
 
     async def cid_unpin(self, cid: str = None):
         async with self.client.post(f'pin/rm?arg={cid}&recursive=true') as resp:
             if resp.status != status.HTTP_200_OK:
-                raise IpfsRpcException(f'Error response: status={resp.status}, text={await resp.text()}')
+                raise IpfsException(f'Error response: status={resp.status}, text={await resp.text()}')
             return await resp.json()
 
     async def confirm_content(self, address, old_cid, cid):
@@ -170,7 +170,7 @@ class IpfsRpcManager:
                 data.add_field('files', address, filename='.nft')
                 async with self.client.post('add?recursive=true&wrap-with-directory=true&pin=false&cid-version=1', data=data) as resp:
                     if resp.status != status.HTTP_200_OK:
-                        raise IpfsRpcException(f'Error response: status={resp.status}, text={await resp.text()}')
+                        raise IpfsException(f'Error response: status={resp.status}, text={await resp.text()}')
 
                     _resp = await resp.text()
 
@@ -209,10 +209,10 @@ class IpfsRpcManager:
         return content
 
     async def get_content(self, address: str = None, cid: str = None):
-        cid = cid or await self.get_nft_cid(address)
+        cid = cid or await self.get_nft_cid(address, raise_error=True)
         async with self.client.post(f'ls?arg={cid}') as resp:
             if resp.status != status.HTTP_200_OK:
-                raise IpfsRpcException(f'Error response: status={resp.status}, text={await resp.text()}')
+                raise IpfsException(f'Error response: status={resp.status}, text={await resp.text()}')
 
             _resp = await resp.json()
             _content = _resp['Objects'][0]
@@ -234,7 +234,7 @@ class IpfsRpcManager:
                                cid: str = None,
                                file_path: str = None,
                                digest: str = None) -> StreamingResponse:
-        cid = cid or await self.get_nft_cid(address)
+        cid = cid or await self.get_nft_cid(address, raise_error=True)
         info = await self.get_content(address=address, cid=cid)
         item = [x for x in info.files
                 if (digest and x.digest == digest) or
@@ -248,7 +248,7 @@ class IpfsRpcManager:
         data = None
         async with self.client.post(f'cat?arg={cid}/{file_path}') as resp:
             if resp.status != status.HTTP_200_OK:
-                raise IpfsRpcException(f'Error response: status={resp.status}, text={await resp.text()}')
+                raise IpfsException(f'Error response: status={resp.status}, text={await resp.text()}')
             data = await resp.read()
         return StreamingResponse(io.BytesIO(data),
                                  headers={"Cache-Control": "public, max-age=3600"},
