@@ -1,4 +1,6 @@
-from enum import IntEnum
+import hashlib
+import base64
+from enum import IntEnum, Enum
 from typing import Any, Dict, List, Optional
 
 from fastapi import UploadFile
@@ -216,3 +218,28 @@ class CollectionItemsMethod(BaseModel):
     limit: int = Query(default=100)
     offset: int = Query(default=0)
     icon_size: str = Query(default='small')
+
+
+class NftContentState(Enum):
+    READY = 1
+    ERROR = 2
+
+
+class NftContentFile(BaseModel):
+    name: str
+    size: int
+    hash: str = None
+    state: NftContentState = NftContentState.READY
+    digest: str = None
+
+
+class NftContentInfo(BaseModel):
+    hash: str
+    size: int
+    state: NftContentState = NftContentState.READY
+    files: List[NftContentFile]
+
+    def make_digest(self):
+        for f in self.files:
+            digest = hashlib.shake_256((self.hash + f.name).encode()).digest(15)
+            f.digest = base64.b32encode(digest).decode().lower()

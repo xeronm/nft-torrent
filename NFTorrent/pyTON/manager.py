@@ -69,7 +69,7 @@ class TonlibManager(_TonlibManager):
             addr = await self.dispatch_archival_request(method, collection_address, item_index)
         return addr
 
-    async def get_nft_data(self, address: str, skip_verification: bool = False, owner: str = None):
+    async def get_nft_data(self, address: str, skip_verification: bool = False, owner: str = None) -> NftItemData:
         nft_data_result = await self.raw_run_method(address, 'get_nft_data', [], None)
         if nft_data_result['stack'] is None or len(nft_data_result['stack']) != 5:
             raise ContractRequestError("Smart contract is not NFT")
@@ -93,9 +93,10 @@ class TonlibManager(_TonlibManager):
         nft_data['individual_content'] = self.collection_config.nft_content_class.from_tvm(
             CellSlice(nft_data['individual_content']))
         nft_data['address'] = detect_address(address)['bounceable']['b64url']
+
         return NftItemData(**nft_data)
 
-    async def get_collection_data(self, address: str):
+    async def get_collection_data(self, address: str) -> CollectionData:
         nft_collection = self.collection_config.get_collection(address)
         if nft_collection is None:
             raise ContractRequestError("NFT collection not known")

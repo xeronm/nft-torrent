@@ -16,6 +16,14 @@ services:
     networks:
       - internal
 
+  ipfs:
+    image: ipfs/kubo:release
+    ports:
+      - "4001:4001"           # ipfs swarm - expose if needed/wanted
+      - "4001:4001/udp"
+    volumes:
+      - ./ipfs-db:/data/ipfs
+
   storage:
     image: nft-torrent:0.1.0
     restart: unless-stopped
@@ -41,6 +49,8 @@ services:
       TON_STORAGE_DAEMON_ADDR: storage:5555
       TON_STORAGE_TEMP_DIR: /uploads
       TON_STORAGE_MANIFEST_BAG_ID: file:/run/secrets/storage_manifest
+      IPFS_ENABLED: 1
+      IPFS_KUBO_RPC_URI: http://ipfs:5001
       TON_API_TONLIB_REQUEST_TIMEOUT: 20
       TON_API_TONLIB_LITESERVER_CONFIG: /run/secrets/liteserver_config
       TON_API_CACHE_ENABLED: 1

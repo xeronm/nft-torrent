@@ -38,19 +38,19 @@ class BaseNftContent:
         pass
 
     @abc.abstractmethod
-    def bag_id(self):
+    def bag_id(self) -> str:
         pass
 
     @abc.abstractmethod
-    def image(self):
+    def image(self) -> str:
         pass
 
     @abc.abstractmethod
-    def image_data(self):
+    def image_data(self) -> bytes:
         pass
 
     @abc.abstractmethod
-    def storage_due_time(self):
+    def storage_due_time(self) -> int:
         pass
 
 

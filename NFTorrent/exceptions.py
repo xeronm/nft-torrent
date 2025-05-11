@@ -41,6 +41,13 @@ class TorrentMetaNotReady(HTTPException):
                          detail='Torrent metadata not ready')
 
 
+class TorrentInvalidReference(HTTPException):
+
+    def __init__(self):
+        super().__init__(status_code=status.HTTP_404_NOT_FOUND,
+                         detail='Invalid torrent reference')
+
+
 class TorrentClientError(HTTPException):
 
     def __init__(self, detail: Any = None, status_code: int = status.HTTP_502_BAD_GATEWAY):
