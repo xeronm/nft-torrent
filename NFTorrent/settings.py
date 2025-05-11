@@ -55,6 +55,10 @@ class TonStorageCliSettings:
     min_redundancy = 3
     torrent_dirname: str = 'nftdata'
 
+    @property
+    def enabled(self) -> bool:
+        return self.num_workers > 0
+
     @classmethod
     def from_environment(cls):
         obj = cls.__new__(cls)
@@ -73,8 +77,11 @@ class TonStorageCliSettings:
         obj.confirmation_timeout = int(os.environ.get('TON_STORAGE_CONFIRMATION_TIMEOUT', cls.confirmation_timeout))
         obj.min_redundancy = int(os.environ.get('TON_STORAGE_MIN_REDUNDANCY', cls.min_redundancy))
         obj.torrent_dirname = os.environ.get('TON_STORAGE_TORRENT_DIRNAME', cls.torrent_dirname)
-        obj.manifest_bag_id = parse_bag_id(_value_from_file(os.environ.get('TON_STORAGE_MANIFEST_BAG_ID', None)))
-        if not obj.storage_public_addr:
+        try:
+            obj.manifest_bag_id = parse_bag_id(_value_from_file(os.environ.get('TON_STORAGE_MANIFEST_BAG_ID', None)))
+        except:
+            obj.manifest_bag_id = None
+        if not obj.storage_public_addr and obj.num_workers:
             raise ValueError('Environemnt variable "TON_STORAGE_PUBLIC_ADDR" is required')
         return obj
 
@@ -157,6 +164,26 @@ class IndexDbSettings:
         return obj
 
 
+
+@dataclass
+class IpfsSettings:
+    enabled: bool
+    kubo_rpc_uri: str
+    request_timeout: int = 30
+    confirmation_timeout: int = 60
+    storage_cid_size_limit: int = 8*1024*1024
+
+    @classmethod
+    def from_environment(cls):
+        obj = cls.__new__(cls)
+        obj.enabled = settings.strtobool(os.environ.get('IPFS_ENABLED', 'false'))
+        obj.kubo_rpc_uri = os.environ.get('IPFS_KUBO_RPC_URI', None)
+        obj.request_timeout = int(os.environ.get('IPFS_RPC_TIMEOUT', cls.request_timeout))
+        obj.storage_cid_size_limit = int(os.environ.get('IPFS_STORAGE_CID_SIZE_LIMIT', cls.storage_cid_size_limit))
+        obj.confirmation_timeout = int(os.environ.get('TON_STORAGE_CONFIRMATION_TIMEOUT', cls.confirmation_timeout))
+        return obj
+
+
 @dataclass
 class Settings:
     tonlib: settings.TonlibSettings
@@ -164,11 +191,13 @@ class Settings:
     cache: settings.CacheSettings
     storage: TonStorageCliSettings
     indexdb: IndexDbSettings
+    ipfs: IpfsSettings
 
     @classmethod
     def from_environment(cls):
         obj = cls.__new__(cls)
         obj.storage = TonStorageCliSettings.from_environment()
+        obj.ipfs = IpfsSettings.from_environment()
         obj.webserver = WebServerSettings.from_environment()
         _pyton = settings.Settings.from_environment()
         obj.tonlib = _pyton.tonlib

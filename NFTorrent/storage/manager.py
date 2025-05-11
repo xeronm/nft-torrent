@@ -10,7 +10,6 @@ import shutil
 import time
 import traceback
 import tempfile
-import aiohttp
 import json
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
@@ -32,8 +31,7 @@ from NFTorrent.settings import TonStorageCliSettings
 from NFTorrent.storage.storage import TonStorageLru
 from NFTorrent.storage.worker import (TonStorageCliWorker, WorkerCliTask,
                                       WorkerCliTaskResult, WorkerStatusNotify)
-from NFTorrent.auth import ServerResponseAuthError
-from NFTorrent.pyTON.manager import ContractRequestError, TonlibManager
+from NFTorrent.pyTON.manager import TonlibManager
 
 
 @dataclass
@@ -573,51 +571,6 @@ class TonStorageCliManager:
         result.update(peer)
         return result
 
-    async def get_torrent_content(self,
-                                  address: str = None,
-                                  bag_id: str = None,
-                                  file_path: str = None,
-                                  digest: str = None) -> FileResponse:
-        torrent_info = await self.get_torrent(address, bag_id=bag_id)
-        bag_id = bag_id or parse_bag_id(torrent_info['torrent']['hash'])
-
-        files = None
-        if file_path is not None:
-            file_path = os.path.normpath(file_path)
-            files = [x for x in torrent_info['files'] if x['name'] == file_path]
-        if digest is not None:
-            files = [x for x in torrent_info['files'] if x['digest'] == digest]
-
-        if not files:
-            raise exceptions.TorrentFileNotFound()
-
-        if files[0]['size'] != files[0]['downloaded_size']:
-            peers = await self.node_get_peers(bag_id)
-            good_peers = [x for x in peers['peers'] if x['ready_parts'] == peers['total_parts']]
-            if good_peers:
-                remote_uri = f'/api/v1/storage/torrent/{bag_id}/c/{files[0]["digest"]}'
-                remote_result = await self.remote_call(self.get_peer_hostname(good_peers[0]), remote_uri)
-                if remote_result['status'] == status.HTTP_200_OK:
-                    return StreamingResponse(io.BytesIO(remote_result['response']), headers=remote_result['headers'])
-
-            raise exceptions.TorrentStorageError("Torrent file not ready")
-
-        target_path = os.path.join(
-            self.settings.storage_db_torrent_path or
-            os.path.join(self.settings.storage_db_path, 'torrent/torrent-files'),
-            bag_id)
-        torrent_dir = os.path.join(target_path, torrent_info['torrent']['dir_name'])
-        if not os.path.isdir(torrent_dir):
-            # Try to fallback
-            torrent_dir = os.path.join(target_path, self.settings.torrent_dirname)
-
-        target_file = os.path.join(torrent_dir, files[0]['name'])
-        if not os.path.isfile(target_file):
-            logger.warning("Torrent file not exists in daemon storage, bag_id: {bag_id}, file={filename}",
-                           bag_id=bag_id, filename=target_file)
-            raise exceptions.TorrentStorageError("Torrent file not exists in daemon storage")
-
-        return FileResponse(target_file, headers={"Cache-Control": "public, max-age=3600"})
 
     async def get_nft_bag_id(self, address: str, skip_verification: bool = False, owner: str = None):
         nft_data = await self.tonlib.get_nft_data(address, skip_verification, owner=owner)
@@ -630,18 +583,18 @@ class TonStorageCliManager:
 
     async def confirm_torrent(self, address, old_bag_id, bag_id):
         curr_time = st_time = time.monotonic()
-        nft_bag_id = None
+        curr_bag_id = None
         while st_time + self.settings.confirmation_timeout > curr_time:
             await asyncio.sleep(10)
-            nft_bag_id = await self.get_nft_bag_id(address)
-            if nft_bag_id == bag_id:
+            curr_bag_id = await self.get_nft_bag_id(address)
+            if curr_bag_id == bag_id:
                 break
             curr_time = time.monotonic()
 
         async with BagWriteLock(bag_id, self.bag_wlock):
-            if nft_bag_id != bag_id:
+            if curr_bag_id != bag_id:
                 self.stats['create_rollback'] += 1
-                logger.warning("Newly created NFT Torrent removed due to confirmation timeout, NFT: {address}, bag_id: {bag_id}",  # noqa: E501
+                logger.warning("Newly created NFT Torrent removed due to confirmation timeout, NFT: {address}, bag_id: {bag_id}, curr_bag_id={curr_bag_id}",  # noqa: E501
                                address=address, bag_id=bag_id)
                 await self.node_remove(bag_id)
                 return
@@ -650,7 +603,7 @@ class TonStorageCliManager:
             logger.warning("Newly created NFT Torrent confirmed, NFT: {address}, bag_id: {bag_id}",
                            address=address, bag_id=bag_id)
             await self.node_upload_resume(bag_id)
-            if bag_id is not None:
+            if old_bag_id is not None:
                 await self.node_remove(old_bag_id)
 
         await self.apply_redundancy_policy(bag_id)
@@ -808,6 +761,52 @@ class TonStorageCliManager:
 
         return result
 
+    async def get_torrent_content(self,
+                                  address: str = None,
+                                  bag_id: str = None,
+                                  file_path: str = None,
+                                  digest: str = None) -> FileResponse:
+        torrent_info = await self.get_torrent(address, bag_id=bag_id)
+        bag_id = bag_id or parse_bag_id(torrent_info['torrent']['hash'])
+
+        files = None
+        if file_path is not None:
+            file_path = os.path.normpath(file_path)
+            files = [x for x in torrent_info['files'] if x['name'] == file_path]
+        if digest is not None:
+            files = [x for x in torrent_info['files'] if x['digest'] == digest]
+
+        if not files:
+            raise exceptions.TorrentFileNotFound()
+
+        if files[0]['size'] != files[0]['downloaded_size']:
+            peers = await self.node_get_peers(bag_id)
+            good_peers = [x for x in peers['peers'] if x['ready_parts'] == peers['total_parts']]
+            if good_peers:
+                remote_uri = f'/api/v1/storage/torrent/{bag_id}/c/{files[0]["digest"]}'
+                remote_result = await self.remote_call(self.get_peer_hostname(good_peers[0]), remote_uri)
+                if remote_result['status'] == status.HTTP_200_OK:
+                    return StreamingResponse(io.BytesIO(remote_result['response']), headers=remote_result['headers'])
+
+            raise exceptions.TorrentStorageError("Torrent file not ready")
+
+        target_path = os.path.join(
+            self.settings.storage_db_torrent_path or
+            os.path.join(self.settings.storage_db_path, 'torrent/torrent-files'),
+            bag_id)
+        torrent_dir = os.path.join(target_path, torrent_info['torrent']['dir_name'])
+        if not os.path.isdir(torrent_dir):
+            # Try to fallback
+            torrent_dir = os.path.join(target_path, self.settings.torrent_dirname)
+
+        target_file = os.path.join(torrent_dir, files[0]['name'])
+        if not os.path.isfile(target_file):
+            logger.warning("Torrent file not exists in daemon storage, bag_id: {bag_id}, file={filename}",
+                           bag_id=bag_id, filename=target_file)
+            raise exceptions.TorrentStorageError("Torrent file not exists in daemon storage")
+
+        return FileResponse(target_file, headers={"Cache-Control": "public, max-age=3600"})
+
     async def add_torrent(self, bag_id: str):
         async with BagWriteLock(bag_id, self.bag_wlock):
             return await self.node_add(bag_id)
@@ -866,7 +865,7 @@ class TonStorageCliManager:
                         if bag_id != new_bag_id:
                             logger.info("Waiting for confirmation newly created NFT Torrent, NFT: {address}, new bag_id: {bag_id}",  # noqa: E501
                                         address=address, bag_id=new_bag_id)
-                            self.loop.create_task(self.confirm_nft_torrent(address, bag_id, new_bag_id))
+                            self.loop.create_task(self.confirm_torrent(address, bag_id, new_bag_id))
                         else:
                             self.stats['create_confirm'] += 1
                             logger.warning("Newly created NFT Torrent already confirmed, NFT: {address}, bag_id: {bag_id}",

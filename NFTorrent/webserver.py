@@ -1,15 +1,9 @@
 import asyncio
 import io
-import json
-import os
-import random
-import shutil
-import tempfile
-import time
 from collections import Counter
-from typing import Any, Dict, List
 
 import aiohttp
+from urllib.parse import urljoin, urlparse
 from fastapi import UploadFile, status
 from fastapi.exceptions import HTTPException
 from fastapi.responses import (FileResponse, JSONResponse, RedirectResponse,
@@ -21,10 +15,9 @@ from pyTON.settings import RedisCacheSettings
 from NFTorrent import exceptions
 from NFTorrent.auth import (ContractAPIKeyCookie, NodeJWTBearer,
                             ServerResponseAuthError)
-from NFTorrent.blockchain.address import parse_bag_id
 from NFTorrent.cache import RedisCacheManager
-from NFTorrent.exceptions import TorrentClientError
-from NFTorrent.indexer.indexdb import IndexDb
+from NFTorrent.indexer import IndexDb
+from NFTorrent.ipfs import IpfsRpcManager, parse_uri
 from NFTorrent.models import HealthCheckResult
 from NFTorrent.modelsbase import CollectionConfig
 from NFTorrent.pyTON.manager import TonlibManager
@@ -40,11 +33,12 @@ class Server:
         self.tonlib: TonlibManager = None
         self.storage: TonStorageCliManager = None
         self.indexer: IndexDb = None
+        self.ipfs: IpfsRpcManager = None
         self.peer_hostnames = {}
         self.loop = None
         self.stats = Counter()
-        # self.resolver: aiodns.DNSResolver = None
-        self.jwt_bearer = NodeJWTBearer(subject=self.settings.storage.storage_public_addr,
+
+        self.jwt_bearer = NodeJWTBearer(subject=self.settings.storage.storage_public_addr or '127.0.0.1',
                                         jwt_secret=self.settings.webserver.jwt_secret,
                                         jwt_algorithm=self.settings.webserver.jwt_algorithm,
                                         node_state=self.get_node_state,
@@ -71,9 +65,11 @@ class Server:
                        " - storage.storage_db_path: {dbpath}\n"
                        " - storage.storage_temp_dir: {tempdir}\n"
                        " - storage.min_redundancy: {redundancy}\n"
+                       " - ipfs.kubo_uri: {kubo_uri}\n"
                        " - cache.enabled: {cache_enabled}\n"
                        " - indexdb.enabled: {indexdb_enabled}\n",
                        addr=self.settings.storage.storage_public_addr,
+                       kubo_uri=self.settings.ipfs.kubo_rpc_uri if self.settings.ipfs.enabled else None,
                        api_root=self.settings.webserver.api_root_path,
                        domains=self.settings.webserver.twa_domains,
                        networks=self.settings.webserver.allow_networks,
@@ -118,28 +114,30 @@ class Server:
         else:
             logger.warning("Storage disabled, num_workers required")
 
+        if self.settings.ipfs.enabled:
+            self.ipfs = IpfsRpcManager(self.settings.ipfs,
+                                       cache_manager=cache_manager,
+                                       tonlib=self.tonlib,
+                                       loop=loop)
+
         await asyncio.sleep(3)  # wait for manager to spawn all workers and report their status
 
     async def shutdown(self):
         logger.warning('Server shutdown initiated...')
         if self.indexer is not None:
             await self.indexer.shutdown()
+
         await asyncio.wait([
             self.tonlib.shutdown(),
             self.storage.shutdown(),
+            self.ipfs.shutdown() if self.ipfs is not None else asyncio.sleep(0.01),
         ], return_when=asyncio.ALL_COMPLETED)
 
     def _get_peer_uri(self, host: str, path: str):
         authority = f'{host}:{self.settings.webserver.port}' if self.settings.webserver.port else host
         api_root = self.settings.webserver.remote_api_root or self.settings.webserver.api_root_path
-        if api_root[-1] == '/' and path[0] == '/':
-            path = api_root + path[1:]
-        elif api_root[-1] != '/' and path[0] != '/':
-            path = api_root + '/' + path
-        else:
-            path = api_root + path
         schema = 'https' if self.settings.webserver.enable_ssl else 'http'
-        return f'{schema}://{authority}{path}'
+        return urljoin(urljoin(f'{schema}://{authority}', api_root) + '/', path)
 
     def _get_peer_headers(self, host: str):
         return {
@@ -148,8 +146,13 @@ class Server:
 
     # API
     async def get_healthcheck(self) -> HealthCheckResult:
-        tonlib_state = sum([1 for x in self.tonlib.get_workers_state().values() if x['is_working']])
-        stotage_state = sum([1 for x in self.storage.get_workers_state().values() if x['is_healthy']])
+        tonlib_state = None
+        if self.tonlib is not None:
+            tonlib_state = sum([1 for x in self.tonlib.get_workers_state().values() if x['is_working']])
+
+        stotage_state = None
+        if self.storage is not None:
+            stotage_state = sum([1 for x in self.storage.get_workers_state().values() if x['is_healthy']])
 
         return HealthCheckResult(
             tonlib=bool(tonlib_state),
@@ -200,6 +203,9 @@ class Server:
         image = nft_content.image()
         if nft_content.bag_id() and image and image[0] == ":":
             return await self.storage.get_torrent_content(address, bag_id=nft_content.bag_id(), digest=image[1:])
+        if image.startswith('ipfs://'):
+            cid, path, digest = parse_uri(image)
+            return await self.ipfs.get_content_file(address, cid=cid, file_path=path, digest=digest)
         if image:
             return RedirectResponse(image)
         if nft_content.image_data():
@@ -217,9 +223,12 @@ class Server:
                                       digest: str = None):
         nft_data = await self.tonlib.get_nft_data(address)
         nft_content = nft_data.individual_content
-        bag_id = None
         if nft_content is not None:
+            image = nft_content.image()
+            if image.startswith('ipfs://'):
+                cid, _, _ = parse_uri(image)
+                return await self.ipfs.get_content_file(address, cid=cid, file_path=file_path, digest=digest)
             bag_id = nft_content.bag_id()
-        if bag_id is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-        return self.storage.get_torrent_content(bag_id=bag_id, file_path=file_path, digest=digest)
+            if bag_id:
+                return await self.storage.get_torrent_content(bag_id=bag_id, file_path=file_path, digest=digest)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
