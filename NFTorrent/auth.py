@@ -258,7 +258,7 @@ class ContractAPIKeyCookie(APIKeyCookie):
         return models.JWTPayload(**payload), token
 
 
-Morsel._reversed['partitioned'] = 'Partitioned'
+Morsel._reserved['partitioned'] = 'Partitioned'
 Morsel._flags.add('partitioned')
 
 def set_cookie(

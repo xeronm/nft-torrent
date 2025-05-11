@@ -299,7 +299,7 @@ async def add_torrent(request: models.StorageTorrentMethod = Depends()):
     """
     Add Torrent.
     """
-    return await ws.add_torrent(request.bag_id)
+    return await ws.storage.add_torrent(request.bag_id)
 
 
 @app.delete('/api/v1/storage/torrent/{bag_id}', dependencies=[Depends(ws.jwt_bearer)],
@@ -309,7 +309,7 @@ async def remove_torrent(request: models.StorageTorrentMethod = Depends()):
     """
     Remove Torrent.
     """
-    result = await ws.remove_torrent(request.bag_id)
+    result = await ws.storage.remove_torrent(request.bag_id)
     return result
 
 
@@ -380,7 +380,10 @@ async def get_nft_address_information(request: models.NftMethod = Depends()):
     """
     Get NFT Address information.
     """
-    return await ws.tonlib.raw_get_account_state(request.address)
+    nft_state = await ws.tonlib.raw_get_account_state(request.address)
+    del nft_state['data']
+    del nft_state['code']
+    return nft_state
 
 
 @app.get('/api/v1/nft/{address}/torrent',
@@ -391,7 +394,7 @@ async def get_nft_torrent(request: models.NftMethod = Depends()):
     """
     Get NFT Torrent information.
     """
-    return await ws.get_nft_torrent(request.address)
+    return await ws.storage.get_torrent(address=request.address)
 
 
 @app.get('/api/v1/nft/{address}/torrent/{file_path:path}',
@@ -402,7 +405,7 @@ async def get_nft_torrent_file(request: models.NftStorageTorrentMethod = Depends
     """
     Get NFT Torrent File.
     """
-    return await ws.get_nft_torrent_content(request.address, request.file_path)
+    return await ws.storage.get_torrent_content(address=request.address, file_path=request.file_path)
 
 
 @app.post('/api/v1/nft/{address}/torrent', response_model_exclude_none=True, tags=['nft'])
@@ -411,8 +414,8 @@ async def create_nft_torrent(request: models.NftTorrentCreate = Depends(),
     """
     Create NFT Torrent.
     """
-    return await ws.create_nft_torrent(request.address, request.files,
-                                       owner=jwt_payload.sub if jwt_payload is not None else None)
+    return await ws.storage.create_torrent(request.address, request.files,
+                                           owner=jwt_payload.sub if jwt_payload is not None else None)
 
 
 if ws.settings.indexdb.enabled:
