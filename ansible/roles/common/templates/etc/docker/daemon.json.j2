@@ -1,0 +1,5 @@
+{
+{% for param in docker.daemon_params %}
+  "{{ param.name }}": {{ param.value }}
+{% endfor %}
+}

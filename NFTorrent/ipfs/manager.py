@@ -3,9 +3,11 @@ import aiohttp
 import json
 import time
 import io
+import traceback
+import datetime
 from mimetypes import guess_type
 from collections import Counter
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Tuple, Type, Any
 from urllib.parse import urlparse, urljoin
 
 from loguru import logger
@@ -16,8 +18,8 @@ from fastapi.responses import StreamingResponse, FileResponse
 
 from NFTorrent.settings import IpfsSettings
 from NFTorrent.pyTON.manager import TonlibManager
-from NFTorrent import exceptions
-from NFTorrent import models
+from NFTorrent import exceptions, models
+from NFTorrent.modelsbase import dict_to_influx
 
 
 SCHEME_IPFS = 'ipfs'
@@ -56,10 +58,13 @@ class CidWriteLock:
         self.lock = None
 
 
-class IpfsException(Exception):
-    pass
+class IpfsRpcHttpException(HTTPException):
+
+    def __str__(self):
+        return f'status={self.status_code}, detail={self.detail}'
 
 class IpfsRpcManager:
+    node_state_cache_timeout = 30
 
     def __init__(self,
                  settings: IpfsSettings,
@@ -73,9 +78,12 @@ class IpfsRpcManager:
         self.cache_manager = cache_manager or DisabledCacheManager()
         self.tonlib = tonlib
         self.loop = loop
+        self.node_state = None
 
         self.cid_wlock = {}
-        self.tasks = {}
+        self.tasks = {
+            'check_ipfs_alive': self.loop.create_task(self.check_ipfs_alive()),
+        }
         self.stats: Dict[str, int] = Counter()
 
         # cache setup
@@ -83,6 +91,10 @@ class IpfsRpcManager:
         self.client = aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(total=self.settings.request_timeout),
             base_url=urljoin(self.settings.kubo_rpc_uri + '/', 'api/v0/')
+        )
+        self.cluster = aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=self.settings.request_timeout),
+            base_url=self.settings.cluster_rpc_uri
         )
 
     async def shutdown(self):
@@ -96,6 +108,25 @@ class IpfsRpcManager:
         # self.node_list = self.cache_manager.cached(expire=15)(self.node_list)
         # self.node_get = self.cache_manager.cached(expire=600)(self.node_get)
 
+    async def check_ipfs_alive(self):
+        logger.warning("IpfsRpcManager[check_ipfs_alive]: entering main loop")
+        while True:
+            try:
+                try:
+                    await self.get_node_state()
+                except Exception as E:
+                    logger.warning("IpfsRpcManager[check_ipfs_alive]: failed to get node state, exc: {excname}: {exc}",
+                                   excname=type(E), exc=str(E))
+
+                await asyncio.sleep(5)
+            except asyncio.CancelledError:
+                logger.info("IpfsRpcManager[check_ipfs_alive]: Task was cancelled")
+                return
+            except (Exception, BaseException):
+                logger.critical("IpfsRpcManager[check_ipfs_alive]: Task terminated with exception: {exc}",
+                                exc=traceback.format_exc())
+                await asyncio.sleep(30)
+
     async def get_nft_cid(self, address: str, skip_verification: bool = False, owner: str = None, raise_error: bool = False):
         nft_data = await self.tonlib.get_nft_data(address, skip_verification, owner=owner)
         nft_content = nft_data.individual_content
@@ -107,29 +138,78 @@ class IpfsRpcManager:
                 cid, _, _ = parse_uri(image)
         if raise_error and not cid:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-        return cid
+        return cid, nft_content
 
-    async def cid_pin(self, cid: str = None, name: str = None):
-        path = f'pin/add?arg={cid}&recursive=true'
-        if name is not None:
-            path += f'&name={name}'
-        async with self.client.post(path) as resp:
-            if resp.status != status.HTTP_200_OK:
-                raise IpfsException(f'Error response: status={resp.status}, text={await resp.text()}')
-            return await resp.json()
+    async def call_rpc_method(self, method: Type[aiohttp.ClientResponse], uri: str, json: bool = False, text: bool = False, data: Any = None):
+        kwargs = {}
+        if data is not None:
+            kwargs['data'] = data
+        try:
+            async with method(uri, **kwargs) as resp:
+                logger.info("IPFS RPC Call, method: {method}, uri: {uri}", method=method.__name__, uri=uri)
+                if resp.status != status.HTTP_200_OK:
+                    raise IpfsRpcHttpException(status_code=resp.status, detail=await resp.text())
+                if json:
+                    return await resp.json()
+                elif text:
+                    return await resp.text()
+                else:
+                    return await resp.read()
+        except (aiohttp.client_exceptions.ClientError, aiohttp.client_exceptions.ClientConnectorError) as E:
+            logger.error("IPFS RPC call error, method: {method}, uri: {uri}, {exc}",
+                         method=method.__name__, uri=uri, exc=str(E))
+            raise
+
+    async def cid_add_local(self, address: str = None, files: List[UploadFile] = None) -> models.NftContentInfo:
+        data = aiohttp.FormData()
+        for f in files:
+            data.add_field('files', await f.read(), filename=f.filename, content_type=f.content_type)
+        uri = 'add?recursive=true&wrap-with-directory=true&pin=false&cid-version=1'
+        response = await self.call_rpc_method(self.client.post, uri, data=data, text=True)
+        content = None
+        files = []
+        for line in response.split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+            item = json.loads(line)
+            if item['Name'] == '':
+                content = models.NftContentInfo(hash=item['Hash'], size=item['Size'], files=[])
+            else:
+                files.append(models.NftContentFile(name=item['Name'], size=item['Size'], hash=item['Hash']))
+        if content:
+            content.files = files
+            content.make_digest()
+        return content
+
+    async def cid_pin(self, cid: str = None, name: str = None, expire_at: float = None):
+        name = None or ""
+        if self.settings.cluster_rpc_uri:
+            expire_at_str = datetime.datetime.fromtimestamp(expire_at).isoformat()+"Z" if expire_at else ""
+            uri = f'/pins/ipfs/{cid}?mode=recursive&replication-min={self.settings.min_redundancy}&replication-max={self.settings.min_redundancy+1}&expire-at={expire_at_str}&name={name}'  #
+            return await self.call_rpc_method(self.cluster.post, uri, json=True)
+        else:
+            uri = f'pin/add?arg={cid}&recursive=true&name={name}'
+            return await self.call_rpc_method(self.cluster.post, uri, json=True)
 
     async def cid_unpin(self, cid: str = None):
-        async with self.client.post(f'pin/rm?arg={cid}&recursive=true') as resp:
-            if resp.status != status.HTTP_200_OK:
-                raise IpfsException(f'Error response: status={resp.status}, text={await resp.text()}')
-            return await resp.json()
+        try:
+            if self.settings.cluster_rpc_uri:
+                uri = f'/pins/ipfs/{cid}'
+                return await self.call_rpc_method(self.cluster.delete, uri, json=True)
+            else:
+                uri = f'pin/rm?arg={cid}&recursive=true'
+                return await self.call_rpc_method(self.cluster.post, uri, json=True)
+        except IpfsRpcHttpException as E:
+            if E.status_code != status.HTTP_404_NOT_FOUND:
+                raise
 
     async def confirm_content(self, address, old_cid, cid):
         curr_time = st_time = time.monotonic()
         curr_cid = None
         while st_time + self.settings.confirmation_timeout > curr_time:
             await asyncio.sleep(10)
-            curr_cid = await self.get_nft_cid(address)
+            curr_cid, nft_content = await self.get_nft_cid(address)
             if curr_cid == cid:
                 break
             curr_time = time.monotonic()
@@ -137,105 +217,67 @@ class IpfsRpcManager:
         async with CidWriteLock(cid, self.cid_wlock):
             if curr_cid != cid:
                 self.stats['create_rollback'] += 1
-                logger.warning("Newly created IPFS CID removed due to confirmation timeout, NFT: {address}, cid: {cid}, curr_cid={curr_cid}",  # noqa: E501
+                logger.warning("Newly created IPFS CID was not pinned due to confirmation timeout, NFT: {address}, cid: {cid}, curr_cid={curr_cid}",  # noqa: E501
                                address=address, cid=cid, curr_cid=curr_cid)
-                await self.cid_unpin(cid)
+                # await self.cid_unpin(cid)
                 return
 
             self.stats['create_confirm'] += 1
             logger.warning("Newly created IPFS CID confirmed, NFT: {address}, cid: {cid}",
                            address=address, cid=cid)
-            await self.cid_pin(cid, name=address)
+            await self.cid_pin(cid, name=address, expire_at=nft_content.storage_due_time())
             if old_cid is not None:
                 await self.cid_unpin(old_cid)
         # await self.apply_redundancy_policy(bag_id)
 
+    def get_cached_node_state(self):
+        return self.node_state
 
-    # High-Level API
-    async def create_content(self, address: str, files: List[UploadFile], owner: str = None):
-        cid = await self.get_nft_cid(address, owner=owner)
+    async def get_node_state(self):
+        curr_time = time.monotonic()
+        if self.node_state is None or curr_time > self.node_state_time + self.node_state_cache_timeout:
+            tasks = await asyncio.gather(
+                self.call_rpc_method(self.client.post, 'repo/stat', json=True),
+                self.call_rpc_method(self.client.post, 'swarm/peers', json=True),
+                self.call_rpc_method(self.cluster.get, 'monitor/metrics/ping', json=True)
+            )
+            self.node_state_time = curr_time
+            self.node_state = {
+                'storage': tasks[0],
+                'peers': len(tasks[1]['Peers']),
+                'cluster_peers': tasks[2],
+                'stats': self.stats,
+            }
+        return self.node_state
 
-        total_size = sum([f.size for f in files])
-        if total_size > self.settings.storage_cid_size_limit:
-            raise exceptions.TorrentSizeLimit(self.settings.storage_cid_size_limit)
+    def get_measurements(self, timestamp: int) -> List[str]:
+        state = self.get_cached_node_state()
+        if state is not None:
+            _ipfs = {
+                'peers': state['peers'],
+                'cluster_peers': len(state['cluster_peers']),
+                'cluster_active_peers': len([x for x in state['cluster_peers'] if x['valid']]),
+                'size': state['storage']['RepoSize'],
+                'max_size': state['storage']['StorageMax'],
+                'objects': state['storage'].get('NumObjects'),
+            }
+        else:
+            _ipfs = {}
+        _ipfs.update(state["stats"])
+        return [f'NFTorrentIpfs {dict_to_influx(_ipfs)} {timestamp}']
 
-        logger.warning("Creating new IPFS CID, NFT: {address}, curr_cid: {cid}, size={size}",  # noqa: E501
-                       address=address, cid=cid, size=total_size)
-        self.stats['create'] += 1
-        try:
-            async with CidWriteLock(address, self.cid_wlock):
-                data = aiohttp.FormData()
-                for f in files:
-                    data.add_field('files', await f.read(), filename=f.filename, content_type=f.content_type)
-                data.add_field('files', address, filename='.nft')
-                async with self.client.post('add?recursive=true&wrap-with-directory=true&pin=false&cid-version=1', data=data) as resp:
-                    if resp.status != status.HTTP_200_OK:
-                        raise IpfsException(f'Error response: status={resp.status}, text={await resp.text()}')
-
-                    _resp = await resp.text()
-
-                content = None
-                files = []
-                for line in _resp.split('\n'):
-                    line = line.strip()
-                    if not line:
-                        continue
-                    item = json.loads(line)
-                    if item['Name'] == '':
-                        content = models.NftContentInfo(hash=item['Hash'], size=item['Size'], files=[])
-                    elif item['Name'] != '.nft':
-                        files.append(models.NftContentFile(name=item['Name'], size=item['Size'], hash=item['Hash']))
-                if content:
-                    content.files = files
-                    content.make_digest()
-                new_cid = content.hash
-
-                if cid != new_cid:
-                    logger.info("Waiting for confirmation newly created IPFS CID, NFT: {address}, new cid: {cid}",  # noqa: E501
-                                address=address, cid=new_cid)
-                    self.loop.create_task(self.confirm_content(address, cid, new_cid))
-                else:
-                    self.stats['create_confirm'] += 1
-                    logger.warning("Newly created IPFS CID already confirmed, NFT: {address}, cid: {cid}",
-                                   address=address, cid=cid)
-                    await self.cid_pin(cid, name=address)
-                    # self.loop.create_task(self.apply_redundancy_policy(new_bag_id))
-        except Exception as E:
-            self.stats['create_error'] += 1
-            logger.warning("Error creating IPFS CID, NFT: {address}, size={size}, {exc}",  # noqa: E501
-                           address=address, size=total_size, exc=str(E))
-            raise
-
-        return content
-
-    async def get_content(self, address: str = None, cid: str = None):
-        cid = cid or await self.get_nft_cid(address, raise_error=True)
-        async with self.client.post(f'ls?arg={cid}') as resp:
-            if resp.status != status.HTTP_200_OK:
-                raise IpfsException(f'Error response: status={resp.status}, text={await resp.text()}')
-
-            _resp = await resp.json()
-            _content = _resp['Objects'][0]
-            content = models.NftContentInfo(hash=_content['Hash'],
-                                            size=0,
-                                            files=[
-                                                models.NftContentFile(name=x['Name'],
-                                                                      size=x['Size'],
-                                                                      hash=x['Hash'])
-                                                for x in _content['Links']
-                                                if x['Name'] != '.nft'
-                                            ])
-            content.size = sum([x.size for x in content.files])
-            content.make_digest()
-            return content
-
-    async def get_content_file(self,
-                               address: str = None,
-                               cid: str = None,
-                               file_path: str = None,
-                               digest: str = None) -> StreamingResponse:
-        cid = cid or await self.get_nft_cid(address, raise_error=True)
-        info = await self.get_content(address=address, cid=cid)
+    async def get_cid_file(self,
+                           uri: str = None,
+                           cid: str = None,
+                           file_path: str = None,
+                           digest: str = None):
+        if uri:
+            cid, _file_path, _digest = parse_uri(uri)
+            if file_path is None and digest is None:
+                file_path, digest = _file_path, _digest
+        if not cid:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='CID not defined')
+        info = await self.get_content(cid=cid)
         item = [x for x in info.files
                 if (digest and x.digest == digest) or
                     (file_path and x.name == file_path)]
@@ -245,12 +287,90 @@ class IpfsRpcManager:
         if file_path is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
-        data = None
-        async with self.client.post(f'cat?arg={cid}/{file_path}') as resp:
-            if resp.status != status.HTTP_200_OK:
-                raise IpfsException(f'Error response: status={resp.status}, text={await resp.text()}')
-            data = await resp.read()
+        data = await self.call_rpc_method(self.client.post, f'cat?arg={cid}/{file_path}')
+        return data, file_path
+
+    # High-Level API
+    async def new_nft_create_content(self, owner: str, files: List[UploadFile]):
+        total_size = sum([f.size for f in files])
+        if total_size > self.settings.storage_cid_size_limit:
+            raise exceptions.TorrentSizeLimit(self.settings.storage_cid_size_limit)
+        logger.warning("Creating new IPFS CID for new NFT, owner: {owner}, size={size}",  # noqa: E501
+                       address=owner, size=total_size)
+        self.stats['create'] += 1
+        content = None
+        try:
+            async with CidWriteLock(owner, self.cid_wlock):
+                content = await self.cid_add_local(address=owner, files=files)
+        except Exception as E:
+            self.stats['create_error'] += 1
+            logger.warning("Error creating IPFS CID, for new NFT, owner: {owner}, size={size}, {exc}",  # noqa: E501
+                           owner=owner, size=total_size, exc=str(E))
+            raise
+        return content
+
+    async def create_content(self, address: str, files: List[UploadFile], owner: str = None):
+        cid, nft_content = await self.get_nft_cid(address, owner=owner)
+
+        total_size = sum([f.size for f in files])
+        if total_size > self.settings.storage_cid_size_limit:
+            raise exceptions.TorrentSizeLimit(self.settings.storage_cid_size_limit)
+
+        node_state = await self.get_cached_node_state()
+        cluster_peers = len(node_state['cluster_peers'])
+        if cluster_peers < self.settings.min_redundancy:
+            raise exceptions.TorrentStorageError(f'Unable to comply required redundancy, min={self.settings.min_redundancy}, peers={cluster_peers}')
+
+        logger.warning("Creating new IPFS CID, NFT: {address}, curr_cid: {cid}, size={size}",  # noqa: E501
+                       address=address, cid=cid, size=total_size)
+        self.stats['create'] += 1
+        try:
+            async with CidWriteLock(cid or address, self.cid_wlock):
+                content = await self.cid_add_local(address=address, files=files)
+                new_cid = content.hash
+
+                if cid != new_cid:
+                    logger.info("Waiting for confirmation newly created IPFS CID, NFT: {address}, new cid: {cid}",  # noqa: E501
+                                address=address, cid=new_cid)
+                    self.loop.create_task(self.confirm_content(address, cid, new_cid))
+                else:
+                    self.stats['create_confirm'] += 1
+                    logger.warning("Newly created IPFS CID already confirmed, NFT: {address}, cid: {cid}",
+                                   address=address, cid=new_cid)
+                    await self.cid_pin(new_cid, name=address, expire_at=nft_content.storage_due_time())
+        except Exception as E:
+            self.stats['create_error'] += 1
+            logger.warning("Error creating IPFS CID, NFT: {address}, size={size}, {exc}",  # noqa: E501
+                           address=address, size=total_size, exc=str(E))
+            raise
+
+        return content
+
+    async def get_content(self, address: str = None, cid: str = None):
+        cid = cid or (await self.get_nft_cid(address, raise_error=True))[0]
+        _resp = await self.call_rpc_method(self.client.post, f'ls?arg={cid}', json=True)
+        _content = _resp['Objects'][0]
+        content = models.NftContentInfo(hash=_content['Hash'],
+                                        size=0,
+                                        files=[
+                                            models.NftContentFile(name=x['Name'],
+                                                                    size=x['Size'],
+                                                                    hash=x['Hash'])
+                                            for x in _content['Links']
+                                        ])
+        content.size = sum([x.size for x in content.files])
+        content.make_digest()
+        return content
+
+    async def get_content_file(self,
+                               address: str = None,
+                               uri: str = None,
+                               cid: str = None,
+                               file_path: str = None,
+                               digest: str = None) -> StreamingResponse:
+        if not uri and not cid:
+            cid = (await self.get_nft_cid(address, raise_error=True))[0]
+        data, file_path = await self.get_cid_file(uri=uri, cid=cid, file_path=file_path, digest=digest)
         return StreamingResponse(io.BytesIO(data),
                                  headers={"Cache-Control": "public, max-age=3600"},
                                  media_type=guess_type(file_path)[0])
-

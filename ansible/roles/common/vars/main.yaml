@@ -1,0 +1,48 @@
+packages:
+  update_initial: true
+  pip_update: true
+  absent: []
+  present:
+    - dnf-plugins-core
+    - chrony
+    - zip
+    - unzip
+    - net-tools
+    - wget
+    - curl
+    - tcpdump
+    - iptables
+    - firewalld
+    - sysstat
+    - crudini
+    - git
+    - python3
+timezone: Europe/Moscow
+chrony:
+  servers:
+    - ntp3.vniiftri.ru
+    - ntp4.vniiftri.ru
+    - 0.pool.ntp.org
+    - 1.pool.ntp.org
+  service_params:
+    - { name: Restart, value: on-failure }
+    - { name: RestartSec, value: 20s }
+firewalld:
+  service_params:
+    - { name: Restart, value: on-failure }
+    - { name: RestartSec, value: 60s }
+nginx:
+  service_params:
+    - { name: Restart, value: on-failure }
+    - { name: RestartSec, value: 20s }
+docker:
+  service_params:
+    - { name: Restart, value: on-failure }
+    - { name: RestartSec, value: 20s }
+  daemon_params:
+    # - { name: mtu, value: 1420 }
+    - { name: data-root, value: '"/docker-data"' }
+telegraf:
+  service_params:
+    - { name: Restart, value: on-failure }
+    - { name: RestartSec, value: 60s }

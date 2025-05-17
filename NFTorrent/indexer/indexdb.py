@@ -4,6 +4,8 @@ import math
 import pickle
 import random
 import traceback
+import time
+from urllib.parse import urljoin
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -13,15 +15,17 @@ import aiohttp
 from fastapi import status
 from loguru import logger
 from PIL import Image
+from pytonlib import TonlibException
 from pyTON.cache import CacheManager, DisabledCacheManager
 from sqlalchemy.exc import NoResultFound
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 
 from NFTorrent.models import CollectionData
 from NFTorrent.modelsbase import (BaseNftModel, CollectionConfig,
-                                  CollectionInstance)
+                                  CollectionInstance, dict_to_influx)
 from NFTorrent.pyTON.manager import ContractRequestError, TonlibManager
 from NFTorrent.settings import IndexDbSettings
+from NFTorrent.ipfs import IpfsRpcManager
 
 
 class BaseCollectionModel(SQLModel, table=False):
@@ -78,13 +82,15 @@ class IndexDb:
                  cache_manager: Optional[CacheManager] = None,
                  loop: Optional[asyncio.BaseEventLoop] = None,
                  collection_config: CollectionConfig = None,
-                 tonlib: TonlibManager = None
+                 tonlib: TonlibManager = None,
+                 ipfs: IpfsRpcManager = None
                  ):
 
         self.num_workers = num_workers or settings.num_workers
         self.restart_timeout = restart_timeout or 60
         self.settings = settings
         self.tonlib = tonlib
+        self.ipfs = ipfs
         self.collection_config = collection_config
         self.cache_manager = cache_manager or DisabledCacheManager()
 
@@ -138,7 +144,6 @@ class IndexDb:
                                                                 self.sync_collection_upsert, data.nft_collection)
                 # Refresh data from TON
                 data.collection_data = await self.tonlib.get_collection_data(address)
-
                 next_index = data.collection_data.next_item_index
                 if data.instance.index > next_index:
                     logger.error("IndexDb[nft_indexer:{address}]: collection On-Chain index less than IndexDB, db_index: {index}, chain_index: {new_index}",  # noqa: E501
@@ -173,10 +178,12 @@ class IndexDb:
                         await self.loop.run_in_executor(self.threadpool_executor,
                                                         self.sync_collection_nft_bulk_insert, data.instance, bulk)
                         data.stats['nft_index_count'] += len(bulk)
+                        data.stats['last_updated'] = int(time.time())
 
-            except asyncio.TimeoutError:
-                logger.warning("IndexDb[nft_indexer:{address}]: async operation timeout",
-                               address=address)
+                data.stats['last_checked'] = int(time.time())
+            except (TonlibException, asyncio.TimeoutError) as E:
+                logger.warning("IndexDb[nft_indexer:{address}]: Got error - {errclass}: {exc}",
+                               address=address, errclass=type(E), exc=str(E))
             except asyncio.CancelledError:
                 logger.info("IndexDb[nft_indexer:{address}]: Task was cancelled", address=address)
                 return
@@ -185,20 +192,14 @@ class IndexDb:
                                 address=address, exc=traceback.format_exc())
                 await asyncio.sleep(self.restart_timeout)
 
-    async def collection_nft_make_icons(self, instances: List[BaseCollectionModel]):
-
+    async def collection_nft_make_icons(self, instances: List[BaseNftModel]):
         for instance in instances:
-            image_uri = None
-            if instance.bag_id is not None and self.settings.nftorrent_apiroot:
-                image_uri = self.settings.nftorrent_apiroot
-                if image_uri != '/':
-                    image_uri += '/'
-                image_uri += f'c/{instance.address}'
-            elif instance.image is not None:
-                image_uri = instance.image
-
             buffer = None
-            if image_uri is not None:
+            image_uri = None
+            if instance.image and instance.image.startswith('ipfs://'):
+                buffer, _ = await self.ipfs.get_cid_file(uri=instance.image)
+            elif instance.image:
+                image_uri = instance.image
                 timeout = aiohttp.ClientTimeout(total=self.settings.http_timeout)
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     try:
@@ -207,12 +208,12 @@ class IndexDb:
                         async with await session.get(image_uri) as resp:
                             if resp.status != status.HTTP_200_OK:
                                 logger.warning("IndexDb: NFT icons, get http image error, address: {address}, status: {status}, text: {text}",  # noqa: E501
-                                               address=instance.address, status=resp.status, text=await resp.text())
+                                            address=instance.address, status=resp.status, text=await resp.text())
                             else:
                                 buffer = await resp.read()
                     except Exception as E:
                         logger.warning("IndexDb: NFT icons, get http image error, address: {address}, {exc}",
-                                       address=instance.address, exc=str(E))
+                                    address=instance.address, exc=str(E))
             elif instance.image_data is not None:
                 buffer = instance.image_data
 
@@ -266,6 +267,12 @@ class IndexDb:
             }
             for k, v in self.collections.items()
         }
+
+    def get_measurements(self, timestamp: int) -> List[str]:
+        return [
+            f'NFTorrentIndexer,address={k} {dict_to_influx(dict(**item["stats"], next_index=item["next_index"]))} {timestamp}'  # noqa: E501
+            for k, item in self.get_indexdb_state().items()
+        ]
 
     def sync_collection_query(self, limit: int = 100, offset: int = None, **kwargs):
         model_class = self.collection_config.dbmodel_nft_class

@@ -1,0 +1,59 @@
+# Packages
+- name: dnf - check that the initial update was made /etc/.ansibleinitial
+  stat:
+    path: /etc/.ansibleinitial
+  when: packages.update_initial
+  register: vupdate_initial
+  tags: packages
+
+- name: dnf initial update
+  dnf:
+    name: '*'
+    state: latest
+  when: packages.update_initial and vupdate_initial.stat.exists == False
+  register: vupdate
+  tags: packages
+
+- name: dnf - mark that initial update was made
+  ansible.builtin.file:
+    path: /etc/.ansibleinitial
+    state: touch
+    mode: u=rw,g=r,o=r
+  when: packages.update_initial and vupdate.changed
+  tags: packages
+
+- name: absent packages
+  dnf:
+    name: "{{ packages.absent }}"
+    state: absent
+  tags: packages
+
+- name: present packages
+  dnf:
+    name: "{{ packages.present }}"
+    state: present
+  tags: packages
+
+- name: PIP - check that the initial update was made /etc/.ansibleinitial-pip
+  stat:
+    path: /etc/.ansibleinitial-pip
+  when: packages.pip_update
+  register: vpipupdate_initial
+  tags: packages
+
+- name: PIP initial upgrade
+  pip:
+    name: pip
+    extra_args: -U
+    state: present
+  when: packages.pip_update and vpipupdate_initial.stat.exists == False
+  register: vpipupdate
+  tags: packages
+
+- name: PIP - mark that initial update was made
+  ansible.builtin.file:
+    path: /etc/.ansibleinitial-pip
+    state: touch
+    mode: u=rw,g=r,o=r
+  when: packages.pip_update and vpipupdate.changed
+  tags: packages

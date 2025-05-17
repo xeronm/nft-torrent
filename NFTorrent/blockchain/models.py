@@ -10,28 +10,6 @@ from .encoders import bcd2c_to_string, date_mask_to_string, flatten_snake_cell
 
 
 @dataclass
-class PetsCollectionInfo:
-    fee_storage: float
-    fee_class_a: float
-    fee_class_b: float
-    balance: float
-    balance_class_a: float
-    balance_class_b: float
-
-    @classmethod
-    def from_tvm(cls, stack: List):
-        if len(stack) != 6:
-            raise ValueError('Invalid format')
-        return PetsCollectionInfo(fee_storage=int(stack[0][1], 16)/1e9,
-                                  fee_class_a=int(stack[1][1], 16)/1e9,
-                                  fee_class_b=int(stack[2][1], 16)/1e9,
-                                  balance=int(stack[3][1], 16)/1e9,
-                                  balance_class_a=int(stack[4][1], 16)/1e9,
-                                  balance_class_b=int(stack[5][1], 16)/1e9
-                                  )
-
-
-@dataclass
 class GeoPoint:
     is_south: bool
     latitude: float
@@ -82,7 +60,6 @@ class PetMemoryNftImmutableData:
 
 @dataclass
 class NftMutableMetaData:
-    bag_id: str = None
     uri: str = None
     description: str = None
     image: str = None
@@ -92,7 +69,6 @@ class NftMutableMetaData:
     def from_tvm(cls, cs: CellSlice):
         obj = cls.__new__(cls)
         _sc0 = cs
-        obj.bag_id = parse_bag_id(_sc0.load_uint(256)) if _sc0.load_uint(1) else None
         obj.uri = _sc0.load_ref(as_cs=True).load_string() if _sc0.load_uint(1) else None
         obj.description = _sc0.load_ref(as_cs=True).load_string() if _sc0.load_uint(1) else None
         _sc1 = _sc0.load_ref(as_cs=True)
@@ -138,3 +114,43 @@ class PetMemoryNftContent(BaseNftContent):
 
     def storage_due_time(self):
         return self.fee_due_time
+
+
+def load_string(stack, opt: bool = False):
+    if opt and 'bytes' not in stack[1]:
+        return None
+    return CellSlice(stack[1]['bytes']).load_string()
+
+
+@dataclass
+class PetsCollectionInfo:
+    fee_storage: float
+    fee_class_a: float
+    fee_class_b: float
+    balance: float
+    balance_class_a: float
+    balance_class_b: float
+    fb_mode: int
+    fb_uri: str
+    data: NftMutableMetaData
+
+    @classmethod
+    def from_tvm(cls, stack: List):
+        if len(stack) != 12:
+            raise ValueError(f'Invalid PetsCollectionInfo response length: {len(stack)}')
+        if 'bytes' in stack[11][1]:
+            raise ValueError('Invalid PetsCollectionInfo response: image_data not null')
+        return PetsCollectionInfo(fee_storage=int(stack[0][1], 16)/1e9,
+                                  fee_class_a=int(stack[1][1], 16)/1e9,
+                                  fee_class_b=int(stack[2][1], 16)/1e9,
+                                  balance=int(stack[3][1], 16)/1e9,
+                                  balance_class_a=int(stack[4][1], 16)/1e9,
+                                  balance_class_b=int(stack[5][1], 16)/1e9,
+                                  fb_mode=int(stack[6][1], 16),
+                                  fb_uri=load_string(stack[7]),
+                                  data=NftMutableMetaData(
+                                      uri=load_string(stack[8], opt=True),
+                                      description=load_string(stack[9], opt=True),
+                                      image=load_string(stack[10], opt=True),
+                                      image_data=None
+                                  ))

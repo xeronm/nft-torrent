@@ -151,10 +151,11 @@ class Account(BaseModel):
 
 
 class HealthCheckResult(BaseModel):
-    tonlib: bool
-    storage: bool
-    redundancy: bool
     load: float
+    redundancy: bool
+    tonlib: Optional[bool]
+    storage: Optional[bool]
+    indexdb: Optional[bool]
 
 
 class TonProof(BaseModel):
@@ -243,3 +244,15 @@ class NftContentInfo(BaseModel):
         for f in self.files:
             digest = hashlib.shake_256((self.hash + f.name).encode()).digest(15)
             f.digest = base64.b32encode(digest).decode().lower()
+
+
+class IpfsNodeStorageState(BaseModel):
+    RepoSize: int
+    StorageMax: int
+    NumObjects: int
+
+
+class IpfsNodeState(BaseModel):
+    storage: IpfsNodeStorageState
+    peers: str = None
+

@@ -1,10 +1,38 @@
 import abc
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from typing import Any, Dict, List, Type
 
 from pytonlib.utils.address import detect_address
 from sqlmodel import Field, SQLModel
 from tonpy.types import CellSlice
+
+
+def dataclass_to_influx(instance):
+    kv = []
+    for field in fields(instance):
+        value = getattr(instance, field.name, None)
+        if value is None:
+            continue
+        if issubclass(field.type, str):
+            value = '"' + value.replace('"', '\\"') + '"'
+        kv.append(f'{field.name}={value}')
+    return ','.join(kv)
+
+
+def dict_to_influx(instance: Dict):
+    kv = []
+    for k, v in instance.items():
+        value = v
+        if value is None:
+            continue
+        if isinstance(v, dict):
+            continue
+        elif isinstance(v, bool):
+            value = int(value)
+        elif isinstance(v, str):
+            value = '"' + value.replace('"', '\\"') + '"'
+        kv.append(f'{k}={value}')
+    return ','.join(kv)
 
 
 class BaseCollectionModel(SQLModel, table=False):
@@ -18,6 +46,7 @@ class BaseNftModel(SQLModel, table=False):
     collection_id: int = Field()
     address: str = Field(unique=True, max_length=48)
     index: int = Field(index=True)
+    image: str | None = Field(default=None, max_length=256)
 
     @classmethod
     @abc.abstractmethod

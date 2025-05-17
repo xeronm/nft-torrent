@@ -2,7 +2,7 @@ import asyncio
 import random
 import time
 from collections import Counter
-from typing import Dict
+from typing import Dict, List
 
 from loguru import logger
 from pyTON.manager import TonlibManager as _TonlibManager
@@ -12,7 +12,7 @@ from pytonlib.utils.tokens import (parse_nft_collection_data,
                                    parse_nft_item_data)
 from tonpy.types import CellSlice
 
-from NFTorrent.modelsbase import CollectionConfig, CollectionData, NftItemData
+from NFTorrent.modelsbase import CollectionConfig, CollectionData, NftItemData, dict_to_influx
 
 
 class ContractRequestError(Exception):
@@ -31,6 +31,13 @@ class TonlibManager(_TonlibManager):
             'workers': self.get_workers_state(),
             'stats': self.stats,
         }
+
+    def get_measurements(self, timestamp: int) -> List[str]:
+        state = self.get_tonlib_state()
+        return [
+            f'NFTorrentLiteservers,{dict_to_influx({"id": ls["ls_index"]})} {dict_to_influx(ls)} {timestamp}'
+            for ls in state['workers'].values()
+        ]
 
     async def dispatch_request_to_worker(self, method, ls_index, *args, **kwargs):
         task_id = "{}:{}".format(time.time(), random.random())
@@ -106,7 +113,7 @@ class TonlibManager(_TonlibManager):
             raise ContractRequestError("Smart contract is not NFT Collection")
         collection_data = parse_nft_collection_data(collection_data_result['stack'])
 
-        collection_info_result = await self.raw_run_method(address, 'info', [], None)
+        collection_info_result = await self.raw_run_method(address, 'get_info', [], None)
         info_class = self.collection_config.collection_info_class
         collection_data['collection_info'] = info_class.from_tvm(collection_info_result['stack'])
         collection_data['address'] = detect_address(address)['bounceable']['b64url']

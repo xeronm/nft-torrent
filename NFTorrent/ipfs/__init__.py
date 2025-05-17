@@ -1,3 +1,3 @@
-from .manager import IpfsRpcManager, IpfsException, parse_uri
+from .manager import IpfsRpcManager, IpfsRpcHttpException, parse_uri
 
-__all__ = ['IpfsRpcManager', 'IpfsException', 'parse_uri']
+__all__ = ['IpfsRpcManager', 'IpfsRpcHttpException', 'parse_uri']

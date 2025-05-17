@@ -169,8 +169,11 @@ class IndexDbSettings:
 class IpfsSettings:
     enabled: bool
     kubo_rpc_uri: str
+    cluster_rpc_uri: str
     request_timeout: int = 30
     confirmation_timeout: int = 60
+    min_peers_count: int = 10
+    min_redundancy = 3
     storage_cid_size_limit: int = 8*1024*1024
 
     @classmethod
@@ -178,9 +181,12 @@ class IpfsSettings:
         obj = cls.__new__(cls)
         obj.enabled = settings.strtobool(os.environ.get('IPFS_ENABLED', 'false'))
         obj.kubo_rpc_uri = os.environ.get('IPFS_KUBO_RPC_URI', None)
+        obj.cluster_rpc_uri = os.environ.get('IPFS_CLUSTER_RPC_URI', None)
         obj.request_timeout = int(os.environ.get('IPFS_RPC_TIMEOUT', cls.request_timeout))
+        obj.min_peers_count = int(os.environ.get('IPFS_MIN_PEERS_COUNT', cls.min_peers_count))
+        obj.min_redundancy = int(os.environ.get('IPFS_MIN_REDUNDANCY', cls.min_redundancy))
+        obj.confirmation_timeout = int(os.environ.get('IPFS_CONFIRMATION_TIMEOUT', cls.confirmation_timeout))
         obj.storage_cid_size_limit = int(os.environ.get('IPFS_STORAGE_CID_SIZE_LIMIT', cls.storage_cid_size_limit))
-        obj.confirmation_timeout = int(os.environ.get('TON_STORAGE_CONFIRMATION_TIMEOUT', cls.confirmation_timeout))
         return obj
 
 

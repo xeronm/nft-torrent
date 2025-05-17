@@ -1,25 +1,25 @@
 import asyncio
 import io
+import time
 from collections import Counter
 
 import aiohttp
-from urllib.parse import urljoin, urlparse
-from fastapi import UploadFile, status
+from urllib.parse import urljoin
+from fastapi import status
 from fastapi.exceptions import HTTPException
-from fastapi.responses import (FileResponse, JSONResponse, RedirectResponse,
+from fastapi.responses import (FileResponse, RedirectResponse,
                                StreamingResponse)
 from loguru import logger
 from pyTON.cache import DisabledCacheManager
 from pyTON.settings import RedisCacheSettings
 
-from NFTorrent import exceptions
 from NFTorrent.auth import (ContractAPIKeyCookie, NodeJWTBearer,
                             ServerResponseAuthError)
 from NFTorrent.cache import RedisCacheManager
 from NFTorrent.indexer import IndexDb
 from NFTorrent.ipfs import IpfsRpcManager, parse_uri
 from NFTorrent.models import HealthCheckResult
-from NFTorrent.modelsbase import CollectionConfig
+from NFTorrent.modelsbase import CollectionConfig, dict_to_influx
 from NFTorrent.pyTON.manager import TonlibManager
 from NFTorrent.settings import Settings
 from NFTorrent.storage.manager import TonStorageCliManager
@@ -55,6 +55,7 @@ class Server:
         return self.storage.get_cached_node_state()
 
     async def startup(self):
+        self.stats['started'] = int(time.time())
         self.loop = loop = asyncio.get_event_loop()
         logger.warning('Server startup initiated...')
         logger.warning("Parameters:\n"
@@ -62,20 +63,18 @@ class Server:
                        " - webserver.api_root_path: {api_root}\n"
                        " - webserver.storage_public_addr: {addr}\n"
                        " - webserver.twa_domains: {domains}\n"
-                       " - storage.storage_db_path: {dbpath}\n"
-                       " - storage.storage_temp_dir: {tempdir}\n"
-                       " - storage.min_redundancy: {redundancy}\n"
-                       " - ipfs.kubo_uri: {kubo_uri}\n"
+                       " - webserver.allow_origins: {allow_origins}\n"
+                       " - storage.enabled: {storage}\n"
+                       " - ipfs.enabled: {ipfs}\n"
                        " - cache.enabled: {cache_enabled}\n"
                        " - indexdb.enabled: {indexdb_enabled}\n",
                        addr=self.settings.storage.storage_public_addr,
-                       kubo_uri=self.settings.ipfs.kubo_rpc_uri if self.settings.ipfs.enabled else None,
+                       ipfs=self.settings.ipfs.enabled,
                        api_root=self.settings.webserver.api_root_path,
+                       allow_origins=self.settings.webserver.allow_origins,
                        domains=self.settings.webserver.twa_domains,
                        networks=self.settings.webserver.allow_networks,
-                       dbpath=self.settings.storage.storage_db_path,
-                       tempdir=self.settings.storage.storage_temp_dir,
-                       redundancy=self.settings.storage.min_redundancy,
+                       storage=bool(self.settings.storage.num_workers > 0),
                        cache_enabled=self.settings.cache.enabled,
                        indexdb_enabled=self.settings.indexdb.enabled)
 
@@ -88,21 +87,20 @@ class Server:
         else:
             cache_manager = DisabledCacheManager()
 
-        if self.settings.tonlib.liteserver_config_path:
-            self.tonlib = TonlibManager(tonlib_settings=self.settings.tonlib,
-                                        dispatcher=None,
-                                        cache_manager=cache_manager,
-                                        loop=loop,
-                                        collection_config=self.collection_config)
+        if not self.settings.tonlib.liteserver_config_path:
+            raise RuntimeError('Tonlib liteserver_config required')
 
-            if self.settings.indexdb.enabled:
-                self.indexer = IndexDb(self.settings.indexdb,
+        self.tonlib = TonlibManager(tonlib_settings=self.settings.tonlib,
+                                    dispatcher=None,
+                                    cache_manager=cache_manager,
+                                    loop=loop,
+                                    collection_config=self.collection_config)
+
+        if self.settings.ipfs.enabled:
+            self.ipfs = IpfsRpcManager(self.settings.ipfs,
                                        cache_manager=cache_manager,
-                                       loop=loop,
                                        tonlib=self.tonlib,
-                                       collection_config=self.collection_config)
-        else:
-            logger.warning("Tonlib disabled, liteserver_config required")
+                                       loop=loop)
 
         if self.settings.storage.num_workers:
             self.storage = TonStorageCliManager(self.settings.storage,
@@ -111,14 +109,14 @@ class Server:
                                                 tonlib=self.tonlib,
                                                 remote_call=self.remote_call,
                                                 loop=loop)
-        else:
-            logger.warning("Storage disabled, num_workers required")
 
-        if self.settings.ipfs.enabled:
-            self.ipfs = IpfsRpcManager(self.settings.ipfs,
-                                       cache_manager=cache_manager,
-                                       tonlib=self.tonlib,
-                                       loop=loop)
+        if self.settings.indexdb.enabled:
+            self.indexer = IndexDb(self.settings.indexdb,
+                                    cache_manager=cache_manager,
+                                    loop=loop,
+                                    tonlib=self.tonlib,
+                                    ipfs=self.ipfs,
+                                    collection_config=self.collection_config)
 
         await asyncio.sleep(3)  # wait for manager to spawn all workers and report their status
 
@@ -127,11 +125,12 @@ class Server:
         if self.indexer is not None:
             await self.indexer.shutdown()
 
-        await asyncio.wait([
-            self.tonlib.shutdown(),
-            self.storage.shutdown(),
-            self.ipfs.shutdown() if self.ipfs is not None else asyncio.sleep(0.01),
-        ], return_when=asyncio.ALL_COMPLETED)
+        waits = [self.tonlib.shutdown()]
+        if self.storage is not None:
+            waits.append(self.storage.shutdown())
+        if self.ipfs is not None:
+            waits.append(self.ipfs.shutdown())
+        await asyncio.wait(waits, return_when=asyncio.ALL_COMPLETED)
 
     def _get_peer_uri(self, host: str, path: str):
         authority = f'{host}:{self.settings.webserver.port}' if self.settings.webserver.port else host
@@ -145,21 +144,48 @@ class Server:
         }
 
     # API
-    async def get_healthcheck(self) -> HealthCheckResult:
-        tonlib_state = None
+    def get_healthcheck(self) -> HealthCheckResult:
+        stotage_state = tonlib_state = indexer_state = None
         if self.tonlib is not None:
             tonlib_state = sum([1 for x in self.tonlib.get_workers_state().values() if x['is_working']])
 
-        stotage_state = None
+        load = redundancy = 0
         if self.storage is not None:
             stotage_state = sum([1 for x in self.storage.get_workers_state().values() if x['is_healthy']])
+            redundancy = len(self.storage.get_cached_node_state()) >= self.settings.storage.min_redundancy
+            load = self.storage.storage_lru.size * 100 / self.storage.settings.storage_max_size
+        if self.ipfs is not None:
+            ipfs_state = self.ipfs.get_cached_node_state()
+            load = ipfs_state['storage']['RepoSize'] * 100 / ipfs_state['storage']['StorageMax']
+            redundancy = len(ipfs_state['cluster_peers']) >= self.settings.ipfs.min_redundancy
+            stotage_state = ipfs_state['peers'] > self.ipfs.settings.min_peers_count
+        if self.indexer is not None:
+            indexer_state = self.indexer.get_indexdb_state()
+            last_checked = [x['stats']['last_checked'] for x in indexer_state.values()]
+            indexer_state = len(last_checked) == len([x for x in last_checked if x >= time.time() - self.indexer.settings.indexer_timeout*2])
 
         return HealthCheckResult(
             tonlib=bool(tonlib_state),
             storage=bool(stotage_state),
-            redundancy=bool(len(await self.storage.get_node_state()) >= self.settings.storage.min_redundancy),
-            load=round(self.storage.storage_lru.size * 100 / self.storage.settings.storage_max_size, 2)
+            indexdb=bool(indexer_state),
+            redundancy=bool(redundancy),
+            load=round(load, 2)
         )
+
+    def get_measurements(self, timestamp: int):
+        hc = self.get_healthcheck()
+        _stats = hc.dict()
+        _stats.update(self.stats)
+        measurements = [f'NFTorrentServer {dict_to_influx(_stats)} {timestamp}']
+        if self.tonlib is not None:
+            measurements += self.tonlib.get_measurements(timestamp)
+        if self.storage is not None:
+            measurements += self.storage.get_measurements(timestamp)
+        if self.ipfs is not None:
+            measurements += self.ipfs.get_measurements(timestamp)
+        if self.indexer is not None:
+            measurements += self.indexer.get_measurements(timestamp)
+        return measurements
 
     async def remote_call(self, host: str, remote_path: str):
         # host = await self._get_peer_hostname(peer["ip_str"])
@@ -201,11 +227,10 @@ class Server:
         nft_content = nft_data.individual_content
 
         image = nft_content.image()
-        if nft_content.bag_id() and image and image[0] == ":":
-            return await self.storage.get_torrent_content(address, bag_id=nft_content.bag_id(), digest=image[1:])
+        # if nft_content.bag_id() and image and image[0] == ":":
+        #     return await self.storage.get_torrent_content(address, bag_id=nft_content.bag_id(), digest=image[1:])
         if image.startswith('ipfs://'):
-            cid, path, digest = parse_uri(image)
-            return await self.ipfs.get_content_file(address, cid=cid, file_path=path, digest=digest)
+            return await self.ipfs.get_content_file(uri=image)
         if image:
             return RedirectResponse(image)
         if nft_content.image_data():

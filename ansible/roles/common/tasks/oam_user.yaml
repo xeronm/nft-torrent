@@ -1,0 +1,43 @@
+# Setup O&M User
+- name: sudoers for wheel group
+  lineinfile:
+    path: /etc/sudoers
+    state: present
+    regexp: '^%wheel\s'
+    line: '%wheel ALL=(ALL) NOPASSWD: ALL'
+  tags: oam
+
+- name: 'sshallow group'
+  group:
+    name: sshallow
+    state: present
+  tags: oam
+
+- name: 'O&M user group'
+  group:
+    name: "{{ oam.group }}"
+    gid: "{{ oam.gid }}"
+    state: present
+  tags: oam
+
+- name: O&M user
+  user:
+    name: "{{ oam.user }}"
+    state: present
+    uid: "{{ oam.uid }}"
+    groups:
+      - wheel
+      - sshallow
+      - docker
+      - "{{ oam.group }}"
+    comment: "{{ oam.comment }}"
+    create_home: yes
+    append: yes
+  tags: oam
+
+- name: ssh key for O&M user
+  authorized_key:
+    user: "{{ oam.user }}"
+    state: present
+    key: "{{ oam.sshkey }}"
+  tags: oam
