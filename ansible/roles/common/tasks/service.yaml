@@ -1,0 +1,15 @@
+- name: '"{{ service.name }}" package "{{ service.package }}" is installed'
+  yum:
+    name: "{{ service.package }}"
+    state: present
+    exclude: "{{ service.exclude | default('') }}"
+
+- name: '"{{ service.name }}" is running and enabled as configured'
+  service:
+    name: "{{ service.name }}"
+    state: started
+    enabled: yes
+
+- name: '"{{ service.name }}" systemd unit params'
+  include_tasks: service_param.yaml
+  with_items: "{{ service.params }}"

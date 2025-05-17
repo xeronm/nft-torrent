@@ -26,6 +26,7 @@ from pytonlib.utils.address import prepare_address
 from pyTON.cache import CacheManager, DisabledCacheManager
 
 from NFTorrent import exceptions
+from NFTorrent.modelsbase import dict_to_influx
 from NFTorrent.blockchain.address import parse_bag_id
 from NFTorrent.settings import TonStorageCliSettings
 from NFTorrent.storage.storage import TonStorageLru
@@ -404,6 +405,21 @@ class TonStorageCliManager:
             'size_pressure': self.settings.storage_size_pressure,
             'stats': self.stats,
         }
+
+    def get_measurements(self, timestamp: int) -> List[str]:
+        storage = self.get_storage_state()
+        _storage = {
+            'size': storage['size'],
+            'max_size': storage['max_size'],
+            'size_pressure': storage['size_pressure'],
+        }
+        _storage.update(storage["stats"])
+
+        workers_stats = [
+            f'NFTorrentStorageWorkers,{dict_to_influx({"id": w["client_id"]})} {dict_to_influx(w)} {timestamp}'
+            for w in storage['workers'].values()
+        ]
+        return [f'NFTorrentStorage {dict_to_influx(_storage)} {timestamp}'] + workers_stats
 
     def get_workers_state(self):
         result = {}

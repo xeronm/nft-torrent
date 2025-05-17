@@ -1,0 +1,49 @@
+- name: InfluxDB Repository - RHEL
+  yum_repository:
+    name: influxdb
+    description: InfluxDB Repository - RHEL
+    baseurl: https://repos.influxdata.com/rhel/$releasever/$basearch/stable
+    gpgkey:  https://repos.influxdata.com/influxdata-archive_compat.key
+    gpgcheck: yes
+    enabled: yes
+  tags: telegraf
+
+- name: '"telegraf" config path'
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: 0755
+  with_items:
+    - /etc/telegraf
+  tags: telegraf
+
+- name: '"telegraf" is configured'
+  template:
+    src: "./etc/telegraf/telegraf.conf.j2"
+    dest: /etc/telegraf/telegraf.conf
+    owner: telegraf
+    group: telegraf
+    mode: 0600
+  notify:
+    - restart telegraf
+  tags: telegraf
+
+- name: '"telegraf" service'
+  include_role:
+    name: common
+    tasks_from: service
+  vars:
+    service:
+      name: telegraf
+      package: telegraf
+      params: "{{ telegraf.service_params }}"
+  tags: telegraf
+
+- name: adding existing user 'telegraf' to group 'docker'
+  user:
+    name: telegraf
+    groups: docker
+    append: yes
+  tags: telegraf

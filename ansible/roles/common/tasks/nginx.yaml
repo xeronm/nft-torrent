@@ -1,0 +1,62 @@
+- name: "Nginx conf.d path"
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: 0755
+  with_items:
+    - /etc/nginx/conf.d
+  tags: nginx
+
+- name: Nginx is configured
+  copy:
+    src: ./etc/nginx/nginx.conf
+    dest: /etc/nginx/nginx.conf
+    owner: root
+    group: root
+    mode: 0644
+  notify:
+    - restart nginx
+  tags: nginx
+
+- name: '"Nginx" service'
+  include_tasks:
+    file: service.yaml
+    apply:
+      tags: nginx
+  vars:
+    service:
+      name: nginx
+      package: nginx
+      exclude:
+      params: "{{ nginx.service_params }}"
+  tags: nginx
+
+- name: Certbot present packages
+  dnf:
+    name: "{{ packages }}"
+    state: present
+  vars:
+    packages:
+      - certbot
+      - python3-certbot-nginx
+  tags: nginx
+
+- name: "Nginx Firewall services"
+  firewalld:
+    service: "{{ item }}"
+    permanent: true
+    immediate: true
+    state: enabled
+  with_items:
+    - http
+    - https
+  tags: nginx
+
+- name: Set httpd_can_network_connect flag on and keep it persistent across reboots
+  seboolean:
+    name: httpd_can_network_connect
+    state: yes
+    persistent: yes
+  tags: nginx

@@ -1,0 +1,118 @@
+services:
+  cache:
+    image: redis:latest
+    restart: unless-stopped
+    networks:
+      - internal
+
+  db:
+    image: postgres:latest
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+    volumes:
+      - ./index-db:/var/lib/postgresql/data
+    networks:
+      - internal
+
+  ipfs:
+    image: ipfs/kubo:release
+    user: 9001:9001
+    ports:
+      - 4001:4001
+      - 4001:4001/udp
+      - 127.0.0.1:5001:5001
+      - 127.0.0.1:8080:8080
+    volumes:
+      - ./ipfs-db:/data/ipfs
+    networks:
+      - internal
+
+  ipfs-cluster:
+    image: ipfs/ipfs-cluster:latest
+    depends_on:
+      - ipfs
+    environment:
+      CLUSTER_PEERNAME: ${IPFS_CLUSTER_PEERNAME}
+      CLUSTER_SECRET: ${IPFS_CLUSTER_SECRET}
+      CLUSTER_IPFSHTTP_NODEMULTIADDRESS: /dns4/ipfs/tcp/5001
+      CLUSTER_IPFSPROXY_NODEMULTIADDRESS: /dns4/ipfs/tcp/5001
+      CLUSTER_CRDT_TRUSTEDPEERS: '*'
+      CLUSTER_RESTAPI_HTTPLISTENMULTIADDRESS: /ip4/0.0.0.0/tcp/9094
+      CLUSTER_IPFSPROXY_LISTENMULTIADDRESS: /ip4/0.0.0.0/tcp/9095
+      CLUSTER_MONITORPINGINTERVAL: 2s # Speed up peer discovery
+    secrets:
+      - ipfs_secret
+    ports:
+      - "127.0.0.1:9094:9094"
+      - "127.0.0.1:9095:9095"
+      - "9096:9096" # Cluster swarm endpoint
+    volumes:
+      - ./cluster-db:/data/ipfs-cluster
+    networks:
+      - internal
+    healthcheck:
+      test: ipfs-cluster-ctl --enc=json health metrics ping
+      interval: 15s
+      timeout: 3s
+      retries: 5
+
+  httpserver:
+    image: dtec/nft-torrent:${NFTORRENT_VERSION}
+    restart: unless-stopped
+    environment:
+      LOGURU_LEVEL: WARNING
+      LOGURU_COLORIZE: 1
+      TON_STORAGE_NUM_WORKERS: 0
+      IPFS_ENABLED: 1
+      IPFS_KUBO_RPC_URI: http://ipfs-cluster:9095
+      IPFS_CLUSTER_RPC_URI: http://ipfs-cluster:9094
+      IPFS_MIN_REDUNDANCY: 2
+      IPFS_CONFIRMATION_TIMEOUT: 60
+      TON_API_TONLIB_KEYSTORE: /ton_keystore/
+      TON_API_TONLIB_REQUEST_TIMEOUT: 20
+      TON_API_TONLIB_LITESERVER_CONFIG: /run/secrets/liteserver_config
+      TON_API_CACHE_ENABLED: 1
+      TON_API_CACHE_REDIS_ENDPOINT: cache
+      TON_API_CACHE_REDIS_TIMEOUT: 2
+      INDEXDB_ENABLED: 1
+      INDEXDB_INDEXER_TIMEOUT: 30
+      INDEXDB_DATABASE_HOST: db
+      # HTTP_API_ROOT_PATH: ${HTTP_API_ROOT_PATH}
+      HTTP_API_JWT_SECRET: file:/run/secrets/jwt_key
+      HTTP_TWA_DOMAINS: localhost:9000,${HTTP_TWA_DOMAINS}
+      HTTP_ALLOW_ORIGINS: ${HTTP_ALLOW_ORIGINS}
+      HTTP_ALLOW_NETWORKS: 127.0.0.1/32,192.168.0.0/16
+      HTTP_REQUEST_TIMEOUT: 20
+      HTTP_COLLECTION_CONFIG: nftcollections.config
+    volumes:
+      - ./ton_keystore:/ton_keystore
+      - ./nftcollections.py:/opt/nftorrent/nftcollections.py
+      - ./assets:/opt/nftorrent/assets
+    secrets:
+      - liteserver_config
+      - jwt_key
+    ports:
+      - 127.0.0.1:8002:8002
+    networks:
+      - internal
+    healthcheck:
+      test: curl -sf http://127.0.0.1:8002/healthcheck
+      interval: 15s
+      timeout: 3s
+      retries: 5
+    depends_on:
+      - ipfs
+      - db
+      - cache
+
+secrets:
+  liteserver_config:
+    file: ./private/testnet-global-config.json
+  jwt_key:
+    file: ./private/jwt.key
+  ipfs_secret:
+    environment: "IPFS_CLUSTER_SECRET"
+networks:
+  internal:

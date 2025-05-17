@@ -9,13 +9,9 @@ config = CollectionConfig(
     dbmodel_nft_class=PetMemoryNft,
     collections=[
         CollectionInstance(
-            address='EQBAIrKhrZI5BIOmwrHiZ__QRICiFWJR_HRH5Wer3fd1f-lR',
+            address='EQCq3q4Oi6nxLGA399SXlUv6XR8sAECm_TPIl-kZRY6rvIvc',
             image='./assets/images/collection-3.webp'
         ),
-        CollectionInstance(
-            address='EQBOdDO6iszbtbR0YnOz2IHk2eP6cCVKqkl7vRvoEtwa83lU',
-            image='./assets/images/collection-3.webp'
-        )
     ]
 )
 

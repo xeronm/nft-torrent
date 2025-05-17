@@ -1,0 +1,5 @@
+- hosts: nftorrents
+  remote_user: root
+  roles:
+    - common
+    - nftorrent

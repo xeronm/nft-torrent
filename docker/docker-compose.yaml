@@ -19,36 +19,39 @@ services:
   ipfs:
     image: ipfs/kubo:release
     ports:
-      - "4001:4001"           # ipfs swarm - expose if needed/wanted
+      - "4001:4001"
       - "4001:4001/udp"
     volumes:
       - ./ipfs-db:/data/ipfs
-
-  storage:
-    image: nft-torrent:0.1.0
-    restart: unless-stopped
-    volumes:
-      - ./storage-db:/storage-db
-      - /tmp/uploads:/uploads
-    command: ./storage-daemon -v 3 -p 5555 -C /run/secrets/liteserver_config -D /storage-db -I ${TON_STORAGE_PUBLIC_ADDR}:3333
-    secrets:
-      - liteserver_config
-    ports:
-      - 3333:3333/udp
     networks:
       - internal
 
+
+  # storage:
+  #   image: nft-torrent:${NFTORRENT_VERSION}-storage
+  #   restart: unless-stopped
+  #   volumes:
+  #     - ./storage-db:/storage-db
+  #     - /tmp/uploads:/uploads
+  #   command: ./storage-daemon -v 3 -p 5555 -C /run/secrets/liteserver_config -D /storage-db -I ${TON_STORAGE_PUBLIC_ADDR}:3333
+  #   secrets:
+  #     - liteserver_config
+  #   ports:
+  #     - 3333:3333/udp
+  #   networks:
+  #     - internal
+
   httpserver:
-    image: nft-torrent:0.1.0
+    image: nft-torrent:${NFTORRENT_VERSION}
     restart: unless-stopped
     environment:
       LOGURU_LEVEL: WARNING
       LOGURU_COLORIZE: 1
-      TON_STORAGE_NUM_WORKERS: 4
-      TON_STORAGE_PUBLIC_ADDR: ${TON_STORAGE_PUBLIC_ADDR}
-      TON_STORAGE_DAEMON_ADDR: storage:5555
-      TON_STORAGE_TEMP_DIR: /uploads
-      TON_STORAGE_MANIFEST_BAG_ID: file:/run/secrets/storage_manifest
+      TON_STORAGE_NUM_WORKERS: 0
+      # TON_STORAGE_PUBLIC_ADDR: ${TON_STORAGE_PUBLIC_ADDR}
+      # TON_STORAGE_DAEMON_ADDR: storage:5555
+      # TON_STORAGE_TEMP_DIR: /uploads
+      # TON_STORAGE_MANIFEST_BAG_ID: file:/run/secrets/storage_manifest
       IPFS_ENABLED: 1
       IPFS_KUBO_RPC_URI: http://ipfs:5001
       TON_API_TONLIB_REQUEST_TIMEOUT: 20
@@ -61,12 +64,12 @@ services:
       INDEXDB_DATABASE_HOST: db
       HTTP_API_ROOT_PATH: ${HTTP_API_ROOT_PATH}
       HTTP_API_JWT_SECRET: file:/run/secrets/jwt_key
-      HTTP_TWA_DOMAINS: localhost:9000
+      HTTP_TWA_DOMAINS: localhost:9000,${HTTP_TWA_DOMAINS}
       HTTP_ALLOW_NETWORKS: 127.0.0.1/32,192.168.0.0/16
       HTTP_REQUEST_TIMEOUT: 20
-    volumes:
-      - ./storage-db:/storage-db
-      - /tmp/uploads:/uploads
+    # volumes:
+    #   - ./storage-db:/storage-db
+    #   - /tmp/uploads:/uploads
     secrets:
       - liteserver_config
       - storage_manifest
@@ -81,7 +84,8 @@ services:
       timeout: 3s
       retries: 5
     depends_on:
-      - storage
+      - ipfs
+      - db
       - cache
 
 secrets:

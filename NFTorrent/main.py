@@ -1,5 +1,4 @@
 import asyncio
-import dataclasses
 import time
 import aiohttp
 from functools import wraps
@@ -19,7 +18,8 @@ from NFTorrent.middlewares import StatisticsMiddleware, StatisticsStore
 from NFTorrent.pyTON.manager import ContractRequestError
 from NFTorrent.webserver import Server
 from NFTorrent.auth import set_cookie
-from NFTorrent.ipfs import IpfsException
+from NFTorrent.ipfs import IpfsRpcHttpException
+from NFTorrent.modelsbase import dataclass_to_influx, dict_to_influx
 
 ws = Server()
 
@@ -40,34 +40,6 @@ app = FastAPI(
 )
 
 stats = StatisticsStore()
-
-
-def dataclass_to_influx(instance):
-    kv = []
-    for field in dataclasses.fields(instance):
-        value = getattr(instance, field.name, None)
-        if value is None:
-            continue
-        if issubclass(field.type, str):
-            value = '"' + value.replace('"', '\\"') + '"'
-        kv.append(f'{field.name}={value}')
-    return ','.join(kv)
-
-
-def dict_to_influx(instance: Dict):
-    kv = []
-    for k, v in instance.items():
-        value = v
-        if value is None:
-            continue
-        if isinstance(v, dict):
-            continue
-        elif isinstance(v, bool):
-            value = int(value)
-        elif isinstance(v, str):
-            value = '"' + value.replace('"', '\\"') + '"'
-        kv.append(f'{k}={value}')
-    return ','.join(kv)
 
 
 @app.on_event("startup")
@@ -104,6 +76,12 @@ async def client_exception_handler(request, exc):
     return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_502_BAD_GATEWAY)
 
 
+@app.exception_handler(aiohttp.client_exceptions.ClientConnectorError)
+async def client_exception_handler(request, exc):
+    res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_502_BAD_GATEWAY)
+    return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_502_BAD_GATEWAY)
+
+
 @app.exception_handler(asyncio.TimeoutError)
 async def timeout_exception_handler(request, exc):
     res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_504_GATEWAY_TIMEOUT)
@@ -116,7 +94,7 @@ async def tonlib_error_result_exception_handler(request, exc):
     return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-@app.exception_handler(IpfsException)
+@app.exception_handler(IpfsRpcHttpException)
 async def ipfs_exception_handler(request, exc):
     res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -164,49 +142,19 @@ def wrap_result(func):
 # API
 @app.get('/healthcheck', include_in_schema=False)
 async def healthcheck() -> models.HealthCheckResult:
-    return await ws.get_healthcheck()
+    return ws.get_healthcheck()
 
 
 @app.get('/stats', response_class=PlainTextResponse, include_in_schema=False)
-async def statistics(request: Request):
-    _timestamp = int(time.time() * 1000000)
+async def statistics(request: Request) -> str:
+    timestamp = int(time.time() * 1000000000)
+    measurements = ws.get_measurements(timestamp)
 
-    tonlib = ws.tonlib.get_tonlib_state()
-    liteservers_stats = [
-        f'NFTorrentLiteservers,{dict_to_influx({"id": ls["ls_index"]})} {dict_to_influx(ls)} {_timestamp}'
-        for ls in tonlib['workers'].values()
-    ]
-
-    storage = ws.storage.get_storage_state()
-    _storage = {
-        'size': storage['size'],
-        'max_size': storage['max_size'],
-        'size_pressure': storage['size_pressure'],
-    }
-    _storage.update(storage["stats"])
-    _storage.update(ws.stats)
-
-    workers_stats = [
-        f'NFTorrentStorageWorkers,{dict_to_influx({"id": w["client_id"]})} {dict_to_influx(w)} {_timestamp}'
-        for w in storage['workers'].values()
-    ]
-
-    http_stats = [
-        f'NFTorrentHttp,{dataclass_to_influx(k)} {dataclass_to_influx(v)} {_timestamp}'
+    measurements += [
+        f'NFTorrentHttp,{dataclass_to_influx(k)} {dataclass_to_influx(v)} {timestamp}'
         for k, v in stats.items()
     ]
-
-    indexer_stats = []
-    if ws.indexer is not None:
-        indexer_stats = [
-            f'NFTorrentIndexer,address={k} {dict_to_influx(dict(**item["stats"], next_index=item["next_index"]))} {_timestamp}'  # noqa: E501
-            for k, item in ws.indexer.get_indexdb_state().items()
-        ]
-
-    return '\n'.join([
-        f'NFTorrentStorage {dict_to_influx(_storage)} {_timestamp}',
-        f'NFTorrentTonlib {dict_to_influx(tonlib["stats"])} {_timestamp}',
-    ] + workers_stats + liteservers_stats + indexer_stats + http_stats)
+    return '\n'.join(measurements)
 
 
 @app.get('/api/v1/tonlib/state', dependencies=[Depends(ws.jwt_bearer)], tags=['liteserver'],
@@ -217,6 +165,16 @@ async def get_tonlib_state():
     Get liteservers state.
     """
     return ws.tonlib.get_tonlib_state()
+
+
+@app.get('/api/v1/ipfs/state', dependencies=[Depends(ws.jwt_bearer)], tags=['ipfs'],
+         response_model=models.IpfsNodeState,)
+@wrap_result
+async def get_ipfs_state():
+    """
+    Get IPFS state.
+    """
+    return ws.ipfs.get_cached_node_state()
 
 
 if ws.settings.indexdb.enabled:
@@ -336,7 +294,7 @@ async def create_account_auth_session(body: models.AuthData) -> models.AuthSessi
     Auhtenticate account signature and create session
     """
     payload, token = ws.jwt_session.auth_session(body.account, body.proof)
-    response = JSONResponse(models.AuthSession(node=await ws.get_healthcheck(), sess=payload).dict(),
+    response = JSONResponse(models.AuthSession(node=ws.get_healthcheck(), sess=payload).dict(),
                             status_code=status.HTTP_200_OK)
     set_cookie(response, ws.jwt_session.cookie_name, token, expires=payload.exp, secure=True, httponly=True,
                samesite='none', partitioned=True)
@@ -348,7 +306,7 @@ async def get_account_auth_session(jwt_payload: models.JWTPayload = Depends(ws.j
     """
     Get authenticated session state
     """
-    return models.AuthSession(node=await ws.get_healthcheck(), sess=jwt_payload if jwt_payload is not None else None)
+    return models.AuthSession(node=ws.get_healthcheck(), sess=jwt_payload if jwt_payload is not None else None)
 
 
 @app.get('/c/{address}', response_model_exclude_none=True, tags=['nft-content'])
