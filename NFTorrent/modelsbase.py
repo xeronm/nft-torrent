@@ -1,4 +1,5 @@
 import abc
+import datetime
 from dataclasses import dataclass, fields
 from typing import Any, Dict, List, Type
 
@@ -47,6 +48,10 @@ class BaseNftModel(SQLModel, table=False):
     address: str = Field(unique=True, max_length=48)
     index: int = Field(index=True)
     image: str | None = Field(default=None, max_length=256)
+    image_data: bytes | None = Field(default=None)
+    icons: bytes | None = Field(default=None)
+    error_time: datetime.datetime | None = Field(default=None, index=True)
+    error_code: str | None = Field(default=None, max_length=40)
 
     @classmethod
     @abc.abstractmethod

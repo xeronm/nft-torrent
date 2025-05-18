@@ -5,7 +5,7 @@ import pickle
 import random
 import traceback
 import time
-from urllib.parse import urljoin
+import datetime
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -192,48 +192,64 @@ class IndexDb:
                                 address=address, exc=traceback.format_exc())
                 await asyncio.sleep(self.restart_timeout)
 
-    async def collection_nft_make_icons(self, instances: List[BaseNftModel]):
-        for instance in instances:
-            buffer = None
-            image_uri = None
-            if instance.image and instance.image.startswith('ipfs://'):
-                buffer, _ = await self.ipfs.get_cid_file(uri=instance.image)
-            elif instance.image:
-                image_uri = instance.image
-                timeout = aiohttp.ClientTimeout(total=self.settings.http_timeout)
-                async with aiohttp.ClientSession(timeout=timeout) as session:
-                    try:
-                        logger.info("IndexDb: getting image for NFT icons, address: {address}, uri: {image_uri}",
-                                    address=instance.address, image_uri=image_uri)
-                        async with await session.get(image_uri) as resp:
+    async def collection_nft_make_icon(self, instance: BaseNftModel):
+        buffer = None
+        if instance.image:
+            logger.info("IndexDb: getting image for NFT icons, address: {address}, uri: {image_uri}",
+                        address=instance.address, image_uri=instance.image)
+            try:
+                if instance.image.startswith('ipfs://'):
+                    buffer, _ = await self.ipfs.get_cid_file(uri=instance.image)
+                else:
+                    timeout = aiohttp.ClientTimeout(total=self.settings.http_timeout)
+                    async with aiohttp.ClientSession(timeout=timeout) as session:
+                        async with await session.get(instance.image) as resp:
                             if resp.status != status.HTTP_200_OK:
                                 logger.warning("IndexDb: NFT icons, get http image error, address: {address}, status: {status}, text: {text}",  # noqa: E501
                                             address=instance.address, status=resp.status, text=await resp.text())
                             else:
                                 buffer = await resp.read()
-                    except Exception as E:
-                        logger.warning("IndexDb: NFT icons, get http image error, address: {address}, {exc}",
-                                    address=instance.address, exc=str(E))
-            elif instance.image_data is not None:
-                buffer = instance.image_data
+            except Exception as E:
+                instance.error_time = datetime.datetime.now(datetime.timezone.utc)
+                instance.error_code = type(E).__name__[:40]
+                logger.warning("IndexDb: NFT icons, get http image error, address: {address}, {exc}",
+                            address=instance.address, exc=str(E))
+                return False
 
-            if buffer is None:
-                continue
-            try:
-                small = await self.loop.run_in_executor(self.threadpool_executor,
+        if instance.image_data is not None:
+            buffer = instance.image_data
+
+        if buffer is None:
+            return False
+        try:
+            small = await self.loop.run_in_executor(self.threadpool_executor,
+                                                    _covert_image,
+                                                    buffer,
+                                                    self.settings.icon_size_small,
+                                                    self.settings.icon_format)
+            medium = await self.loop.run_in_executor(self.threadpool_executor,
                                                         _covert_image,
                                                         buffer,
-                                                        self.settings.icon_size_small,
+                                                        self.settings.icon_size_medium,
                                                         self.settings.icon_format)
-                medium = await self.loop.run_in_executor(self.threadpool_executor,
-                                                         _covert_image,
-                                                         buffer,
-                                                         self.settings.icon_size_medium,
-                                                         self.settings.icon_format)
-                instance.icons = pickle.dumps({'small': [small], 'medium': [medium]})
-            except Exception as E:
-                logger.warning("IndexDb: NFT icons convert error, address: {address}, {exc}",
-                               address=instance.address, exc=str(E))
+            instance.icons = pickle.dumps({'small': [small], 'medium': [medium]})
+        except Exception as E:
+            instance.error_time = datetime.datetime.now(datetime.timezone.utc)
+            instance.error_code = type(E).__name__[:40]
+            logger.warning("IndexDb: NFT icons convert error, address: {address}, {exc}",
+                            address=instance.address, exc=str(E))
+            return False
+        return True
+
+    async def collection_nft_make_icons(self, instances: List[BaseNftModel]):
+        sem = asyncio.Semaphore(self.settings.max_parallel_task)
+
+        async def _sem_wrapper(instance: BaseNftModel):
+            async with sem:
+                await self.collection_nft_make_icon(instance)
+
+        tasks = [_sem_wrapper(x) for x in instances]
+        await asyncio.gather(*tasks)
 
     def sync_collection_nft_bulk_insert(self, instance: BaseCollectionModel, bulk: List[BaseCollectionModel]):
         with Session(self.dbengine) as session:
@@ -277,7 +293,7 @@ class IndexDb:
     def sync_collection_query(self, limit: int = 100, offset: int = None, **kwargs):
         model_class = self.collection_config.dbmodel_nft_class
         with Session(self.dbengine) as session:
-            select_stmt = select(model_class)
+            select_stmt = select(model_class).where(model_class.error_time == None)
             for col, value in kwargs.items():
                 if value is not None:
                     select_stmt = select_stmt.where(getattr(model_class, col) == value)
@@ -310,7 +326,7 @@ class IndexDb:
             x0 = p0 = segment_size * n
             x1 = p1 = p0 + segment_size
 
-            select_stmt = select(model_class)
+            select_stmt = select(model_class).where(model_class.error_time == None)
             for col, value in kwargs.items():
                 if value is not None:
                     select_stmt = select_stmt.where(getattr(model_class, col) == value)

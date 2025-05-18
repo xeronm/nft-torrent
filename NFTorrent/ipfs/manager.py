@@ -102,6 +102,7 @@ class IpfsRpcManager:
             task.cancel()
         await asyncio.wait(self.tasks.values())
         self.client.close()
+        self.cluster.close()
 
     def setup_cache(self):
         pass
