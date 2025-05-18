@@ -249,7 +249,7 @@ class NftContentInfo(BaseModel):
 class IpfsNodeStorageState(BaseModel):
     RepoSize: int
     StorageMax: int
-    NumObjects: int
+    NumObjects: int = None
 
 
 class IpfsNodeState(BaseModel):
