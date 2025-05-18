@@ -134,6 +134,7 @@ class IndexDbSettings:
     indexer_timeout: int = 30
     bulk_size: int = 100
     num_workers: int = 4
+    max_parallel_task: int = 4
     icon_size_small: int = 100
     icon_size_medium: int = 240
     icon_format: str = 'webp'
@@ -156,6 +157,7 @@ class IndexDbSettings:
         obj.indexer_timeout = int(os.environ.get('INDEXDB_INDEXER_TIMEOUT', cls.indexer_timeout))
         obj.bulk_size = int(os.environ.get('INDEXDB_BULK_SIZE', cls.bulk_size))
         obj.num_workers = int(os.environ.get('INDEXDB_NUM_WORKERS', cls.num_workers))
+        obj.max_parallel_task = int(os.environ.get('INDEXDB_MAX_PARALLEL_TASK', cls.max_parallel_task))
         obj.icon_size_small = int(os.environ.get('INDEXDB_ICON_SIZE_SMALL', cls.icon_size_small))
         obj.icon_size_medium = int(os.environ.get('INDEXDB_ICON_SIZE_MEDIUM', cls.icon_size_medium))
         obj.icon_format = os.environ.get('INDEXDB_ICON_FORMAT', cls.icon_format)

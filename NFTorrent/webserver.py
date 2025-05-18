@@ -253,7 +253,21 @@ class Server:
             if image.startswith('ipfs://'):
                 cid, _, _ = parse_uri(image)
                 return await self.ipfs.get_content_file(address, cid=cid, file_path=file_path, digest=digest)
-            bag_id = nft_content.bag_id()
-            if bag_id:
-                return await self.storage.get_torrent_content(bag_id=bag_id, file_path=file_path, digest=digest)
+            # bag_id = nft_content.bag_id()
+            # if bag_id:
+            #     return await self.storage.get_torrent_content(bag_id=bag_id, file_path=file_path, digest=digest)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+    async def sync_nft_data(self, address: str = None, owner: str = None):
+        nft_data = await self.tonlib.get_nft_data(address, owner=owner)
+        nft_content = nft_data.individual_content
+        if nft_content is not None:
+            image = nft_content.image()
+            if image.startswith('ipfs://'):
+                cid, _, _ = parse_uri(image)
+                cid_content = await self.ipfs.get_content(cid=cid, with_pin=True)
+                if nft_content.storage_due_time() > (cid_content.pin.expires if cid_content.pin else time.time()):
+                    self.loop.create_task(self.ipfs.confirm_content(address, old_cid=None, cid=cid))
+
+            # TODO: Update IndexDB
+

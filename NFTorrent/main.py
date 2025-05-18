@@ -352,6 +352,15 @@ async def get_nft_address_information(request: models.NftMethod = Depends()):
     del nft_state['code']
     return nft_state
 
+@app.post('/api/v1/nft/{address}/sync', response_model_exclude_none=True, tags=['nft'])
+async def sync_nft_data(request: models.NftMethod = Depends(),
+                            jwt_payload: models.JWTPayload = Depends(ws.jwt_session)):
+    """
+    Sync NFT OffChain data.
+    """
+    return await ws.sync_nft_data(request.address,
+                                  owner=jwt_payload.sub if jwt_payload is not None else None)
+
 
 if ws.settings.storage.enabled:
     @app.get('/api/v1/nft/{address}/torrent',
@@ -394,7 +403,7 @@ if ws.settings.ipfs.enabled:
         """
         Get NFT IPFS Content information.
         """
-        return await ws.ipfs.get_content(address=request.address)
+        return await ws.ipfs.get_content(address=request.address, with_pin=True)
 
     @app.get('/api/v1/nft/{address}/ipfs/{file_path:path}',
             response_model_exclude_none=True,

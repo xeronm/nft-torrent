@@ -47,6 +47,8 @@ class PetMemoryNft(BaseNftModel, table=True):
     image_data: bytes | None = Field(default=None)
     #
     icons: bytes | None = Field(default=None)
+    error_time: datetime.datetime | None = Field(default=None, index=True)
+    error_code: str | None = Field(default=None, max_length=40)
 
     __tablename__ = 'pet_memory_nft'
     __table_args__ = (
