@@ -4,11 +4,12 @@ import json
 import time
 import io
 import traceback
+import time
 import datetime
 from mimetypes import guess_type
 from collections import Counter
 from typing import Optional, Dict, List, Tuple, Type, Any
-from urllib.parse import urlparse, urljoin
+from urllib.parse import urlparse, urljoin, urlencode
 
 from loguru import logger
 
@@ -34,18 +35,25 @@ def parse_uri(uri: str) -> Tuple[str, str, str]:
     return cid, path, digest
 
 
-class CidWriteLock:
+class LockShouldWaitError(Exception):
+    pass
 
-    def __init__(self, cid: str, lock_index: Dict[str, asyncio.Lock]):
+class OperationLock:
+
+    def __init__(self, key: str, lock_index: Dict[str, asyncio.Lock], wait: bool = True):
         self.lock_index = lock_index
-        self.cid = cid
+        self.key = key
+        self.wait = wait
 
     async def __aenter__(self):
-        self.lock = self.lock_index.get(self.cid)
+        self.lock = self.lock_index.get(self.key)
         if self.lock is None:
             self.lock = asyncio.Lock()
             self.lock.__ref_count = 0
-            self.lock_index[self.cid] = self.lock
+            self.lock_index[self.key] = self.lock
+        else:
+            if not self.wait and self.lock.locked():
+                raise LockShouldWaitError
         self.lock.__ref_count += 1
         await self.lock.acquire()
         return None
@@ -54,7 +62,7 @@ class CidWriteLock:
         self.lock.release()
         self.lock.__ref_count -= 1
         if self.lock.__ref_count == 0:
-            del self.lock_index[self.cid]
+            del self.lock_index[self.key]
         self.lock = None
 
 
@@ -141,11 +149,12 @@ class IpfsRpcManager:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
         return cid, nft_content
 
-    async def call_rpc_method(self, method: Type[aiohttp.ClientResponse], uri: str, json: bool = False, text: bool = False, data: Any = None):
+    async def call_rpc_method(self, stat_name: str, method: Type[aiohttp.ClientResponse], uri: str, json: bool = False, text: bool = False, data: Any = None):
         kwargs = {}
         if data is not None:
             kwargs['data'] = data
         try:
+            self.stats[stat_name] += 1
             logger.info("IPFS RPC Call, method: {method}, uri: {uri}", method=method.__name__, uri=uri)
             async with method(uri, **kwargs) as resp:
                 if resp.status != status.HTTP_200_OK:
@@ -157,6 +166,7 @@ class IpfsRpcManager:
                 else:
                     return await resp.read()
         except (aiohttp.client_exceptions.ClientError, aiohttp.client_exceptions.ClientConnectorError) as E:
+            self.stats[f'{stat_name}_error'] += 1
             logger.error("IPFS RPC call error, method: {method}, uri: {uri}, {exc}",
                          method=method.__name__, uri=uri, exc=str(E))
             raise
@@ -166,7 +176,7 @@ class IpfsRpcManager:
         for f in files:
             data.add_field('files', await f.read(), filename=f.filename, content_type=f.content_type)
         uri = 'add?recursive=true&wrap-with-directory=true&pin=false&cid-version=1'
-        response = await self.call_rpc_method(self.client.post, uri, data=data, text=True)
+        response = await self.call_rpc_method('cid_add', self.client.post, uri, data=data, text=True)
         content = None
         files = []
         for line in response.split('\n'):
@@ -183,53 +193,76 @@ class IpfsRpcManager:
             content.make_digest()
         return content
 
-    async def cid_pin(self, cid: str = None, name: str = None, expire_at: float = None):
-        name = None or ""
+    async def cid_pin(self, cid: str = None, name: str = None, expire_at: float = None, address: str = None):
+        name = name or ""
         if self.settings.cluster_rpc_uri:
             expire_at_str = datetime.datetime.fromtimestamp(expire_at).isoformat()+"Z" if expire_at else ""
-            uri = f'/pins/ipfs/{cid}?mode=recursive&replication-min={self.settings.min_redundancy}&replication-max={self.settings.min_redundancy+1}&expire-at={expire_at_str}&name={name}'  #
-            return await self.call_rpc_method(self.cluster.post, uri, json=True)
+            query_params = {
+                'mode': 'recursive',
+                'replication-min': self.settings.min_redundancy,
+                'replication-max': self.settings.min_redundancy+2,
+            }
+            if name:
+                query_params['name'] = name
+            if expire_at:
+                query_params['expire-at'] = expire_at_str
+                query_params['meta-expires'] = expire_at
+            if address:
+                query_params['meta-nft'] = address
+            uri = f'/pins/{cid}?{urlencode(query_params)}'
+            return await self.call_rpc_method('pin', self.cluster.post, uri, json=True)
         else:
             uri = f'pin/add?arg={cid}&recursive=true&name={name}'
-            return await self.call_rpc_method(self.cluster.post, uri, json=True)
+            return await self.call_rpc_method('pin', self.cluster.post, uri, json=True)
 
     async def cid_unpin(self, cid: str = None):
         try:
             if self.settings.cluster_rpc_uri:
-                uri = f'/pins/ipfs/{cid}'
-                return await self.call_rpc_method(self.cluster.delete, uri, json=True)
+                uri = f'/pins/{cid}'
+                return await self.call_rpc_method('unpin', self.cluster.delete, uri, json=True)
             else:
                 uri = f'pin/rm?arg={cid}&recursive=true'
-                return await self.call_rpc_method(self.cluster.post, uri, json=True)
+                return await self.call_rpc_method('unpin', self.cluster.post, uri, json=True)
+        except IpfsRpcHttpException as E:
+            if E.status_code != status.HTTP_404_NOT_FOUND:
+                raise
+
+    async def cid_pin_status(self, cid: str = None):
+        try:
+            if self.settings.cluster_rpc_uri:
+                uri = f'/pins/{cid}'
+                return await self.call_rpc_method('pin_status', self.cluster.get, uri, json=True)
+            else:
+                uri = f'pin/ls?arg={cid}'
+                return await self.call_rpc_method('pin_status', self.cluster.post, uri, json=True)
         except IpfsRpcHttpException as E:
             if E.status_code != status.HTTP_404_NOT_FOUND:
                 raise
 
     async def confirm_content(self, address, old_cid, cid):
-        curr_time = st_time = time.monotonic()
-        curr_cid = None
-        while st_time + self.settings.confirmation_timeout > curr_time:
-            await asyncio.sleep(10)
-            curr_cid, nft_content = await self.get_nft_cid(address)
-            if curr_cid == cid:
-                break
-            curr_time = time.monotonic()
+        async with OperationLock(f'nft:{address}:pin', self.cid_wlock, wait=False):
+            curr_time = st_time = time.monotonic()
+            curr_cid = None
+            while st_time + self.settings.confirmation_timeout > curr_time:
+                curr_cid, nft_content = await self.get_nft_cid(address)
+                if curr_cid == cid:
+                    break
+                await asyncio.sleep(10)
+                curr_time = time.monotonic()
 
-        async with CidWriteLock(cid, self.cid_wlock):
-            if curr_cid != cid:
-                self.stats['create_rollback'] += 1
-                logger.warning("Newly created IPFS CID was not pinned due to confirmation timeout, NFT: {address}, cid: {cid}, curr_cid={curr_cid}",  # noqa: E501
-                               address=address, cid=cid, curr_cid=curr_cid)
-                # await self.cid_unpin(cid)
-                return
+            async with OperationLock(f'cid:{cid}:pin', self.cid_wlock):
+                if curr_cid != cid:
+                    self.stats['confirm_timeout'] += 1
+                    logger.warning("IPFS CID was not pinned due to confirmation timeout, NFT: {address}, cid: {cid}, curr_cid={curr_cid}",  # noqa: E501
+                                address=address, cid=cid, curr_cid=curr_cid)
+                    # await self.cid_unpin(cid)
+                    return
 
-            self.stats['create_confirm'] += 1
-            logger.warning("Newly created IPFS CID confirmed, NFT: {address}, cid: {cid}",
-                           address=address, cid=cid)
-            await self.cid_pin(cid, name=address, expire_at=nft_content.storage_due_time())
-            if old_cid is not None:
-                await self.cid_unpin(old_cid)
-        # await self.apply_redundancy_policy(bag_id)
+                logger.warning("IPFS CID pin confirmed, NFT: {address}, cid: {cid}",
+                            address=address, cid=cid)
+                await self.cid_pin(cid, name=address, address=address, expire_at=nft_content.storage_due_time())
+                if old_cid is not None:
+                    await self.cid_unpin(old_cid)
 
     def get_cached_node_state(self):
         return self.node_state
@@ -238,9 +271,9 @@ class IpfsRpcManager:
         curr_time = time.monotonic()
         if self.node_state is None or curr_time > self.node_state_time + self.node_state_cache_timeout:
             tasks = await asyncio.gather(
-                self.call_rpc_method(self.client.post, 'repo/stat', json=True),
-                self.call_rpc_method(self.client.post, 'swarm/peers', json=True),
-                self.call_rpc_method(self.cluster.get, 'monitor/metrics/ping', json=True)
+                self.call_rpc_method('repo_stat', self.client.post, 'repo/stat', json=True),
+                self.call_rpc_method('swarm_peers', self.client.post, 'swarm/peers', json=True),
+                self.call_rpc_method('metrics_ping', self.cluster.get, 'monitor/metrics/ping', json=True)
             )
             self.node_state_time = curr_time
             self.node_state = {
@@ -292,9 +325,9 @@ class IpfsRpcManager:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
         if file_path is None:
-            data = await self.call_rpc_method(self.client.post, f'cat?arg={cid}')
+            data = await self.call_rpc_method('cid_cat', self.client.post, f'cat?arg={cid}')
         else:
-            data = await self.call_rpc_method(self.client.post, f'cat?arg={cid}/{file_path}')
+            data = await self.call_rpc_method('cid_cat', self.client.post, f'cat?arg={cid}/{file_path}')
         return data, file_path
 
     # High-Level API
@@ -307,7 +340,7 @@ class IpfsRpcManager:
         self.stats['create'] += 1
         content = None
         try:
-            async with CidWriteLock(owner, self.cid_wlock):
+            async with OperationLock(f'owner:{owner}:new', self.cid_wlock, wait=False):
                 content = await self.cid_add_local(address=owner, files=files)
         except Exception as E:
             self.stats['create_error'] += 1
@@ -332,7 +365,7 @@ class IpfsRpcManager:
                        address=address, cid=cid, size=total_size)
         self.stats['create'] += 1
         try:
-            async with CidWriteLock(cid or address, self.cid_wlock):
+            async with OperationLock(f'nft:{address}:add', self.cid_wlock, wait=False):
                 content = await self.cid_add_local(address=address, files=files)
                 new_cid = content.hash
 
@@ -353,9 +386,19 @@ class IpfsRpcManager:
 
         return content
 
-    async def get_content(self, address: str = None, cid: str = None):
-        cid = cid or (await self.get_nft_cid(address, raise_error=True))[0]
-        _resp = await self.call_rpc_method(self.client.post, f'ls?arg={cid}', json=True)
+    async def get_content(self, address: str = None, cid: str = None, with_pin: bool = False):
+        content = None
+        if not cid:
+            cid, _ = await self.get_nft_cid(address, raise_error=True)
+        _resp = await self.call_rpc_method('cid_ls', self.client.post, f'ls?arg={cid}', json=True)
+        pin_info = None
+        if with_pin:
+            _pin = await self.cid_pin_status(cid)
+            if _pin['metadata'] and _pin['metadata']['nft']:
+                pin_info = models.NftContentPin(redundancy=len(_pin['allocations']),
+                                                expires=float(_pin['metadata'].get('expires', '0')),
+                                                created=time.mktime(time.strptime(_pin['created'], "%Y-%m-%dT%H:%M:%SZ")))
+
         _content = _resp['Objects'][0]
         content = models.NftContentInfo(hash=_content['Hash'],
                                         size=0,
@@ -364,7 +407,8 @@ class IpfsRpcManager:
                                                                     size=x['Size'],
                                                                     hash=x['Hash'])
                                             for x in _content['Links']
-                                        ])
+                                        ],
+                                        pin=pin_info)
         content.size = sum([x.size for x in content.files])
         content.make_digest()
         return content

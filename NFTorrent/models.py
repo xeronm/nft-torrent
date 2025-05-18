@@ -234,11 +234,19 @@ class NftContentFile(BaseModel):
     digest: str = None
 
 
+
+class NftContentPin(BaseModel):
+    redundancy: int
+    created: int = None
+    expires: int = None
+
+
 class NftContentInfo(BaseModel):
     hash: str
     size: int
     state: NftContentState = NftContentState.READY
     files: List[NftContentFile]
+    pin: NftContentPin = None
 
     def make_digest(self):
         for f in self.files:
