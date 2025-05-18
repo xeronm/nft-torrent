@@ -75,6 +75,13 @@ oam:
   uid: 9001
   gid: 9001
   sshkey: <ssh-rsa>
+  telegraf:
+    influxdb:
+      token: <InfluxDB Output Token>
+      urls:
+        - <InfluxDB Output URLs>
+      bucket: petsmem
+      organization: petsmem
 ```
 
 ```yaml

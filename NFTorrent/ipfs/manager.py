@@ -145,8 +145,8 @@ class IpfsRpcManager:
         if data is not None:
             kwargs['data'] = data
         try:
+            logger.info("IPFS RPC Call, method: {method}, uri: {uri}", method=method.__name__, uri=uri)
             async with method(uri, **kwargs) as resp:
-                logger.info("IPFS RPC Call, method: {method}, uri: {uri}", method=method.__name__, uri=uri)
                 if resp.status != status.HTTP_200_OK:
                     raise IpfsRpcHttpException(status_code=resp.status, detail=await resp.text())
                 if json:
@@ -160,7 +160,7 @@ class IpfsRpcManager:
                          method=method.__name__, uri=uri, exc=str(E))
             raise
 
-    async def cid_add_local(self, address: str = None, files: List[UploadFile] = None) -> models.NftContentInfo:
+    async def cid_add_local(self, files: List[UploadFile] = None) -> models.NftContentInfo:
         data = aiohttp.FormData()
         for f in files:
             data.add_field('files', await f.read(), filename=f.filename, content_type=f.content_type)
@@ -278,16 +278,22 @@ class IpfsRpcManager:
         if not cid:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='CID not defined')
         info = await self.get_content(cid=cid)
-        item = [x for x in info.files
-                if (digest and x.digest == digest) or
-                    (file_path and x.name == file_path)]
-        file_path = None
-        if len(item) == 1:
-            file_path = item[0].name
-        if file_path is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+        if len(info.files) > 0:
+            if digest or file_path:
+                item = [x for x in info.files
+                        if (digest and x.digest == digest) or
+                            (file_path and x.name == file_path)]
+            else:
+                item = [x for x in info.files if not x.name.startswith('.')]
+            if len(item) == 1:
+                file_path = item[0].name
+            if file_path is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
-        data = await self.call_rpc_method(self.client.post, f'cat?arg={cid}/{file_path}')
+        if file_path is None:
+            data = await self.call_rpc_method(self.client.post, f'cat?arg={cid}')
+        else:
+            data = await self.call_rpc_method(self.client.post, f'cat?arg={cid}/{file_path}')
         return data, file_path
 
     # High-Level API
@@ -373,4 +379,4 @@ class IpfsRpcManager:
         data, file_path = await self.get_cid_file(uri=uri, cid=cid, file_path=file_path, digest=digest)
         return StreamingResponse(io.BytesIO(data),
                                  headers={"Cache-Control": "public, max-age=3600"},
-                                 media_type=guess_type(file_path)[0])
+                                 media_type=(guess_type(file_path)[0] if file_path else None) or 'image/webp')
