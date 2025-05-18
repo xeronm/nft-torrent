@@ -31,10 +31,6 @@ firewalld:
   service_params:
     - { name: Restart, value: on-failure }
     - { name: RestartSec, value: 60s }
-nginx:
-  service_params:
-    - { name: Restart, value: on-failure }
-    - { name: RestartSec, value: 20s }
 docker:
   service_params:
     - { name: Restart, value: on-failure }

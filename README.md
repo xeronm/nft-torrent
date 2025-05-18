@@ -102,6 +102,8 @@ nftorrent:
     peerstore:
       - <IPFS bootstrap peer record 1>
       - <IPFS bootstrap peer record 2>
+website:
+  html: <pet-memorial-miniapp build path>
 ```
 
 3. Deploy

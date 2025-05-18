@@ -1,0 +1,4 @@
+nginx:
+  service_params:
+    - { name: Restart, value: on-failure }
+    - { name: RestartSec, value: 20s }
