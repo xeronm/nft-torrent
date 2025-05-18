@@ -33,13 +33,6 @@
       tags: oam
   tags: oam
 
-- name: Nginx
-  include_tasks:
-    file: nginx.yaml
-    apply:
-      tags: nginx
-  tags: nginx
-
 - name: Telegraf
   include_tasks:
     file: telegraf.yaml
