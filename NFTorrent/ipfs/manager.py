@@ -284,10 +284,10 @@ class IpfsRpcManager:
                         if (digest and x.digest == digest) or
                             (file_path and x.name == file_path)]
             else:
-                item = [x for x in info.files if not x.name.startswith('.')]
+                item = [x for x in info.files if not x.name.startswith('.')][:1]
             if len(item) == 1:
                 file_path = item[0].name
-            if file_path is None:
+            if not file_path:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
         if file_path is None:
