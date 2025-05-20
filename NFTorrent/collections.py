@@ -9,8 +9,13 @@ config = CollectionConfig(
     dbmodel_nft_class=PetMemoryNft,
     collections=[
         CollectionInstance(
-            address='EQCq3q4Oi6nxLGA399SXlUv6XR8sAECm_TPIl-kZRY6rvIvc',
-            image='./assets/images/collection-3.webp'
+            address='EQAI_6RBqCUCGlNKRQOh_diuz8az2S_TY3IAHdozFTDDGs-9',
+            image='./assets/images/collection-3.webp',
+            meta={
+                "name": "Pets Memorial",
+                "description": "Transform your memories into living digital artifacts — timeless, immutable and authentic, powered by blockchain technology. Share your story with those who'll truly understand, inspire others, and preserve what matters most in a world where nothing truly disappears.\nBecause some stories are too precious to remain just another photo in your smartphone gallery.",
+                "attributes": [],
+            }
         ),
     ]
 )

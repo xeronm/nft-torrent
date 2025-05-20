@@ -46,6 +46,7 @@ class StoragePeerMethod(BaseModel):
 
 class NftMethod(BaseModel):
     address: str = Path(description="Address of NFT item")
+    q: str = Query(description="NFT content query", default=None)
 
     @validator('address')
     def validate_contract_address(cls, v):

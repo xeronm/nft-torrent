@@ -1,6 +1,6 @@
 import abc
 import datetime
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, field
 from typing import Any, Dict, List, Type
 
 from pytonlib.utils.address import detect_address
@@ -72,7 +72,7 @@ class BaseNftContent:
         pass
 
     @abc.abstractmethod
-    def bag_id(self) -> str:
+    def uri(self) -> str:
         pass
 
     @abc.abstractmethod
@@ -101,7 +101,7 @@ class BaseCollectionInfo:
 class CollectionInstance:
     address: str
     image: str
-    # _address: Dict[str, Any] = field(init=False)
+    meta: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         object.__setattr__(self, "_address", detect_address(self.address))

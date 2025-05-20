@@ -2,11 +2,12 @@ import asyncio
 import time
 import aiohttp
 from functools import wraps
-from typing import Dict, List
+from typing import List
 
 import aiohttp.client_exceptions
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
+from pydantic.error_wrappers import ValidationError
 from fastapi.params import Depends
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,7 +20,7 @@ from NFTorrent.pyTON.manager import ContractRequestError
 from NFTorrent.webserver import Server
 from NFTorrent.auth import set_cookie
 from NFTorrent.ipfs import IpfsRpcHttpException
-from NFTorrent.modelsbase import dataclass_to_influx, dict_to_influx
+from NFTorrent.modelsbase import dataclass_to_influx
 
 ws = Server()
 
@@ -60,6 +61,16 @@ async def http_exception_handler(request, exc):
 
 
 @app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    res = models.ProblemDetail(
+        title=type(exc).__name__,
+        detail='Request validation failed, see errors for details',
+        errors=[{k: v for k, v in err.items() if k != 'ctx'} for err in exc.errors()],
+        status=status.HTTP_422_UNPROCESSABLE_ENTITY
+    )
+    return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+@app.exception_handler(ValidationError)
 async def validation_exception_handler(request, exc):
     res = models.ProblemDetail(
         title=type(exc).__name__,
@@ -311,18 +322,18 @@ async def get_account_auth_session(jwt_payload: models.JWTPayload = Depends(ws.j
 
 @app.get('/c/{address}', response_model_exclude_none=True, tags=['nft-content'])
 @wrap_result
-async def get_nft_content_default_image(request: models.NftMethod = Depends()) -> FileResponse:
+async def get_nft_content(request: models.NftMethod = Depends()) -> FileResponse:
     """
-    Get NFT default content image.
+    Get NFT standard content.
     """
-    return await ws.get_default_image(request.address)
+    return await ws.get_nft_content(request.address, query=request.q)
 
 
 @app.get('/c/{address}/{digest}', response_model_exclude_none=True, tags=['nft-content'])
 @wrap_result
-async def get_nft_content(request: models.BaseNftContentMethod = Depends()) -> FileResponse:
+async def get_nft_torrent_content(request: models.BaseNftContentMethod = Depends()) -> FileResponse:
     """
-    Get NFT content by digest.
+    Get NFT torrent content by digest.
     """
     return await ws.get_nft_torrent_content(request.address, digest=request.digest)
 
