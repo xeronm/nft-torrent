@@ -6,9 +6,10 @@ from collections import Counter
 import aiohttp
 from urllib.parse import urljoin
 from fastapi import status
+from mimetypes import guess_type
 from fastapi.exceptions import HTTPException
 from fastapi.responses import (FileResponse, RedirectResponse,
-                               StreamingResponse)
+                               StreamingResponse, JSONResponse)
 from loguru import logger
 from pyTON.cache import DisabledCacheManager
 from pyTON.settings import RedisCacheSettings
@@ -217,22 +218,23 @@ class Server:
         token = self.jwt_bearer.get_jwt_token(host)
         return result, token
 
-    async def get_default_image(self, address: str):
+    async def get_nft_content(self, address: str, query: str = None):
         headers = {"Cache-Control": "public, max-age=3600"}
         nft_collection = self.collection_config.get_collection(address)
         if nft_collection is not None:
-            return FileResponse(nft_collection.image, headers=headers)
+            if query == 'uri':
+                return JSONResponse(nft_collection.meta, headers=headers)
+            else:
+                return FileResponse(nft_collection.image, media_type=guess_type(nft_collection.image)[0] or 'image/webp', headers=headers)
 
         nft_data = await self.tonlib.get_nft_data(address)
         nft_content = nft_data.individual_content
 
-        image = nft_content.image()
-        # if nft_content.bag_id() and image and image[0] == ":":
-        #     return await self.storage.get_torrent_content(address, bag_id=nft_content.bag_id(), digest=image[1:])
-        if image.startswith('ipfs://'):
-            return await self.ipfs.get_content_file(uri=image)
-        if image:
-            return RedirectResponse(image)
+        uri = nft_content.uri() if query == 'uri' else nft_content.image()
+        if uri.startswith('ipfs://'):
+            return await self.ipfs.get_content_file(uri=uri)
+        if uri:
+            return RedirectResponse(uri)
         if nft_content.image_data():
             response = StreamingResponse(io.BytesIO(nft_content.image_data()),
                                          media_type='image/webp', headers=headers)

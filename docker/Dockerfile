@@ -18,7 +18,8 @@ COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 RUN --mount=from=dist,target=/mnt/dist \
     python3 -m pip install ton_nft_torrent==${NFTORRENT_VERSION} gunicorn --no-cache-dir \
-        --find-links /mnt/dist
+        --find-links /mnt/dist && \
+    python3 -m pip install pytonlib==0.0.65 --no-cache-dir
 
 ENV LOGURU_LEVEL=INFO \
     TON_STORAGE_NUM_WORKERS=0 \

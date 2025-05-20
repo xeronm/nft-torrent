@@ -101,8 +101,8 @@ class PetMemoryNftContent(BaseNftContent):
                                    data=data,
                                    fee_due_time=fee_due_time)
 
-    def bag_id(self):
-        return self.data.bag_id
+    def uri(self):
+        return self.data.uri
 
     def image(self):
         return self.data.image
@@ -132,14 +132,11 @@ class PetsCollectionInfo:
     balance_class_b: float
     fb_mode: int
     fb_uri: str
-    data: NftMutableMetaData
 
     @classmethod
     def from_tvm(cls, stack: List):
-        if len(stack) != 12:
+        if len(stack) != 8:
             raise ValueError(f'Invalid PetsCollectionInfo response length: {len(stack)}')
-        if 'bytes' in stack[11][1]:
-            raise ValueError('Invalid PetsCollectionInfo response: image_data not null')
         return PetsCollectionInfo(fee_storage=int(stack[0][1], 16)/1e9,
                                   fee_class_a=int(stack[1][1], 16)/1e9,
                                   fee_class_b=int(stack[2][1], 16)/1e9,
@@ -147,10 +144,4 @@ class PetsCollectionInfo:
                                   balance_class_a=int(stack[4][1], 16)/1e9,
                                   balance_class_b=int(stack[5][1], 16)/1e9,
                                   fb_mode=int(stack[6][1], 16),
-                                  fb_uri=load_string(stack[7]),
-                                  data=NftMutableMetaData(
-                                      uri=load_string(stack[8], opt=True),
-                                      description=load_string(stack[9], opt=True),
-                                      image=load_string(stack[10], opt=True),
-                                      image_data=None
-                                  ))
+                                  fb_uri=load_string(stack[7]))

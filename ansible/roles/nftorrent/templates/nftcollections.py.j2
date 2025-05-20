@@ -11,7 +11,8 @@ config = CollectionConfig(
 {% for param in nftorrent.collections %}
         CollectionInstance(
             address="{{ param.address }}",
-            image="{{ param.image }}"
+            image="{{ param.image }}",
+            meta="{{ param.meta }}",
         ),
 {% endfor %}
     ]
