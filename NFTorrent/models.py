@@ -46,7 +46,6 @@ class StoragePeerMethod(BaseModel):
 
 class NftMethod(BaseModel):
     address: str = Path(description="Address of NFT item")
-    q: str = Query(description="NFT content query", default=None)
 
     @validator('address')
     def validate_contract_address(cls, v):
@@ -54,6 +53,9 @@ class NftMethod(BaseModel):
             return prepare_address(v)
         except Exception:
             raise ValueError('Ivalid TON contract address format')
+
+class NftContentMethod(NftMethod):
+    q: str = Query(description="NFT content query", default=None)
 
 
 class BaseNftContentMethod(BaseModel):

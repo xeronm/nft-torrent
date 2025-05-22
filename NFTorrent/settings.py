@@ -176,7 +176,8 @@ class IpfsSettings:
     confirmation_timeout: int = 60
     min_peers_count: int = 10
     min_redundancy = 3
-    storage_cid_size_limit: int = 8*1024*1024
+    cid_size_limit: int = 10*1024*1024
+    file_size_limit: int = 768*1024
 
     @classmethod
     def from_environment(cls):
@@ -188,7 +189,8 @@ class IpfsSettings:
         obj.min_peers_count = int(os.environ.get('IPFS_MIN_PEERS_COUNT', cls.min_peers_count))
         obj.min_redundancy = int(os.environ.get('IPFS_MIN_REDUNDANCY', cls.min_redundancy))
         obj.confirmation_timeout = int(os.environ.get('IPFS_CONFIRMATION_TIMEOUT', cls.confirmation_timeout))
-        obj.storage_cid_size_limit = int(os.environ.get('IPFS_STORAGE_CID_SIZE_LIMIT', cls.storage_cid_size_limit))
+        obj.cid_size_limit = int(os.environ.get('IPFS_STORAGE_CID_SIZE_LIMIT', cls.cid_size_limit))
+        obj.file_size_limit = int(os.environ.get('IPFS_STORAGE_FILE_SIZE_LIMIT', cls.file_size_limit))
         return obj
 
 
