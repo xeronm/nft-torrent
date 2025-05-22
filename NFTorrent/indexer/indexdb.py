@@ -46,7 +46,7 @@ class CollectionTaskData:
     stats: Dict[str, int] = field(default_factory=Counter)
 
 
-def _covert_image(buffer: bytes, size: int, format: str) -> bytes:
+def _convert_image(buffer: bytes, size: int, format: str) -> bytes:
     img = Image.open(io.BytesIO(buffer))
     # 1. Resize min dimension to `size`
     x, y = img.size
@@ -61,12 +61,13 @@ def _covert_image(buffer: bytes, size: int, format: str) -> bytes:
 
     # 2. Crop center
     x, y = img.size
-    x0 = y0 = 0
-    if x > size:
-        x0 = (x-size)//2
-    if y > size:
-        y0 = (y-size)//2
-    img = img.crop((x0, y0, x0 + size, y0 + size))
+    if x > size or y > size:
+        x0 = y0 = 0
+        if x > size:
+            x0 = (x-size)//2
+        if y > size:
+            y0 = (y-size)//2
+        img = img.crop((x0, y0, x0 + size, y0 + size))
 
     bufferOut = io.BytesIO()
     img.save(bufferOut, format)
@@ -223,12 +224,12 @@ class IndexDb:
             return False
         try:
             small = await self.loop.run_in_executor(self.threadpool_executor,
-                                                    _covert_image,
+                                                    _convert_image,
                                                     buffer,
                                                     self.settings.icon_size_small,
                                                     self.settings.icon_format)
             medium = await self.loop.run_in_executor(self.threadpool_executor,
-                                                        _covert_image,
+                                                        _convert_image,
                                                         buffer,
                                                         self.settings.icon_size_medium,
                                                         self.settings.icon_format)

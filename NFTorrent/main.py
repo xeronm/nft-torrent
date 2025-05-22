@@ -322,7 +322,7 @@ async def get_account_auth_session(jwt_payload: models.JWTPayload = Depends(ws.j
 
 @app.get('/c/{address}', response_model_exclude_none=True, tags=['nft-content'])
 @wrap_result
-async def get_nft_content(request: models.NftMethod = Depends()) -> FileResponse:
+async def get_nft_content(request: models.NftContentMethod = Depends()) -> FileResponse:
     """
     Get NFT standard content.
     """

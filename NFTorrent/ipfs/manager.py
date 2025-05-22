@@ -312,36 +312,47 @@ class IpfsRpcManager:
         if not cid:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='CID not defined')
         info = await self.get_content(cid=cid)
+        file_info = None
         if len(info.files) > 0:
             if digest or file_path:
                 item = [x for x in info.files
                         if (digest and x.digest == digest) or
                             (file_path and x.name == file_path)]
             else:
-                item = [x for x in info.files if not x.name.startswith('.')][:1]
+                item = [x for x in info.files if not x.name.startswith('.') and x.size <= self.settings.file_size_limit][:1]
             if len(item) == 1:
-                file_path = item[0].name
-            if not file_path:
+                file_info = item[0]
+            if not file_info:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
-        if file_path is None:
+        if file_info is None:
+            if info.size > self.settings.file_size_limit:
+                raise exceptions.TorrentSizeLimit(f'file limit: {self.settings.file_size_limit}')
             data = await self.call_rpc_method('cid_cat', self.client.post, f'cat?arg={cid}')
         else:
-            data = await self.call_rpc_method('cid_cat', self.client.post, f'cat?arg={cid}/{file_path}')
+            if file_info.size > self.settings.file_size_limit:
+                raise exceptions.TorrentSizeLimit(f'file limit: {self.settings.file_size_limit}')
+            query_params = {
+                'arg': f'{cid}/{file_info.name}'
+            }
+            data = await self.call_rpc_method('cid_cat', self.client.post, f'cat?{urlencode(query_params)}')
         return data, file_path
 
     # High-Level API
     async def new_nft_create_content(self, owner: str, files: List[UploadFile]):
         total_size = sum([f.size for f in files])
-        if total_size > self.settings.storage_cid_size_limit:
-            raise exceptions.TorrentSizeLimit(self.settings.storage_cid_size_limit)
+        total_size = sum([f.size for f in files])
+        if total_size > self.settings.cid_size_limit:
+            raise exceptions.TorrentSizeLimit(f'total limit: {self.settings.cid_size_limit}')
+        if [f.size for f in files if f.size > self.settings.file_size_limit]:
+            raise exceptions.TorrentSizeLimit(f'file limit: {self.settings.file_size_limit}')
         logger.warning("Creating new IPFS CID for new NFT, owner: {owner}, size={size}",  # noqa: E501
                        address=owner, size=total_size)
         self.stats['create'] += 1
         content = None
         try:
             async with OperationLock(f'owner:{owner}:new', self.cid_wlock, wait=False):
-                content = await self.cid_add_local(address=owner, files=files)
+                content = await self.cid_add_local(files=files)
         except Exception as E:
             self.stats['create_error'] += 1
             logger.warning("Error creating IPFS CID, for new NFT, owner: {owner}, size={size}, {exc}",  # noqa: E501
@@ -353,10 +364,12 @@ class IpfsRpcManager:
         cid, nft_content = await self.get_nft_cid(address, owner=owner)
 
         total_size = sum([f.size for f in files])
-        if total_size > self.settings.storage_cid_size_limit:
-            raise exceptions.TorrentSizeLimit(self.settings.storage_cid_size_limit)
+        if total_size > self.settings.cid_size_limit:
+            raise exceptions.TorrentSizeLimit(f'total limit: {self.settings.cid_size_limit}')
+        if [f.size for f in files if f.size > self.settings.file_size_limit]:
+            raise exceptions.TorrentSizeLimit(f'file limit: {self.settings.file_size_limit}')
 
-        node_state = await self.get_cached_node_state()
+        node_state = self.get_cached_node_state()
         cluster_peers = len(node_state['cluster_peers'])
         if cluster_peers < self.settings.min_redundancy:
             raise exceptions.TorrentStorageError(f'Unable to comply required redundancy, min={self.settings.min_redundancy}, peers={cluster_peers}')
@@ -366,7 +379,7 @@ class IpfsRpcManager:
         self.stats['create'] += 1
         try:
             async with OperationLock(f'nft:{address}:add', self.cid_wlock, wait=False):
-                content = await self.cid_add_local(address=address, files=files)
+                content = await self.cid_add_local(files=files)
                 new_cid = content.hash
 
                 if cid != new_cid:

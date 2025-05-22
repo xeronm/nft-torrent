@@ -82,7 +82,7 @@ class TonlibManager(_TonlibManager):
             raise ContractRequestError("Smart contract is not NFT")
 
         nft_data = parse_nft_item_data(nft_data_result['stack'])
-        if owner is not None and detect_address(nft_data['owner'])['raw_form'] != detect_address(owner)['raw_form']:
+        if owner is not None and detect_address(nft_data['owner_address'])['raw_form'] != detect_address(owner)['raw_form']:
             raise ContractRequestError("NFT owner mistmach")
 
         nft_collection = None

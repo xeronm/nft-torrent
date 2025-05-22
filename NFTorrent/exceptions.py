@@ -17,7 +17,7 @@ class TorrentSizeLimit(HTTPException):
 
     def __init__(self, size_limit):
         super().__init__(status_code=status.HTTP_400_BAD_REQUEST,
-                         detail=f"Torrent size limit exceeded, size limit={size_limit}")
+                         detail=f"Torrent size limit exceeded - {size_limit}")
 
 
 class TorrentForbidden(HTTPException):
