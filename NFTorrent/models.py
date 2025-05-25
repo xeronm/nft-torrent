@@ -265,5 +265,6 @@ class IpfsNodeStorageState(BaseModel):
 
 class IpfsNodeState(BaseModel):
     storage: IpfsNodeStorageState
-    peers: str = None
+    peers: int = None
+    cluster_peers: Any = None
 

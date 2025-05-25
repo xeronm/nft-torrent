@@ -3,9 +3,13 @@ TON NFT Torrent HTTP Gateway
 
 Provides following HTTP API Gateway functions:
 - read NFT `individual_content` data for known NFT collections
-- read/write refrenced by NFT BAG ID off-chain NFT files from Torrent maintained with TON Storage and/or IPFS
-- TON Storage: maintain Torrent redundacy policy
-- TON Storage: keep storage limits by cleaning non-pinned Torrents by LRU policy
+- read/write refrenced by NFT IPFS URI off-chain NFT files from Torrent maintained with IPFS Storage
+- maintain Torrent redundacy and pinning policy
+
+
+NFTorrent Application Architecture:
+
+![NFTorrent Application Architecture](./assets/images/NFTorrent-Architecture.png "NFTorrent Application Architecture").
 
 NFT Contract example: https://github.com/xeronm/pets-memorial
 
@@ -103,7 +107,7 @@ nftorrent:
       - <IPFS bootstrap peer record 1>
       - <IPFS bootstrap peer record 2>
 website:
-  html: <pet-memorial-miniapp build path>
+  package: <pet-memorial-miniapp build package>
 ```
 
 3. Deploy
