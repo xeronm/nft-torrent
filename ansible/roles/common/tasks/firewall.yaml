@@ -1,0 +1,12 @@
+- name: '"firewalld" service'
+  include_tasks:
+    file: service.yaml
+    apply:
+      tags: firewall
+  vars:
+    service:
+      name: firewalld
+      package: firewalld
+      exclude:
+      params: "{{ firewalld.service_params }}"
+  tags: firewall

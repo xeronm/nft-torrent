@@ -3,15 +3,19 @@
 .idea
 __pycache__/
 .db.*
- 
+
 .tox
 .coverage
 .coverage.*
 .xmlcoverage/
 htmlcov/
- 
+
 # Packages
 *.egg
 *.egg-info
 dist/
 build/
+
+# Ansible inventory
+ansible/group_vars/**
+ansible/inventory/**

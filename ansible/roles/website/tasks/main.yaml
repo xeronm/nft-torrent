@@ -1,0 +1,7 @@
+- name: Website
+  ansible.builtin.unarchive:
+    src: "{{ website.package }}"
+    dest: /usr/share/nginx/html
+    owner: root
+    group: root
+  tags: website

@@ -1,0 +1,129 @@
+- name: NFTorrent root "~/nft-torrent"
+  file:
+    path: "/home/{{ oam.user }}/nft-torrent"
+    state: directory
+    owner: "{{ oam.user }}"
+    group: "{{ oam.group }}"
+    mode: '0755'
+  tags: nftorrent
+
+- name: NFTorrent Assets "~/nft-torrent/assets"
+  copy:
+    src: ./assets
+    dest: "/home/{{ oam.user }}/nft-torrent/"
+    owner: "{{ oam.user }}"
+    group: "{{ oam.group }}"
+  tags: nftorrent
+
+- name: NFTorrent private "~/nft-torrent/private"
+  file:
+    path: "/home/{{ oam.user }}/nft-torrent/private"
+    state: directory
+    owner: "{{ oam.user }}"
+    group: "{{ oam.group }}"
+    mode: '0750'
+  tags: nftorrent
+
+- name: NFTorrent private JWT Key
+  copy:
+    content: "{{ nftorrent.jwt_key }}"
+    dest: "/home/{{ oam.user }}/nft-torrent/private/jwt.key"
+    owner: "{{ oam.user }}"
+    group: "{{ oam.group }}"
+    mode: '0600'
+  register: vcompose_env
+  tags: nftorrent
+
+- name: NFTorrent tonlib keystore "~/nft-torrent/ton_keystore"
+  file:
+    path: "/home/{{ oam.user }}/nft-torrent/ton_keystore"
+    state: directory
+    owner: "{{ oam.user }}"
+    group: "{{ oam.group }}"
+    mode: '0750'
+  tags: nftorrent
+
+- name: NFTorrent IPFS storage "~/nft-torrent/ipfs-db"
+  file:
+    path: "/home/{{ oam.user }}/nft-torrent/ipfs-db"
+    state: directory
+    owner: "{{ oam.user }}"
+    group: "{{ oam.group }}"
+    mode: '0750'
+  tags: nftorrent
+
+- name: NFTorrent IPFS Cluster DB bootstrap peerstore
+  template:
+    src: ./peerstore.j2
+    dest: "/home/{{ oam.user }}/nft-torrent/cluster-db/peerstore"
+    mode: '0644'
+  tags: nftorrent
+
+- name: NFTorrent docker-compose
+  copy:
+    src: ./docker-compose.yaml
+    dest: "/home/{{ oam.user }}/nft-torrent/docker-compose.yaml"
+    owner: "{{ oam.user }}"
+    group: "{{ oam.group }}"
+    mode: '0640'
+  register: vcompose
+  tags: nftorrent
+
+- name: NFTorrent docker-compose environment
+  template:
+    src: ./env.j2
+    dest: "/home/{{ oam.user }}/nft-torrent/.env"
+    owner: "{{ oam.user }}"
+    group: "{{ oam.group }}"
+    mode: '0600'
+  register: vcompose_env
+  tags: nftorrent
+
+- name: NFTorrent Collections
+  template:
+    src: ./nftcollections.py.j2
+    dest: "/home/{{ oam.user }}/nft-torrent/nftcollections.py"
+    owner: "{{ oam.user }}"
+    group: "{{ oam.group }}"
+    mode: '0664'
+  register: vcompose_env
+  tags: nftorrent
+
+- name: Download TON Blockchain Config
+  ansible.builtin.get_url:
+    url: https://ton.org/testnet-global-config.json
+    dest: /home/{{ oam.user }}/nft-torrent/private/testnet-global-config.json
+    owner: "{{ oam.user }}"
+    group: "{{ oam.group }}"
+    mode: '0440'
+  tags: nftorrent
+
+- name: NFTorrent docker service
+  community.docker.docker_compose_v2:
+    recreate: "{{ 'always' if vcompose.changed else omit }}"
+    project_name: nft-torrent
+    project_src: "/home/{{ oam.user }}/nft-torrent"
+    state: "{{ 'restarted' if vcompose_env.changed else 'present' }}"
+  tags: nftorrent
+
+- name: NFTorrent Telegraf is configured
+  copy:
+    src: ./etc/telegraf/telegraf.d/nftorrent.conf
+    dest: /etc/telegraf/telegraf.d/nftorrent.conf
+    owner: root
+    group: root
+    mode: 0644
+  notify:
+    - restart telegraf
+  tags: nftorrent
+
+- name: NFTorrent Nginx is configured
+  copy:
+    src: ./etc/nginx/conf.d/nftorrent.conf
+    dest: /etc/nginx/conf.d/nftorrent.conf
+    owner: root
+    group: root
+    mode: 0644
+  notify:
+    - restart nginx
+  tags: nftorrent

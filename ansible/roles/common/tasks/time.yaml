@@ -1,0 +1,29 @@
+# Time and Timezone
+- name: timezone
+  timezone:
+    name: "{{ timezone }}"
+  tags: time
+
+- name: '"chrony" service'
+  include_tasks:
+    file: service.yaml
+    apply:
+      tags: time
+  vars:
+    service:
+      name: chronyd
+      package: chrony
+      exclude: ntp
+      params: "{{ chrony.service_params }}"
+  tags: time
+
+- name: '"chrony" is configured'
+  template:
+    src: ./etc/chrony.conf.j2
+    dest: /etc/chrony.conf
+    owner: root
+    group: root
+    mode: 0644
+  notify:
+    - restart chronyd
+  tags: time

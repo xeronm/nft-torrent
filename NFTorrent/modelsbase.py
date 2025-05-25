@@ -1,0 +1,158 @@
+import abc
+import datetime
+from dataclasses import dataclass, fields, field
+from typing import Any, Dict, List, Type
+
+from pytonlib.utils.address import detect_address
+from sqlmodel import Field, SQLModel
+from tonpy.types import CellSlice
+
+
+def dataclass_to_influx(instance):
+    kv = []
+    for field in fields(instance):
+        value = getattr(instance, field.name, None)
+        if value is None:
+            continue
+        if issubclass(field.type, str):
+            value = '"' + value.replace('"', '\\"') + '"'
+        kv.append(f'{field.name}={value}')
+    return ','.join(kv)
+
+
+def dict_to_influx(instance: Dict):
+    kv = []
+    for k, v in instance.items():
+        value = v
+        if value is None:
+            continue
+        if isinstance(v, dict):
+            continue
+        elif isinstance(v, bool):
+            value = int(value)
+        elif isinstance(v, str):
+            value = '"' + value.replace('"', '\\"') + '"'
+        kv.append(f'{k}={value}')
+    return ','.join(kv)
+
+
+class BaseCollectionModel(SQLModel, table=False):
+    id: int = Field(default=None, primary_key=True)
+    address: str = Field(unique=True, max_length=48)
+    index: int = Field()
+
+
+class BaseNftModel(SQLModel, table=False):
+    id: int = Field(default=None, primary_key=True)
+    collection_id: int = Field()
+    address: str = Field(unique=True, max_length=48)
+    index: int = Field(index=True)
+    image: str | None = Field(default=None, max_length=256)
+    image_data: bytes | None = Field(default=None)
+    icons: bytes | None = Field(default=None)
+    error_time: datetime.datetime | None = Field(default=None, index=True)
+    error_code: str | None = Field(default=None, max_length=40)
+
+    @classmethod
+    @abc.abstractmethod
+    def from_nftmodel(cls, collection: int, data: Any):
+        pass
+
+    @abc.abstractmethod
+    def to_nftheader(self, collection_address: str, icon_size: str = None):
+        pass
+
+
+@dataclass
+class BaseNftContent:
+
+    @classmethod
+    @abc.abstractmethod
+    def from_tvm(cls, cs: CellSlice):
+        pass
+
+    @abc.abstractmethod
+    def uri(self) -> str:
+        pass
+
+    @abc.abstractmethod
+    def image(self) -> str:
+        pass
+
+    @abc.abstractmethod
+    def image_data(self) -> bytes:
+        pass
+
+    @abc.abstractmethod
+    def storage_due_time(self) -> int:
+        pass
+
+
+@dataclass
+class BaseCollectionInfo:
+
+    @classmethod
+    @abc.abstractmethod
+    def from_tvm(cls, stack: List):
+        pass
+
+
+@dataclass(frozen=True)
+class CollectionInstance:
+    address: str
+    image: str
+    meta: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        object.__setattr__(self, "_address", detect_address(self.address))
+
+    def address_url(self):
+        return self._address['bounceable']['b64url']
+
+
+@dataclass
+class CollectionConfig:
+    collection_info_class: Type[BaseCollectionInfo]
+    nft_content_class: Type[BaseNftContent]
+    collections: List[CollectionInstance]
+    dbmodel_class: Type[BaseCollectionModel] = None
+    dbmodel_nft_class: Type[BaseNftModel] = None
+
+    def __post_init__(self):
+        self._collections_map = {
+            x._address['raw_form']: x
+            for x in self.collections
+        }
+
+    def get_collection(self, address: str):
+        return self._collections_map.get(detect_address(address)['raw_form'])
+
+
+@dataclass(frozen=True)
+class CollectionData:
+    address: str
+    owner_address: str
+    next_item_index: int
+    collection_content: Any = None
+    collection_info: BaseCollectionInfo = None
+
+
+@dataclass(frozen=True)
+class NftItemData:
+    address: str
+    init: bool
+    index: int
+    owner_address: str
+    collection_address: str = None
+    individual_content: BaseNftContent = None
+
+
+@dataclass(frozen=True)
+class NftItemHeader:
+    address: str
+    index: int
+    owner_address: str
+    collection_address: str = None
+    image: str = None
+    image_data: str = None
+    icons: Dict[str, List[str]] = None

@@ -1,35 +1,47 @@
-from typing import Dict, Callable, Any, List
-import time
-import jwt
-import ipaddress
-import hashlib
-import struct
 import base64
+import hashlib
+import ipaddress
+import struct
+import time
+import http.cookies
+from datetime import datetime
+from typing import Any, Callable, Dict, List, Literal
+from email.utils import format_datetime
+from http.cookies import Morsel
+
+import jwt
+from aiohttp import ClientResponse
+from fastapi import HTTPException, Request, status
+from fastapi.security import (APIKeyCookie, HTTPAuthorizationCredentials,
+                              HTTPBearer)
 from jwt.exceptions import InvalidTokenError
-
-from nacl.signing import VerifyKey
-from fastapi import Request, HTTPException, status, Response
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, APIKeyCookie
-
-from pytonlib.utils.address import detect_address
-from NFTorrent import models
-
 from loguru import logger
+from nacl.signing import VerifyKey
+from pytonlib.utils.address import detect_address
+
+from NFTorrent import models
 
 
 class InvalidSubjectError(InvalidTokenError):
     pass
 
+
 class SignatureVerificationError(Exception):
     pass
 
 
-class NodeJWTBearer(HTTPBearer):
+class ServerResponseAuthError(Exception):
+    pass
 
-    def __init__(self, subject: str = None, 
-                 jwt_secret: str = None, jwt_algorithm = None,
-                 node_state: Callable[..., List[Dict]] = None, 
-                 auto_error: bool = True, 
+
+class NodeJWTBearer(HTTPBearer):
+    response_header = "X-Peer-Bearer-Token"
+
+    def __init__(self, subject: str = None,
+                 jwt_secret: str = None,
+                 jwt_algorithm: str = None,
+                 node_state: Callable[..., List[Dict]] = None,
+                 auto_error: bool = True,
                  allow_networks: List[str] = None,
                  real_ip_header: bool = True):
         super().__init__(auto_error=auto_error)
@@ -46,33 +58,58 @@ class NodeJWTBearer(HTTPBearer):
     async def __call__(self, request: Request):
         client_ip = request.client.host
         real_ip = request.headers.get('X-Real-IP')
-        logger.debug('NodeJWTBearer: Authorization request, real_ip: {real_ip}, host: {host}', real_ip=real_ip, host=client_ip)
+        logger.debug('NodeJWTBearer: Authorization request, real_ip: {real_ip}, host: {host}',
+                     real_ip=real_ip, host=client_ip)
         if self.real_ip_header:
             client_ip = request.headers.get('X-Real-IP', client_ip)
         if self.allow_networks and [True for x in self.allow_networks if ipaddress.ip_address(client_ip) in x]:
-            return
-        
+            request.state.bearer_auth_client_ip = client_ip
+            return {}
+
         credentials: HTTPAuthorizationCredentials = await super().__call__(request)
-        if credentials:
-            try:
-                self.verify_jwt_token(credentials.credentials, client_ip)
-            except InvalidTokenError as E:
-                logger.info('NodeJWTBearer: token validation error, token: {token}, client_ip: {client_ip}, {exc}', 
-                            token=credentials.credentials,
-                            client_ip=client_ip, 
-                            exc=str(E))
+        if credentials is None:
+            return None
+        try:
+            payload = self.verify_jwt_token(credentials.credentials, client_ip)
+        except InvalidTokenError as E:
+            logger.info('NodeJWTBearer: token validation error, token: {token}, client_ip: {client_ip}, {exc}',
+                        token=credentials.credentials,
+                        client_ip=client_ip,
+                        exc=str(E))
+            if self.auto_error:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid or expired token")
-            
-            return credentials.credentials
-        else:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid authorization code")
+            else:
+                return None
+
+        request.state.bearer_auth_client_ip = client_ip
+        return payload
+
+    async def response_credentials(self, response: ClientResponse, server_ip: str):
+        response_token = response.headers.get(self.response_header)
+        if not response_token:
+            if self.auto_error:
+                raise ServerResponseAuthError("Response not authenticated")
+            else:
+                return None
+        try:
+            payload = self.verify_jwt_token(response_token, server_ip)
+        except InvalidTokenError as E:
+            logger.info('NodeJWTBearer: token validation error, token: {token}, server_ip: {server_ip}, {exc}',
+                        token=response_token,
+                        server_ip=server_ip,
+                        exc=str(E))
+            if self.auto_error:
+                raise ServerResponseAuthError("Invalid or expired token")
+            else:
+                return None
+        return payload
 
     def get_jwt_token(self, audience: str) -> Dict[str, Any]:
         token, expires = self._jwt_cache.get(audience, (None, None))
         curr_time = time.time()
         if expires is not None and expires > curr_time + 60:
             return token
-        
+
         expires = curr_time + 3600
         payload = {
             'sub': self.subject,
@@ -83,30 +120,31 @@ class NodeJWTBearer(HTTPBearer):
         self._jwt_cache[audience] = (token, expires)
         return token
 
-    def verify_jwt_token(self, jwtoken: str, client_ip: str):
-        payload = jwt.decode(jwtoken, self.jwt_secret, 
-                             audience=self.subject, 
+    def verify_jwt_token(self, jwtoken: str, subject_ip: str):
+        payload = jwt.decode(jwtoken, self.jwt_secret,
+                             audience=self.subject,
                              algorithms=[self.jwt_algorithm])
-        logger.debug('NodeJWTBearer:verify_jwt_token: decoded token, client: {client_ip}, payload: {payload}', 
-                     client_ip=client_ip, payload=str(payload))
+        logger.debug('NodeJWTBearer:verify_jwt_token: decoded token, subject: {subject_ip}, payload: {payload}',
+                     subject_ip=subject_ip, payload=str(payload))
 
         subject = payload.get('sub', None)
         if not subject:
             raise InvalidSubjectError('Subject required')
-        if subject != client_ip:
+        if subject != subject_ip:
             raise InvalidSubjectError('Subject not match client address')
-        
+
         _node_state = self.node_state()
-        if not _node_state is self._node_state:
+        if _node_state is not self._node_state:
             self._node_state = _node_state
             self._node_state_map = {
-                item['ip_str'].split(':')[0]: item['adnl_id'] 
+                item['ip_str'].split(':')[0]: item['adnl_id']
                 for item in self._node_state
             }
             logger.debug('NodeJWTBearer:verify_jwt_token: update node table: {table}', table=str(self._node_state_map))
 
         if subject != self.subject and subject not in self._node_state_map:
             raise InvalidSubjectError('Subject not known')
+        return models.JWTPayload(**payload)
 
 
 class ContractAPIKeyCookie(APIKeyCookie):
@@ -115,10 +153,11 @@ class ContractAPIKeyCookie(APIKeyCookie):
     auth_payload_expires_timeout = 180
     session_token_timeout = 14 * 86400
 
-    def __init__(self, 
-                 jwt_secret: str = None, jwt_algorithm = None,
+    def __init__(self,
+                 jwt_secret: str = None,
+                 jwt_algorithm: str = None,
                  domains: List[str] = None,
-                 auto_error: bool = True, 
+                 auto_error: bool = True,
                  allow_networks: List[str] = None,
                  real_ip_header: bool = True):
         super().__init__(name=self.cookie_name, auto_error=auto_error)
@@ -131,7 +170,8 @@ class ContractAPIKeyCookie(APIKeyCookie):
     async def __call__(self, request: Request):
         client_ip = request.client.host
         real_ip = request.headers.get('X-Real-IP')
-        logger.debug('ContractAPIKeyCookie: Authorization request, real_ip: {real_ip}, host: {host}', real_ip=real_ip, host=client_ip)
+        logger.debug('ContractAPIKeyCookie: Authorization request, real_ip: {real_ip}, host: {host}',
+                     real_ip=real_ip, host=client_ip)
         if self.real_ip_header:
             client_ip = request.headers.get('X-Real-IP', client_ip)
         if self.allow_networks and [True for x in self.allow_networks if ipaddress.ip_address(client_ip) in x]:
@@ -140,20 +180,19 @@ class ContractAPIKeyCookie(APIKeyCookie):
         api_key: str = await super().__call__(request)
 
         try:
-            payload = jwt.decode(api_key, self.jwt_secret, 
-                                audience=self.audience, 
-                                algorithms=[self.jwt_algorithm])        
+            payload = jwt.decode(api_key, self.jwt_secret,
+                                 audience=self.audience,
+                                 algorithms=[self.jwt_algorithm])
         except InvalidTokenError as E:
-            logger.info('ContractAPIKeyCookie: token validation error, token: {token}, client_ip: {client_ip}, host: {host}, {exc}', 
+            logger.info('ContractAPIKeyCookie: token validation error, token: {token}, client_ip: {client_ip}, host: {host}, {exc}',  # noqa: E501
                         token=api_key,
                         client_ip=client_ip,
                         host=request.client.host,
                         exc=str(E))
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid or expired token")
-        
-        request.auth_wallet = payload['sub']
-        return payload
-        
+
+        return models.JWTPayload(**payload)
+
     def get_auth_payload(self) -> str:
         expires = time.time() + self.auth_payload_expires_timeout
         payload = {
@@ -171,12 +210,12 @@ class ContractAPIKeyCookie(APIKeyCookie):
         if curr_time >= proof.timestamp + self.auth_payload_expires_timeout:
             raise SignatureVerificationError("Signature expired")
 
-        if not proof.domain in self.domains:
-            raise SignatureVerificationError("Invalid domain")
+        if proof.domain not in self.domains:
+            raise SignatureVerificationError(f"Invalid domain: {proof.domain}")
 
         message = b''.join([
             b'ton-proof-item-v2/',
-            struct.pack('>i32s', int(wc, 10), bytes.fromhex(whash)), 
+            struct.pack('>i32s', int(wc, 10), bytes.fromhex(whash)),
             struct.pack('<I', len(proof.domain)),
             proof.domain.encode(),
             struct.pack('<Q', proof.timestamp),
@@ -193,33 +232,73 @@ class ContractAPIKeyCookie(APIKeyCookie):
         try:
             verify_key = VerifyKey(bytes.fromhex(public_key or account.public_key))
             verify_key.verify(hashlib.sha256(full_message).digest(), base64.b64decode(proof.signature))
-        except Exception as E:
+        except Exception:
             raise SignatureVerificationError("Signature verification failed")
 
-        payload = jwt.decode(proof.payload, self.jwt_secret, 
-                            audience=self.audience, 
-                            algorithms=[self.jwt_algorithm])
-   
+        jwt.decode(proof.payload, self.jwt_secret,
+                   audience=self.audience,
+                   algorithms=[self.jwt_algorithm])
+
     def auth_session(self, account: models.Account, proof: models.TonProof, public_key: str = None):
         try:
             self.auth_verify(account, proof, public_key)
         except (InvalidTokenError, SignatureVerificationError) as E:
-            logger.warning('ContractAPIKeyCookie: signature validation error, account: {address}, {exc}', 
-                        address=account.address, 
-                        exc=str(E))
+            logger.warning('ContractAPIKeyCookie: signature validation error, account: {address}, {exc}',
+                           address=account.address,
+                           exc=str(E))
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired signature")
-        
+
         expires = time.time() + self.session_token_timeout
         payload = {
             'sub': account.address,
-            'aud': [self.audience],            
+            'aud': [self.audience],
             'exp': expires
         }
         token = jwt.encode(payload, self.jwt_secret, algorithm=self.jwt_algorithm)
-        response = Response(status_code=status.HTTP_200_OK)
-        response.set_cookie(self.cookie_name, token, expires=expires, secure=True, httponly=True)
-        return response
-    
+        return models.JWTPayload(**payload), token
 
-    # NFTorrent=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0aWQiOiI0NjA0MGFhYSIsInN1YiI6IkVRQUc2WDhGRXM0MWlqM0hFV21zNUJYdUYvV0JEYit1VTR4OC9IVWd1VUNlbThRbCIsImF1ZCI6WyJORlRvcnJlbnQiXSwiZXhwIjoxNzQ0ODI0Njc3LjI4NDk5MjJ9.nW-eraHFWlJKMYaBRgN3PYpNYT6OS6zx386BqKTT44E; 
-    # expires=1744824677.2849922; HttpOnly; Path=/; SameSite=lax; Secure
+
+Morsel._reserved['partitioned'] = 'Partitioned'
+Morsel._flags.add('partitioned')
+
+def set_cookie(
+    request: Request,
+    key: str,
+    value: str = "",
+    max_age: int | None = None,
+    expires: datetime | str | int | None = None,
+    path: str | None = "/",
+    domain: str | None = None,
+    secure: bool = False,
+    httponly: bool = False,
+    samesite: Literal["lax", "strict", "none"] | None = "lax",
+    partitioned: bool = False,
+) -> None:
+    cookie: http.cookies.BaseCookie[str] = http.cookies.SimpleCookie()
+    cookie[key] = value
+    if max_age is not None:
+        cookie[key]["max-age"] = max_age
+    if expires is not None:
+        if isinstance(expires, datetime):
+            cookie[key]["expires"] = format_datetime(expires, usegmt=True)
+        else:
+            cookie[key]["expires"] = expires
+    if path is not None:
+        cookie[key]["path"] = path
+    if domain is not None:
+        cookie[key]["domain"] = domain
+    if secure:
+        cookie[key]["secure"] = True
+    if httponly:
+        cookie[key]["httponly"] = True
+    if samesite is not None:
+        assert samesite.lower() in [
+            "strict",
+            "lax",
+            "none",
+        ], "samesite must be either 'strict', 'lax' or 'none'"
+        cookie[key]["samesite"] = samesite
+    if partitioned:
+        cookie[key]["partitioned"] = True
+    cookie_val = cookie.output(header="").strip()
+    request.raw_headers.append((b"set-cookie", cookie_val.encode("latin-1")))

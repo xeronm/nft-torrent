@@ -1,6 +1,9 @@
-ton-http-api~=2.0.0
+ton-http-api==2.0.54
 python-multipart
 tonpy
 aiohttp
 pyjwt
 PyNaCl
+sqlmodel
+psycopg2-binary
+pillow

@@ -1,0 +1,43 @@
+- name: Docker repository
+  command: 'dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo'
+  tags: docker
+
+- name: docker directory /etc/docker
+  file:
+    path: /etc/docker
+    state: directory
+  tags: docker
+
+- name: '"docker" daemon params'
+  template:
+    src: ./etc/docker/daemon.json.j2
+    dest: /etc/docker/daemon.json
+    owner: root
+    group: root
+    mode: 0644
+  notify:
+    - restart docker
+  tags: docker
+
+- name: Docker present packages
+  dnf:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+  tags: docker
+
+- name: '"docker" service'
+  include_role:
+    name: common
+    tasks_from: service
+  vars:
+    service:
+      name: docker
+      package: docker-ce
+      exclude: docker, docker-client, docker-common, docker-logrotate, docker-selinux, docker-engine-selinux
+      params: "{{ docker.service_params }}"
+  tags: docker

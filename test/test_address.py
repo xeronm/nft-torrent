@@ -1,8 +1,9 @@
-import unittest
-import binascii
 import base64
+import binascii
+import unittest
 
-from NFTorrent.address import adnl_id_encode, adnl_id_decode
+from NFTorrent.blockchain.address import adnl_id_decode, adnl_id_encode
+
 
 class TestAdnl(unittest.TestCase):
     AndlId2Base64 = 'kGYfhI+5d44+27ZKj3Z0nAwTtV3alffz+d32DMx9vGk='

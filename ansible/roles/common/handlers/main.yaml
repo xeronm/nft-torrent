@@ -1,0 +1,28 @@
+- name: service daemon_reload
+  service:
+    daemon_reload: yes
+
+- name: restart chronyd
+  service:
+    name: chronyd
+    state: restarted
+
+- name: restart docker
+  service:
+    name: docker
+    state: restarted
+
+- name: restart ssh
+  service:
+    name: sshd
+    state: restarted
+
+- name: restart nginx
+  service:
+    name: nginx
+    state: restarted
+
+- name: restart telegraf
+  service:
+    name: telegraf
+    state: restarted

@@ -1,15 +1,23 @@
-from NFTorrent.models import NftCollection
-from NFTorrent.messages import PetMemoryNftContent
+from NFTorrent.blockchain.models import PetMemoryNftContent, PetsCollectionInfo
+from NFTorrent.dbmodels import PetMemoryNft, PetsCollection
+from NFTorrent.modelsbase import CollectionConfig, CollectionInstance
 
-collections = [
-    NftCollection(
-        PetMemoryNftContent, 
-        'EQBAIrKhrZI5BIOmwrHiZ__QRICiFWJR_HRH5Wer3fd1f-lR', 
-        './assets/images/collection.webp'
-    ),
-    NftCollection(
-        PetMemoryNftContent, 
-        'EQBOdDO6iszbtbR0YnOz2IHk2eP6cCVKqkl7vRvoEtwa83lU', 
-        './assets/images/collection.webp'
-    )
-]
+config = CollectionConfig(
+    collection_info_class=PetsCollectionInfo,
+    nft_content_class=PetMemoryNftContent,
+    dbmodel_class=PetsCollection,
+    dbmodel_nft_class=PetMemoryNft,
+    collections=[
+        CollectionInstance(
+            address='EQAI_6RBqCUCGlNKRQOh_diuz8az2S_TY3IAHdozFTDDGs-9',
+            image='./assets/images/collection-3.webp',
+            meta={
+                "name": "Pets Memorial",
+                "description": "Transform your memories into living digital artifacts — timeless, immutable and authentic, powered by blockchain technology. Share your story with those who'll truly understand, inspire others, and preserve what matters most in a world where nothing truly disappears.\nBecause some stories are too precious to remain just another photo in your smartphone gallery.",
+                "attributes": [],
+            }
+        ),
+    ]
+)
+
+__all__ = ['config']

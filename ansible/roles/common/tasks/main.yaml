@@ -1,0 +1,53 @@
+- name: Packages
+  include_tasks:
+    file: packages.yaml
+    apply:
+      tags: packages
+  tags: packages
+
+- name: Firewall settings
+  include_tasks:
+    file: firewall.yaml
+    apply:
+      tags: firewall
+  tags: firewall
+
+- name: Time and Timezone
+  include_tasks:
+    file: time.yaml
+    apply:
+      tags: time
+  tags: time
+
+- name: Docker daemon
+  include_tasks:
+    file: docker.yaml
+    apply:
+      tags: docker
+  tags: docker
+
+- name: O&M User
+  include_tasks:
+    file: oam_user.yaml
+    apply:
+      tags: oam
+  tags: oam
+
+- name: Telegraf
+  include_tasks:
+    file: telegraf.yaml
+    apply:
+      tags: telegraf
+  tags: telegraf
+
+- name: Secure SSH access
+  lineinfile: dest=/etc/ssh/sshd_config
+              regexp="^{{ item.param }}"
+              line="{{ item.param }} {{ item.value }}"
+              state=present
+  notify: restart ssh
+  with_items:
+    - { param: PermitRootLogin, value: "yes" }
+    - { param: PasswordAuthentication, value: "no" }
+    - { param: MaxAuthTries, value: 1 }
+  tags: oam

@@ -1,42 +1,14 @@
-import abc
-from typing import Optional, List, Dict
-from enum import IntEnum
-from pydantic import BaseModel, Field, validator
-from fastapi.params import Path, File
+import hashlib
+import base64
+from enum import IntEnum, Enum
+from typing import Any, Dict, List, Optional
+
 from fastapi import UploadFile
+from fastapi.params import File, Path, Query
+from pydantic import BaseModel, Field, validator
+from pytonlib.utils.address import prepare_address
 
-from pytonlib.utils.address import prepare_address, detect_address
-from NFTorrent.address import parse_bag_id, parse_adnl_id
-
-class TvmStructure:
-    pass
-
-class NftContent(TvmStructure):
-
-    @abc.abstractmethod
-    def bag_id(self):
-        pass
-    
-    @abc.abstractmethod
-    def image(self):
-        pass
-    
-    @abc.abstractmethod
-    def image_data(self):
-        pass
-
-class NftCollection:
-
-    def __init__(self, nft_content_class: NftContent, address: str, image: str = None):
-        self.nft_content_class = nft_content_class
-        self.address = prepare_address(address)
-        self.raw_address = detect_address(self.address)['raw_form']
-        self.image = image
-
-    @property
-    def ntf_content(self):
-        return self.nft_content_class.__name__
-
+from NFTorrent.blockchain.address import parse_adnl_id, parse_bag_id
 
 
 class ProblemDetail(BaseModel):
@@ -62,14 +34,14 @@ class StorageTorrentContentMethod(BaseModel):
     @validator('bag_id')
     def validate_contract_address(cls, v):
         return parse_bag_id(v)
-        
+
 
 class StoragePeerMethod(BaseModel):
     adnl_id: str = Path(description="ADNL id")
 
     @validator('adnl_id')
     def validate_adnl_address(cls, v):
-        return parse_adnl_id(v)    
+        return parse_adnl_id(v)
 
 
 class NftMethod(BaseModel):
@@ -79,11 +51,14 @@ class NftMethod(BaseModel):
     def validate_contract_address(cls, v):
         try:
             return prepare_address(v)
-        except:
+        except Exception:
             raise ValueError('Ivalid TON contract address format')
 
+class NftContentMethod(NftMethod):
+    q: str = Query(description="NFT content query", default=None)
 
-class NftContentMethod(BaseModel):
+
+class BaseNftContentMethod(BaseModel):
     address: str = Path(description="Address of NFT item")
     digest: str = Path(description="Content digest")
 
@@ -91,7 +66,7 @@ class NftContentMethod(BaseModel):
     def validate_contract_address(cls, v):
         try:
             return prepare_address(v)
-        except:
+        except Exception:
             raise ValueError('Ivalid TON contract address format')
 
 
@@ -106,7 +81,7 @@ class NftTorrentCreate(NftMethod):
 class LiteserverId(BaseModel):
     _type: str = Field(..., alias="@type")
     key: str
-    
+
 
 class TonlibWorkerState(BaseModel):
     ls_index: int
@@ -122,8 +97,19 @@ class TonlibWorkerState(BaseModel):
     tasks_count: int
 
 
+class IndexDbWorkerState(BaseModel):
+    address: str
+    next_index: int
+    stats: Dict[str, int]
+
+
 class TonlibManagerState(BaseModel):
-    liteservers: Dict[str, TonlibWorkerState]
+    workers: Dict[str, TonlibWorkerState]
+    stats: Dict[str, int]
+
+
+class IndexDbState(BaseModel):
+    collections: Dict[str, IndexDbWorkerState]
 
 
 class StorageWorkerState(BaseModel):
@@ -141,13 +127,13 @@ class StorageManagerState(BaseModel):
     stats: Dict[str, int]
     size: int
     size_pressure: int
-    
+
 
 class NodePeerInfo(BaseModel):
     adnl_id: str = Field(..., description='Raw ADNL id address (decoded) form')
     ip_str: str = Field(..., description='IP address an port of TON Storage server')
     adnl: str = Field(..., description='User-friendly ADNL address (encoded) form')
-    
+
 
 class CHAIN(IntEnum):
     MAINNET = -239
@@ -163,13 +149,16 @@ class Account(BaseModel):
     def validate_contract_address(cls, v):
         try:
             return prepare_address(v)
-        except:
+        except Exception:
             raise ValueError('Ivalid TON contract address format')
 
 
 class HealthCheckResult(BaseModel):
-    tonlib: bool
-    storage: bool
+    load: float
+    redundancy: bool
+    tonlib: Optional[bool]
+    storage: Optional[bool]
+    indexdb: Optional[bool]
 
 
 class TonProof(BaseModel):
@@ -186,3 +175,96 @@ class AuthPayload(BaseModel):
 class AuthData(BaseModel):
     account: Account
     proof: TonProof
+
+
+class JWTPayload(BaseModel):
+    sub: str
+    aud: List[str]
+    exp: int
+
+
+class AuthSession(BaseModel):
+    node: HealthCheckResult
+    sess: Optional[JWTPayload]
+
+
+class CollectionData(BaseModel):
+    address: str
+    owner_address: str
+    next_item_index: int
+    collection_content: Any = None
+    collection_info: Any = None
+
+
+class NftItemData(BaseModel):
+    address: str
+    init: bool
+    index: int
+    owner_address: str
+    collection_address: str = None
+    individual_content: Any = None
+
+
+class NftItemHeader(BaseModel):
+    address: str
+    index: int
+    owner_address: str
+    collection_address: str = None
+    image: str = None
+    image_data: str = None
+    icons: Dict[str, List[str]] = None
+
+
+class CollectionItemsMethod(BaseModel):
+    lang: str = Query(default=None)
+    country: str = Query(default=None)
+    species: str = Query(default=None)
+    limit: int = Query(default=100)
+    offset: int = Query(default=0)
+    icon_size: str = Query(default='small')
+
+
+class NftContentState(Enum):
+    READY = 1
+    ERROR = 2
+
+
+class NftContentFile(BaseModel):
+    name: str
+    size: int
+    hash: str = None
+    state: NftContentState = NftContentState.READY
+    digest: str = None
+
+
+
+class NftContentPin(BaseModel):
+    redundancy: int
+    created: int = None
+    expires: int = None
+
+
+class NftContentInfo(BaseModel):
+    hash: str
+    size: int
+    state: NftContentState = NftContentState.READY
+    files: List[NftContentFile]
+    pin: NftContentPin = None
+
+    def make_digest(self):
+        for f in self.files:
+            digest = hashlib.shake_256((self.hash + f.name).encode()).digest(15)
+            f.digest = base64.b32encode(digest).decode().lower()
+
+
+class IpfsNodeStorageState(BaseModel):
+    RepoSize: int
+    StorageMax: int
+    NumObjects: int = None
+
+
+class IpfsNodeState(BaseModel):
+    storage: IpfsNodeStorageState
+    peers: int = None
+    cluster_peers: Any = None
+
