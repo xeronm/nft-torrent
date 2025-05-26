@@ -339,7 +339,7 @@ class IpfsRpcManager:
         return data, file_path
 
     # High-Level API
-    async def new_nft_create_content(self, owner: str, files: List[UploadFile]):
+    async def new_nft_create_content(self, files: List[UploadFile], owner: str = None):
         total_size = sum([f.size for f in files])
         total_size = sum([f.size for f in files])
         if total_size > self.settings.cid_size_limit:
@@ -347,7 +347,7 @@ class IpfsRpcManager:
         if [f.size for f in files if f.size > self.settings.file_size_limit]:
             raise exceptions.TorrentSizeLimit(f'file limit: {self.settings.file_size_limit}')
         logger.warning("Creating new IPFS CID for new NFT, owner: {owner}, size={size}",  # noqa: E501
-                       address=owner, size=total_size)
+                       owner=owner, size=total_size)
         self.stats['create'] += 1
         content = None
         try:

@@ -231,11 +231,12 @@ class Server:
         nft_content = nft_data.individual_content
 
         uri = nft_content.uri() if query == 'uri' else nft_content.image()
-        if uri.startswith('ipfs://'):
-            return await self.ipfs.get_content_file(uri=uri)
         if uri:
-            return RedirectResponse(uri)
-        if nft_content.image_data():
+            if uri.startswith('ipfs://'):
+                return await self.ipfs.get_content_file(uri=uri)
+            else:
+                return RedirectResponse(uri)
+        if nft_content.image_data() and query != 'uri':
             response = StreamingResponse(io.BytesIO(nft_content.image_data()),
                                          media_type='image/webp', headers=headers)
             return response

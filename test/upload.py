@@ -48,7 +48,8 @@ test_files = [
     '../pets-memorial/assets/images/marcus-3.jpg',
     '../pets-memorial/assets/images/marcus-4.jpg'
 ]
-test_url = 'http://127.0.0.1:8000/api/v1/nft/EQDf6Srtmxe-bTmwAf81o_e6fKT5jrg91Ai5B0i3t6PMIeMd/ipfs'
+# test_url = 'http://127.0.0.1:8000/api/v1/nft/EQDf6Srtmxe-bTmwAf81o_e6fKT5jrg91Ai5B0i3t6PMIeMd/ipfs'
+test_url = 'http://127.0.0.1:8000/api/v1/nft/ipfs'
 
 async def main(url: str = None, files = None):
     data = aiohttp.FormData()
