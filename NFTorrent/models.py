@@ -77,6 +77,9 @@ class NftStorageTorrentMethod(NftMethod):
 class NftTorrentCreate(NftMethod):
     files: List[UploadFile] = File(description="Torrent files")
 
+class NewNftTorrentCreate(BaseModel):
+    files: List[UploadFile] = File(description="Torrent files")
+
 
 class LiteserverId(BaseModel):
     _type: str = Field(..., alias="@type")

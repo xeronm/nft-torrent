@@ -435,6 +435,16 @@ if ws.settings.ipfs.enabled:
         return await ws.ipfs.create_content(request.address, request.files,
                                             owner=jwt_payload.sub if jwt_payload is not None else None)
 
+    @app.post('/api/v1/nft/ipfs', response_model_exclude_none=True, tags=['nft'])
+    async def create_new_nft_ipfs_content(request: models.NewNftTorrentCreate = Depends(),
+                                          jwt_payload: models.JWTPayload = Depends(ws.jwt_session)):
+
+        """
+        Create new NFT IPFS Content.
+        """
+        return await ws.ipfs.new_nft_create_content(request.files,
+                                                    owner=jwt_payload.sub if jwt_payload is not None else None)
+
 
 if ws.settings.indexdb.enabled:
     @app.get('/api/v1/collection', response_model_exclude_none=True, tags=['collection'],
