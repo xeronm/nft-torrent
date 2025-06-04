@@ -1,5 +1,7 @@
 import abc
 import datetime
+import time
+from collections import defaultdict
 from dataclasses import dataclass, fields, field
 from typing import Any, Dict, List, Type
 
@@ -15,6 +17,8 @@ def dataclass_to_influx(instance):
         if value is None:
             continue
         if issubclass(field.type, str):
+            if not isinstance(value, str):
+                value = str(value)
             value = '"' + value.replace('"', '\\"') + '"'
         kv.append(f'{field.name}={value}')
     return ','.join(kv)
@@ -34,6 +38,43 @@ def dict_to_influx(instance: Dict):
             value = '"' + value.replace('"', '\\"') + '"'
         kv.append(f'{k}={value}')
     return ','.join(kv)
+
+@dataclass
+class StatisticMeasurement:
+    count: int = 0
+    error: int = 0
+    duration: float = 0
+
+    def __enter__(self):
+        self._st = time.perf_counter()
+        self.count += 1
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if exc_type is not None:
+            self.error += 1
+        self.duration += time.perf_counter() - self._st
+
+
+class MeasurementStore(defaultdict):
+
+    def __init__(self, name: str, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.name = name
+
+    def get_timestamp(self):
+        return int(time.time() * 1000000000)
+
+    def as_list(self):
+        _timestamp = self.get_timestamp()
+        return [{'tags': k, 'fields': v, 'timestamp': _timestamp}
+                for k, v in self.items()]
+
+    def as_influx(self, timestamp):
+        timestamp = timestamp or self.get_timestamp()
+        return [
+            f'{self.name},{dataclass_to_influx(k)} {dataclass_to_influx(v)} {timestamp}'
+            for k, v in self.items()
+        ]
 
 
 class BaseCollectionModel(SQLModel, table=False):

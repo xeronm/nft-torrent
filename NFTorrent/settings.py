@@ -1,4 +1,5 @@
 import os
+from abc import abstractmethod
 from dataclasses import dataclass
 from importlib import import_module
 from typing import List
@@ -22,7 +23,9 @@ def import_string(dotted_path):
     module = import_module(module_path)
 
     try:
-        return getattr(module, class_name)
+        value = getattr(module, class_name)
+        setattr(value, '__importname__', dotted_path)
+        return value
     except AttributeError as err:
         raise ImportError('Module "%s" does not define a "%s" attribute/class' % (
             module_path, class_name)
@@ -34,6 +37,14 @@ def _value_from_file(value: str):
         with open(value[5:], 'r') as f:
             return f.readline().strip()
     return value
+
+
+class BaseCacheManager:
+    settings_class = None
+
+    @abstractmethod
+    def cached(self, expire=0, check_error=True):
+        pass
 
 
 @dataclass
@@ -195,10 +206,36 @@ class IpfsSettings:
 
 
 @dataclass
+class MemoryCacheSettings:
+    max_size: int = 1024
+
+    @classmethod
+    def from_environment(cls):
+        obj = cls.__new__(cls)
+        obj.max_size = int(os.environ.get('CACHE_MEMORY_MAX_SIZE', cls.max_size))
+        return obj
+
+
+@dataclass
+class CacheSettings:
+    enabled: bool
+    manager_class: BaseCacheManager
+    cache_settings = None
+
+    @classmethod
+    def from_environment(cls):
+        obj = cls.__new__(cls)
+        obj.enabled = settings.strtobool(os.environ.get('CACHE_ENABLED', 'false'))
+        obj.manager_class = import_string(os.environ.get('CACHE_MANAGER_CLASS', 'NFTorrent.cache.MemoryCacheManager'))
+        if obj.manager_class.settings_class:
+            obj.cache_settings = obj.manager_class.settings_class.from_environment()
+        return obj
+
+@dataclass
 class Settings:
     tonlib: settings.TonlibSettings
     webserver: WebServerSettings
-    cache: settings.CacheSettings
+    cache: CacheSettings
     storage: TonStorageCliSettings
     indexdb: IndexDbSettings
     ipfs: IpfsSettings
@@ -211,6 +248,6 @@ class Settings:
         obj.webserver = WebServerSettings.from_environment()
         _pyton = settings.Settings.from_environment()
         obj.tonlib = _pyton.tonlib
-        obj.cache = _pyton.cache
+        obj.cache = CacheSettings.from_environment()
         obj.indexdb = IndexDbSettings.from_environment()
         return obj

@@ -1,8 +1,8 @@
 import asyncio
 import random
 import time
-from collections import Counter
-from typing import Dict, List
+from dataclasses import dataclass
+from typing import List
 
 from loguru import logger
 from pyTON.manager import TonlibManager as _TonlibManager
@@ -12,11 +12,17 @@ from pytonlib.utils.tokens import (parse_nft_collection_data,
                                    parse_nft_item_data)
 from tonpy.types import CellSlice
 
-from NFTorrent.modelsbase import CollectionConfig, CollectionData, NftItemData, dict_to_influx
+from NFTorrent.modelsbase import (CollectionConfig, CollectionData, NftItemData,
+                                  MeasurementStore, StatisticMeasurement)
 
 
 class ContractRequestError(Exception):
     pass
+
+@dataclass(frozen=True)
+class StatisticTags:
+    ls_index: str
+    method: str
 
 
 class TonlibManager(_TonlibManager):
@@ -24,49 +30,39 @@ class TonlibManager(_TonlibManager):
     def __init__(self, *args, collection_config: CollectionConfig = None, **kwargs):
         super().__init__(*args, **kwargs)
         self.collection_config = collection_config
-        self.stats: Dict[str, int] = Counter()
+        self.stats = MeasurementStore('NFTorrentLiteservers', StatisticMeasurement)
 
     def get_tonlib_state(self):
         return {
             'workers': self.get_workers_state(),
-            'stats': self.stats,
+            'stats': self.stats.as_list(),
         }
 
     def get_measurements(self, timestamp: int) -> List[str]:
-        state = self.get_tonlib_state()
-        return [
-            f'NFTorrentLiteservers,{dict_to_influx({"id": ls["ls_index"]})} {dict_to_influx(ls)} {timestamp}'
-            for ls in state['workers'].values()
-        ]
+        return self.stats.as_influx(timestamp)
 
     async def dispatch_request_to_worker(self, method, ls_index, *args, **kwargs):
         task_id = "{}:{}".format(time.time(), random.random())
         timeout = time.time() + self.tonlib_settings.request_timeout
-        self.workers[ls_index]['tasks_count'] += 1
+        with (self.stats[StatisticTags(ls_index, None)], self.stats[StatisticTags(ls_index, method)]):
+            logger.info("Sending request method: {method}, task_id: {task_id}, ls_index: {ls_index}",
+                        method=method, task_id=task_id, ls_index=ls_index)
+            await self.loop.run_in_executor(self.threadpool_executor, self.workers[ls_index]['worker'].input_queue.put,
+                                            (task_id, timeout, method, args, kwargs))
 
-        logger.info("Sending request method: {method}, task_id: {task_id}, ls_index: {ls_index}",
-                    method=method, task_id=task_id, ls_index=ls_index)
-        await self.loop.run_in_executor(self.threadpool_executor, self.workers[ls_index]['worker'].input_queue.put,
-                                        (task_id, timeout, method, args, kwargs))
-
-        try:
-            self.futures[task_id] = self.loop.create_future()
-            await asyncio.wait_for(self.futures[task_id], timeout=self.tonlib_settings.request_timeout + 1)
-            return self.futures[task_id].result()
-        finally:
-            self.futures.pop(task_id)
+            try:
+                self.futures[task_id] = self.loop.create_future()
+                await asyncio.wait_for(self.futures[task_id], timeout=self.tonlib_settings.request_timeout + 1)
+                return self.futures[task_id].result()
+            finally:
+                self.futures.pop(task_id)
 
     async def dispatch_request(self, method: str, *args, **kwargs):
         stat_method = method
         if stat_method == 'raw_run_method':
             stat_method += '_' + args[1]
-        try:
-            self.stats[stat_method] += 1
-            ls_index = self.select_worker()
-            return await self.dispatch_request_to_worker(method, ls_index, *args, **kwargs)
-        except Exception:
-            self.stats[f'{stat_method}_error'] += 1
-            raise
+        ls_index = self.select_worker()
+        return await self.dispatch_request_to_worker(method, ls_index, *args, **kwargs)
 
     async def get_nft_item_address(self, collection_address, item_index):
         method = 'get_nft_item_address'

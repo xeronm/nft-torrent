@@ -11,12 +11,10 @@ from fastapi.exceptions import HTTPException
 from fastapi.responses import (FileResponse, RedirectResponse,
                                StreamingResponse, JSONResponse)
 from loguru import logger
-from pyTON.cache import DisabledCacheManager
-from pyTON.settings import RedisCacheSettings
 
 from NFTorrent.auth import (ContractAPIKeyCookie, NodeJWTBearer,
                             ServerResponseAuthError)
-from NFTorrent.cache import RedisCacheManager
+from NFTorrent.cache import DisabledCacheManager
 from NFTorrent.indexer import IndexDb
 from NFTorrent.ipfs import IpfsRpcManager, parse_uri
 from NFTorrent.models import HealthCheckResult
@@ -65,9 +63,10 @@ class Server:
                        " - webserver.storage_public_addr: {addr}\n"
                        " - webserver.twa_domains: {domains}\n"
                        " - webserver.allow_origins: {allow_origins}\n"
+                       " - webserver.collections: {collections} <{collection_config}>\n"
                        " - storage.enabled: {storage}\n"
                        " - ipfs.enabled: {ipfs}\n"
-                       " - cache.enabled: {cache_enabled}\n"
+                       " - cache.enabled: {cache_enabled} <{cache_manager}>\n"
                        " - indexdb.enabled: {indexdb_enabled}\n",
                        addr=self.settings.storage.storage_public_addr,
                        ipfs=self.settings.ipfs.enabled,
@@ -76,15 +75,15 @@ class Server:
                        domains=self.settings.webserver.twa_domains,
                        networks=self.settings.webserver.allow_networks,
                        storage=bool(self.settings.storage.num_workers > 0),
+                       collections=[x.address for x in self.settings.webserver.collection_config.collections],
+                       collection_config=self.settings.webserver.collection_config.__importname__,
                        cache_enabled=self.settings.cache.enabled,
+                       cache_manager=self.settings.cache.manager_class.__importname__,
                        indexdb_enabled=self.settings.indexdb.enabled)
 
         cache_manager = None
         if self.settings.cache.enabled:
-            if isinstance(self.settings.cache, RedisCacheSettings):
-                cache_manager = RedisCacheManager(self.settings.cache)
-            else:
-                raise RuntimeError('Only Redis cache supported')
+            cache_manager = self.settings.cache.manager_class(cache_settings=self.settings.cache.cache_settings)
         else:
             cache_manager = DisabledCacheManager()
 
@@ -157,9 +156,10 @@ class Server:
             load = self.storage.storage_lru.size * 100 / self.storage.settings.storage_max_size
         if self.ipfs is not None:
             ipfs_state = self.ipfs.get_cached_node_state()
-            load = ipfs_state['storage']['RepoSize'] * 100 / ipfs_state['storage']['StorageMax']
-            redundancy = len(ipfs_state['cluster_peers']) >= self.settings.ipfs.min_redundancy
-            stotage_state = ipfs_state['peers'] > self.ipfs.settings.min_peers_count
+            if ipfs_state is not None:
+                load = ipfs_state['storage']['RepoSize'] * 100 / ipfs_state['storage']['StorageMax']
+                redundancy = len(ipfs_state['cluster_peers']) >= self.settings.ipfs.min_redundancy
+                stotage_state = ipfs_state['peers'] > self.ipfs.settings.min_peers_count
         if self.indexer is not None:
             indexer_state = self.indexer.get_indexdb_state()
             last_checked = [x['stats']['last_checked'] for x in indexer_state.values()]

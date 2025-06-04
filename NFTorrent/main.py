@@ -20,7 +20,6 @@ from NFTorrent.pyTON.manager import ContractRequestError
 from NFTorrent.webserver import Server
 from NFTorrent.auth import set_cookie
 from NFTorrent.ipfs import IpfsRpcHttpException
-from NFTorrent.modelsbase import dataclass_to_influx
 
 ws = Server()
 
@@ -160,11 +159,7 @@ async def healthcheck() -> models.HealthCheckResult:
 async def statistics(request: Request) -> str:
     timestamp = int(time.time() * 1000000000)
     measurements = ws.get_measurements(timestamp)
-
-    measurements += [
-        f'NFTorrentHttp,{dataclass_to_influx(k)} {dataclass_to_influx(v)} {timestamp}'
-        for k, v in stats.items()
-    ]
+    measurements += stats.as_influx(timestamp)
     return '\n'.join(measurements)
 
 

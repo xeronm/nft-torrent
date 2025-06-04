@@ -1,8 +1,21 @@
 import redis.asyncio
 import ring
+from functools import wraps
 from loguru import logger
 from pyTON.settings import RedisCacheSettings
+from NFTorrent.settings import MemoryCacheSettings, BaseCacheManager
 from ring.func.asyncio import Aioredis2Storage
+
+
+class DisabledCacheManager(BaseCacheManager):
+    settings_class = None
+
+    def cached(self, expire=0, check_error=True):
+        def g(func):
+            def wrapper(*args, **kwargs):
+                return func(*args, **kwargs)
+            return wrapper
+        return g
 
 
 class ResultRedisStorage(Aioredis2Storage):
@@ -12,7 +25,9 @@ class ResultRedisStorage(Aioredis2Storage):
         return await super().set(key, value, expire)
 
 
-class RedisCacheManager:
+class RedisCacheManager(BaseCacheManager):
+    settings_class = RedisCacheSettings
+
     def __init__(self, cache_settings: RedisCacheSettings):
         self.cache_settings = cache_settings
         redis_url = f"redis://{cache_settings.redis.endpoint}:{cache_settings.redis.port}"
@@ -29,3 +44,16 @@ class RedisCacheManager:
             return ring.aioredis(self.cache_redis, coder='pickle', expire=expire, storage_class=storage_class)(func)
 
         return g
+
+
+
+class MemoryCacheManager(BaseCacheManager):
+    settings_class = MemoryCacheSettings
+
+    def __init__(self, cache_settings: MemoryCacheSettings):
+        self.cache_settings = cache_settings
+
+    def cached(self, expire=0, check_error=True):
+        def decorator(func):
+            return ring.lru(expire=expire, maxsize=self.cache_settings.max_size, force_asyncio=True)(func)
+        return decorator

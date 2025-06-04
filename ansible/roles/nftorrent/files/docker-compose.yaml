@@ -1,9 +1,9 @@
 services:
-  cache:
-    image: redis:latest
-    restart: unless-stopped
-    networks:
-      - internal
+  # cache:
+  #   image: redis:latest
+  #   restart: unless-stopped
+  #   networks:
+  #     - internal
 
   db:
     image: postgres:latest
@@ -75,9 +75,9 @@ services:
       TON_API_TONLIB_KEYSTORE: /ton_keystore/
       TON_API_TONLIB_REQUEST_TIMEOUT: 20
       TON_API_TONLIB_LITESERVER_CONFIG: /run/secrets/liteserver_config
-      TON_API_CACHE_ENABLED: 1
-      TON_API_CACHE_REDIS_ENDPOINT: cache
-      TON_API_CACHE_REDIS_TIMEOUT: 2
+      CACHE_ENABLED: 1
+      # TON_API_CACHE_REDIS_ENDPOINT: cache
+      # TON_API_CACHE_REDIS_TIMEOUT: 2
       INDEXDB_ENABLED: 1
       INDEXDB_INDEXER_TIMEOUT: 30
       INDEXDB_DATABASE_HOST: db
@@ -107,7 +107,7 @@ services:
     depends_on:
       - ipfs
       - db
-      - cache
+      # - cache
 
 secrets:
   liteserver_config:

@@ -1,5 +1,4 @@
 import time
-from collections import defaultdict
 from dataclasses import dataclass
 from typing import Optional
 
@@ -8,6 +7,7 @@ from starlette.middleware.base import (BaseHTTPMiddleware, DispatchFunction,
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.types import ASGIApp
+from NFTorrent.modelsbase import MeasurementStore
 
 
 @dataclass(frozen=True)
@@ -18,20 +18,15 @@ class StatisticTags:
 
 
 @dataclass
-class StatisticMeasurements:
+class StatisticMeasurement:
     count: int = 0
     duration: float = 0
 
 
-class StatisticsStore(defaultdict):
+class StatisticsStore(MeasurementStore):
 
     def __init__(self):
-        super().__init__(StatisticMeasurements)
-
-    def as_list(self):
-        _timestamp = int(time.time() * 1000000)
-        return [{'tags': k, 'fields': v, 'timestamp': _timestamp}
-                for k, v in self.items()]
+        super().__init__('NFTorrentHTTP', StatisticMeasurement)
 
 
 class StatisticsMiddleware(BaseHTTPMiddleware):
