@@ -228,20 +228,21 @@ class Server:
         if uri:
             if uri.startswith("ipfs://"):
                 cid, file_path, digest = parse_ipfs_uri(uri)
-                if not digest:
-                    cid_info = await self.ipfs.get_cid_info(cid=cid)
-                    if not cid_info.files:
-                        digest = cid_info.digest
-                    else:
-                        if file_path:
-                            file_info = cid_info.get_file(filename=file_path)
-                        else:
-                            _list = cid_info.list_types(mime_prefix="image/")
-                            if _list is not None:
-                                file_info = _list[0]
-                        if not file_info:
-                            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-                        digest = file_info.digest
+                cid_info = await self.ipfs.get_cid_info(cid=cid)
+                if not cid_info.files:
+                    digest = cid_info.digest
+                else:
+                    file_info = None
+                    if file_path or digest:
+                        file_info = cid_info.get_file(filename=file_path, digest=digest)
+                    if not file_info:
+                        # fallback
+                        _list = cid_info.list_types(mime_prefix="image/")
+                        if _list is not None:
+                            file_info = _list[0]
+                    if not file_info:
+                        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+                    digest = file_info.digest
                 return RedirectResponse(request.url_for("get_nft_torrent_content", address=address, digest=digest))
             else:
                 return RedirectResponse(uri)
