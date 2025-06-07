@@ -2,22 +2,26 @@ import asyncio
 import random
 import time
 from dataclasses import dataclass
-from typing import List
 
 from loguru import logger
 from pyTON.manager import TonlibManager as _TonlibManager
 from pytonlib import TonlibError
-from pytonlib.utils.address import detect_address
-from pytonlib.utils.tokens import (parse_nft_collection_data,
-                                   parse_nft_item_data)
+from pytonlib.utils.tokens import parse_nft_collection_data, parse_nft_item_data
 from tonpy.types import CellSlice
 
-from NFTorrent.modelsbase import (CollectionConfig, CollectionData, NftItemData,
-                                  MeasurementStore, StatisticMeasurement)
+from NFTorrent.modelsbase import (
+    CollectionConfig,
+    CollectionData,
+    MeasurementStore,
+    NftItemData,
+    StatisticMeasurement,
+    TonAddress,
+)
 
 
 class ContractRequestError(Exception):
     pass
+
 
 @dataclass(frozen=True)
 class StatisticTags:
@@ -30,25 +34,32 @@ class TonlibManager(_TonlibManager):
     def __init__(self, *args, collection_config: CollectionConfig = None, **kwargs):
         super().__init__(*args, **kwargs)
         self.collection_config = collection_config
-        self.stats = MeasurementStore('NFTorrentLiteservers', StatisticMeasurement)
+        self.stats = MeasurementStore("NFTorrentLiteservers", StatisticMeasurement)
 
     def get_tonlib_state(self):
         return {
-            'workers': self.get_workers_state(),
-            'stats': self.stats.as_list(),
+            "workers": self.get_workers_state(),
+            "stats": self.stats.as_list(),
         }
 
-    def get_measurements(self, timestamp: int) -> List[str]:
+    def get_measurements(self, timestamp: int) -> list[str]:
         return self.stats.as_influx(timestamp)
 
     async def dispatch_request_to_worker(self, method, ls_index, *args, **kwargs):
-        task_id = "{}:{}".format(time.time(), random.random())
+        task_id = f"{time.time()}:{random.random()}"
         timeout = time.time() + self.tonlib_settings.request_timeout
-        with (self.stats[StatisticTags(ls_index, None)], self.stats[StatisticTags(ls_index, method)]):
-            logger.info("Sending request method: {method}, task_id: {task_id}, ls_index: {ls_index}",
-                        method=method, task_id=task_id, ls_index=ls_index)
-            await self.loop.run_in_executor(self.threadpool_executor, self.workers[ls_index]['worker'].input_queue.put,
-                                            (task_id, timeout, method, args, kwargs))
+        with self.stats[StatisticTags(ls_index, None)], self.stats[StatisticTags(ls_index, method)]:
+            logger.info(
+                "Sending request method: {method}, task_id: {task_id}, ls_index: {ls_index}",
+                method=method,
+                task_id=task_id,
+                ls_index=ls_index,
+            )
+            await self.loop.run_in_executor(
+                self.threadpool_executor,
+                self.workers[ls_index]["worker"].input_queue.put,
+                (task_id, timeout, method, args, kwargs),
+            )
 
             try:
                 self.futures[task_id] = self.loop.create_future()
@@ -59,13 +70,13 @@ class TonlibManager(_TonlibManager):
 
     async def dispatch_request(self, method: str, *args, **kwargs):
         stat_method = method
-        if stat_method == 'raw_run_method':
-            stat_method += '_' + args[1]
+        if stat_method == "raw_run_method":
+            stat_method += "_" + args[1]
         ls_index = self.select_worker()
         return await self.dispatch_request_to_worker(method, ls_index, *args, **kwargs)
 
     async def get_nft_item_address(self, collection_address, item_index):
-        method = 'get_nft_item_address'
+        method = "get_nft_item_address"
         try:
             addr = await self.dispatch_request(method, collection_address, item_index)
         except TonlibError:
@@ -73,30 +84,31 @@ class TonlibManager(_TonlibManager):
         return addr
 
     async def get_nft_data(self, address: str, skip_verification: bool = False, owner: str = None) -> NftItemData:
-        nft_data_result = await self.raw_run_method(address, 'get_nft_data', [], None)
-        if nft_data_result['stack'] is None or len(nft_data_result['stack']) != 5:
+        addr = TonAddress(address)
+        nft_data_result = await self.raw_run_method(address, "get_nft_data", [], None)
+        if nft_data_result["stack"] is None or len(nft_data_result["stack"]) != 5:
             raise ContractRequestError("Smart contract is not NFT")
 
-        nft_data = parse_nft_item_data(nft_data_result['stack'])
-        if owner is not None and detect_address(nft_data['owner_address'])['raw_form'] != detect_address(owner)['raw_form']:
+        nft_data = parse_nft_item_data(nft_data_result["stack"])
+        if owner is not None and TonAddress(nft_data["owner_address"]) != TonAddress(owner):
             raise ContractRequestError("NFT owner mistmach")
 
         nft_collection = None
-        if nft_data['collection_address'] is not None:
-            nft_collection = self.collection_config.get_collection(nft_data['collection_address'])
+        if nft_data["collection_address"] is not None:
+            nft_collection = self.collection_config.get_collection(nft_data["collection_address"])
         if nft_collection is None:
             raise ContractRequestError("NFT collection not known")
 
         if not skip_verification:
-            verified_nft_address = await self.get_nft_item_address(nft_data['collection_address'], nft_data['index'])
-            if detect_address(verified_nft_address)['raw_form'] != detect_address(address)['raw_form']:
+            verified_nft_address = await self.get_nft_item_address(nft_data["collection_address"], nft_data["index"])
+            if TonAddress(verified_nft_address) != addr:
                 raise ContractRequestError("Verification with NFT collection failed")
 
         # print(nft_data['individual_content'])
-        nft_data['individual_content'] = self.collection_config.nft_content_class.from_tvm(
-            CellSlice(nft_data['individual_content']))
-        nft_data['address'] = detect_address(address)['bounceable']['b64url']
-
+        nft_data["individual_content"] = self.collection_config.nft_content_class.from_tvm(
+            CellSlice(nft_data["individual_content"])
+        )
+        nft_data["address"] = addr.b64url
         return NftItemData(**nft_data)
 
     async def get_collection_data(self, address: str) -> CollectionData:
@@ -104,15 +116,15 @@ class TonlibManager(_TonlibManager):
         if nft_collection is None:
             raise ContractRequestError("NFT collection not known")
 
-        collection_data_result = await self.raw_run_method(address, 'get_collection_data', [], None)
-        if collection_data_result['stack'] is None or len(collection_data_result['stack']) != 3:
+        collection_data_result = await self.raw_run_method(address, "get_collection_data", [], None)
+        if collection_data_result["stack"] is None or len(collection_data_result["stack"]) != 3:
             raise ContractRequestError("Smart contract is not NFT Collection")
-        collection_data = parse_nft_collection_data(collection_data_result['stack'])
+        collection_data = parse_nft_collection_data(collection_data_result["stack"])
 
-        collection_info_result = await self.raw_run_method(address, 'get_info', [], None)
+        collection_info_result = await self.raw_run_method(address, "get_info", [], None)
         info_class = self.collection_config.collection_info_class
-        collection_data['collection_info'] = info_class.from_tvm(collection_info_result['stack'])
-        collection_data['address'] = detect_address(address)['bounceable']['b64url']
+        collection_data["collection_info"] = info_class.from_tvm(collection_info_result["stack"])
+        collection_data["address"] = TonAddress(address).b64url
         return CollectionData(**collection_data)
 
     def setup_cache(self):

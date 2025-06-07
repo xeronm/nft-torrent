@@ -7,7 +7,7 @@ from tonpy.types import CellSlice
 #    0x20250100 - means 2025-01-*
 #    0x20250000 - means 2025-*
 def date_mask_to_string(n: int) -> str:
-    _chars = ['']*10
+    _chars = [""] * 10
     j = 0
     if (n >> 16) & 0xFFFF:
         i = 28
@@ -22,7 +22,7 @@ def date_mask_to_string(n: int) -> str:
                     i = 0
             j += 1
             i -= 4
-        return ''.join(_chars)
+        return "".join(_chars)
     else:
         return "*"
 
@@ -38,4 +38,4 @@ def flatten_snake_cell(cs: CellSlice) -> bytes:
     while cs:
         buffer.append(BitArray(bin=cs.to_bitstring()).tobytes())
         cs = cs.load_ref(as_cs=True) if cs.refs else None
-    return b''.join(buffer)
+    return b"".join(buffer)

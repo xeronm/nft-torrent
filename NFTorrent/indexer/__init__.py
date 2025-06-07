@@ -1,3 +1,3 @@
 from .indexdb import IndexDb
 
-__all__ = ['IndexDb']
+__all__ = ["IndexDb"]

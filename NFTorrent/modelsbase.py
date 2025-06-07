@@ -2,42 +2,37 @@ import abc
 import datetime
 import time
 from collections import defaultdict
-from dataclasses import dataclass, fields, field
-from typing import Any, Dict, List, Type
+from dataclasses import dataclass, field
+from typing import Any
 
 from pytonlib.utils.address import detect_address
 from sqlmodel import Field, SQLModel
 from tonpy.types import CellSlice
 
-
-def dataclass_to_influx(instance):
-    kv = []
-    for field in fields(instance):
-        value = getattr(instance, field.name, None)
-        if value is None:
-            continue
-        if issubclass(field.type, str):
-            if not isinstance(value, str):
-                value = str(value)
-            value = '"' + value.replace('"', '\\"') + '"'
-        kv.append(f'{field.name}={value}')
-    return ','.join(kv)
+from NFTorrent.utils import dataclass_to_influx
 
 
-def dict_to_influx(instance: Dict):
-    kv = []
-    for k, v in instance.items():
-        value = v
-        if value is None:
-            continue
-        if isinstance(v, dict):
-            continue
-        elif isinstance(v, bool):
-            value = int(value)
-        elif isinstance(v, str):
-            value = '"' + value.replace('"', '\\"') + '"'
-        kv.append(f'{k}={value}')
-    return ','.join(kv)
+@dataclass(frozen=True)
+class TonAddress:
+    address: str
+    raw_form: str = field(init=False)
+    b64: str = field(init=False)
+    b64url: str = field(init=False)
+
+    def __post_init__(self):
+        address = detect_address(self.address)
+        object.__setattr__(self, "raw_form", address["raw_form"])
+        addr_map = None
+        if "non_bounceable" in address["given_type"]:
+            addr_map = address["non_bounceable"]
+        else:
+            addr_map = address["bounceable"]
+        object.__setattr__(self, "b64", addr_map["b64"])
+        object.__setattr__(self, "b64url", addr_map["b64url"])
+
+    def __eq__(self, other):
+        return self.raw_form == other.raw_form
+
 
 @dataclass
 class StatisticMeasurement:
@@ -66,15 +61,11 @@ class MeasurementStore(defaultdict):
 
     def as_list(self):
         _timestamp = self.get_timestamp()
-        return [{'tags': k, 'fields': v, 'timestamp': _timestamp}
-                for k, v in self.items()]
+        return [{"tags": k, "fields": v, "timestamp": _timestamp} for k, v in self.items()]
 
     def as_influx(self, timestamp):
         timestamp = timestamp or self.get_timestamp()
-        return [
-            f'{self.name},{dataclass_to_influx(k)} {dataclass_to_influx(v)} {timestamp}'
-            for k, v in self.items()
-        ]
+        return [f"{self.name},{dataclass_to_influx(k)} {dataclass_to_influx(v)} {timestamp}" for k, v in self.items()]
 
 
 class BaseCollectionModel(SQLModel, table=False):
@@ -134,7 +125,7 @@ class BaseCollectionInfo:
 
     @classmethod
     @abc.abstractmethod
-    def from_tvm(cls, stack: List):
+    def from_tvm(cls, stack: list):
         pass
 
 
@@ -142,31 +133,28 @@ class BaseCollectionInfo:
 class CollectionInstance:
     address: str
     image: str
-    meta: Dict[str, Any] = field(default_factory=dict)
+    meta: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
-        object.__setattr__(self, "_address", detect_address(self.address))
+        object.__setattr__(self, "_address", TonAddress(self.address))
 
     def address_url(self):
-        return self._address['bounceable']['b64url']
+        return self._address.b64url
 
 
 @dataclass
 class CollectionConfig:
-    collection_info_class: Type[BaseCollectionInfo]
-    nft_content_class: Type[BaseNftContent]
-    collections: List[CollectionInstance]
-    dbmodel_class: Type[BaseCollectionModel] = None
-    dbmodel_nft_class: Type[BaseNftModel] = None
+    collection_info_class: type[BaseCollectionInfo]
+    nft_content_class: type[BaseNftContent]
+    collections: list[CollectionInstance]
+    dbmodel_class: type[BaseCollectionModel] = None
+    dbmodel_nft_class: type[BaseNftModel] = None
 
     def __post_init__(self):
-        self._collections_map = {
-            x._address['raw_form']: x
-            for x in self.collections
-        }
+        self._collections_map = {x._address.raw_form: x for x in self.collections}
 
     def get_collection(self, address: str):
-        return self._collections_map.get(detect_address(address)['raw_form'])
+        return self._collections_map.get(TonAddress(address).raw_form)
 
 
 @dataclass(frozen=True)
@@ -196,4 +184,4 @@ class NftItemHeader:
     collection_address: str = None
     image: str = None
     image_data: str = None
-    icons: Dict[str, List[str]] = None
+    icons: dict[str, list[str]] = None

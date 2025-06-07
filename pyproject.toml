@@ -1,0 +1,78 @@
+[build-system]
+requires = [
+    "setuptools>=61",
+    "wheel"
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ton-nft-torrent"
+version = "0.2.0"
+description = "TON NFT Torrent content HTTP Gateway"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "GPL-3.0-only"
+
+authors = [
+  { name = "Denis Muratov", email = "xeronm@gmail.com" }
+]
+
+maintainers = [
+  { name = "Denis Muratov", email = "xeronm@gmail.com" }
+]
+
+urls = { "Homepage" = "https://github.com/xeronm/nft-torrent" }
+
+dependencies = [
+  "ton-http-api==2.0.54",
+  "python-multipart",
+  "tonpy",
+  "aiohttp",
+  "pyjwt",
+  "pynacl",
+  "sqlmodel",
+  "psycopg2-binary",
+  "pillow"
+]
+
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Web Environment",
+  "Framework :: FastAPI",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Internet :: WWW/HTTP"
+]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+exclude = ["test*"]
+
+
+[tool.black]
+line-length = 120
+target-version = ["py310"]
+
+[tool.isort]
+profile = "black"
+line_length = 120
+known_first_party = ["your_project"]
+multi_line_output = 3
+include_trailing_comma = true
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+ignore = ["E501"]
+extend-select = ["E", "F", "B", "C", "I", "UP"]
+# E: pycodestyle, F: pyflakes, B: bugbear, C: mccabe complexity, I: isort, UP: pyupgrade
+
+[tool.ruff.lint.mccabe]
+max-complexity = 16
