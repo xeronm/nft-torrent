@@ -115,8 +115,8 @@ class IndexDb:
         # running tasks
         for c in self.collection_config.collections:
             data = CollectionTaskData(c, instance=self.sync_collection_upsert(c))
-            self.collections[c.address] = data
-            self.indexer_tasks[c.address] = self.loop.create_task(self.nft_indexer(data))
+            self.collections[c.b64url] = data
+            self.indexer_tasks[c.b64url] = self.loop.create_task(self.nft_indexer(data))
 
     async def shutdown(self):
         for task in self.indexer_tasks.values():
@@ -129,7 +129,7 @@ class IndexDb:
         self.collection_random_feed = self.cache_manager.cached(expire=600)(self.collection_random_feed)
 
     async def nft_indexer(self, data: CollectionTaskData):
-        address = data.nft_collection.address
+        address = data.nft_collection.b64url
         logger.warning("IndexDb[nft_indexer:{address}]: Collection indexer, entering main loop", address=address)
         while True:
             await asyncio.sleep(self.settings.indexer_timeout)
@@ -302,12 +302,12 @@ class IndexDb:
         with Session(self.dbengine) as session:
             try:
                 instance = session.exec(
-                    select(model_class).where(model_class.address == collection.address_url())
+                    select(model_class).where(model_class.address == collection.b64url)
                 ).one()
             except NoResultFound:
                 instance = None
             if instance is None:
-                instance = model_class(address=collection.address_url(), index=0)
+                instance = model_class(address=collection.b64url, index=0)
                 session.add(instance)
                 session.commit()
                 session.refresh(instance)
@@ -361,7 +361,7 @@ class IndexDb:
             x0 = p0 = segment_size * n
             x1 = p1 = p0 + segment_size
 
-            select_stmt = select(model_class).where(model_class.error_time is None)
+            select_stmt = select(model_class).where(model_class.error_time == None)  # noqa: E711
             for col, value in kwargs.items():
                 if value is not None:
                     select_stmt = select_stmt.where(getattr(model_class, col) == value)

@@ -130,16 +130,9 @@ class BaseCollectionInfo:
 
 
 @dataclass(frozen=True)
-class CollectionInstance:
-    address: str
+class CollectionInstance(TonAddress):
     image: str
     meta: dict[str, Any] = field(default_factory=dict)
-
-    def __post_init__(self):
-        object.__setattr__(self, "_address", TonAddress(self.address))
-
-    def address_url(self):
-        return self._address.b64url
 
 
 @dataclass
@@ -151,7 +144,7 @@ class CollectionConfig:
     dbmodel_nft_class: type[BaseNftModel] = None
 
     def __post_init__(self):
-        self._collections_map = {x._address.raw_form: x for x in self.collections}
+        self._collections_map = {x.raw_form: x for x in self.collections}
 
     def get_collection(self, address: str):
         return self._collections_map.get(TonAddress(address).raw_form)
