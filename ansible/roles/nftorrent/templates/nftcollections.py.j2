@@ -12,7 +12,7 @@ config = CollectionConfig(
         CollectionInstance(
             address="{{ param.address }}",
             image="{{ param.image }}",
-            meta="{{ param.meta }}",
+            meta={{ dict(param.meta) }},
         ),
 {% endfor %}
     ]

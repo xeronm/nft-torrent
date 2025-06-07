@@ -16,11 +16,11 @@ class TestPetMemoryNftContent(unittest.TestCase):
         self.assertIsNone(content.data.bag_id)
         self.assertEqual(content.data.image, "https://muratov.xyz/petsmem/images/marcus-1.jpg")
 
-        self.assertEqual(content.imm_data.name, 'Marcus')
-        self.assertEqual(content.imm_data.breed, 'Nibelung')
+        self.assertEqual(content.imm_data.name, "Marcus")
+        self.assertEqual(content.imm_data.breed, "Nibelung")
         self.assertEqual(round(content.imm_data.geo_point.longitude, 4), 38.9817)
-        self.assertEqual(content.imm_data.birth_date, '*')
-        self.assertEqual(content.imm_data.death_date, '2024-11-15')
+        self.assertEqual(content.imm_data.birth_date, "*")
+        self.assertEqual(content.imm_data.death_date, "2024-11-15")
 
     def test_content_with_bag_id(self):
         # NFT Collection Address: EQBOdDO6iszbtbR0YnOz2IHk2eP6cCVKqkl7vRvoEtwa83lU
