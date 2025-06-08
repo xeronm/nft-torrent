@@ -138,7 +138,7 @@ class IndexDb:
                 if self.tonlib is None:
                     continue
                 if sum([1 for x in self.tonlib.get_workers_state().values() if x["is_working"]]) == 0:
-                    logger.warning("IndexDb[nft_indexer:{address}]: No active Tonlib workers")
+                    logger.warning("IndexDb[nft_indexer:{address}]: No active Tonlib workers", address=address)
                     continue
 
                 # Refresh data from DB
