@@ -16,7 +16,7 @@ from NFTorrent.indexer import IndexDb
 from NFTorrent.ipfs import IpfsRpcManager
 from NFTorrent.models import HealthCheckResult
 from NFTorrent.modelsbase import CollectionConfig
-from NFTorrent.pyTON.manager import TonlibManager
+from NFTorrent.tonlib import TonlibManager
 from NFTorrent.settings import Settings
 from NFTorrent.utils import dict_to_influx, guess_type, parse_ipfs_uri
 
@@ -31,7 +31,6 @@ class Server:
         self.ipfs: IpfsRpcManager = None
         self.peer_hostnames = {}
         self.loop = None
-        self.stats = Counter()
 
         self.jwt_bearer = NodeJWTBearer(
             subject=self.settings.webserver.public_addr or "127.0.0.1",
@@ -50,7 +49,7 @@ class Server:
         )
 
     async def startup(self):
-        self.stats["started"] = int(time.time())
+        self.start_time = int(time.time())
         self.loop = loop = asyncio.get_event_loop()
         logger.warning("Server startup initiated...")
         logger.warning(
@@ -85,8 +84,7 @@ class Server:
             raise RuntimeError("Tonlib liteserver_config required")
 
         self.tonlib = TonlibManager(
-            tonlib_settings=self.settings.tonlib,
-            dispatcher=None,
+            settings=self.settings.tonlib,
             cache_manager=cache_manager,
             loop=loop,
             collection_config=self.collection_config,
@@ -130,7 +128,7 @@ class Server:
     def get_healthcheck(self) -> HealthCheckResult:
         stotage_state = tonlib_state = indexer_state = None
         if self.tonlib is not None:
-            tonlib_state = sum([1 for x in self.tonlib.get_workers_state().values() if x["is_working"]])
+            tonlib_state = sum([1 for x in self.tonlib.get_workers_state().values() if x["is_sync"]])
 
         load = redundancy = 0
         if self.ipfs is not None:
@@ -141,7 +139,7 @@ class Server:
                 stotage_state = ipfs_state["peers"] > self.ipfs.settings.min_peers_count
         if self.indexer is not None:
             indexer_state = self.indexer.get_indexdb_state()
-            last_checked = [x["stats"]["last_checked"] for x in indexer_state.values()]
+            last_checked = [x["fields"]["last_checked"] for x in indexer_state['stats']]
             indexer_state = len(last_checked) == len(
                 [x for x in last_checked if x >= time.time() - self.indexer.settings.indexer_timeout * 2]
             )
@@ -157,7 +155,7 @@ class Server:
     def get_measurements(self, timestamp: int):
         hc = self.get_healthcheck()
         _stats = hc.dict()
-        _stats.update(self.stats)
+        _stats['start_time'] = self.start_time
         measurements = [f"NFTorrentServer {dict_to_influx(_stats)} {timestamp}"]
         if self.tonlib is not None:
             measurements += self.tonlib.get_measurements(timestamp)
@@ -166,43 +164,6 @@ class Server:
         if self.indexer is not None:
             measurements += self.indexer.get_measurements(timestamp)
         return measurements
-
-    async def remote_call(self, host: str, remote_path: str):
-        # host = await self._get_peer_hostname(peer["ip_str"])
-        result = {}
-        logger.info(
-            "Call storage remote peer, host: {host}, remote_path: {remote_path}", host=host, remote_path=remote_path
-        )
-        async with aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=self.settings.webserver.request_timeout)
-        ) as session:
-            try:
-                self.stats["call_remote"] += 1
-                async with await session.get(
-                    self._get_peer_uri(host, remote_path),
-                    headers=self._get_peer_headers(host),
-                    verify_ssl=self.settings.webserver.verify_ssl,
-                    allow_redirects=False,
-                ) as resp:
-                    if self.settings.webserver.bearer_auth_response:
-                        await self.jwt_bearer.response_credentials(resp, host)
-                    result["status"] = resp.status
-                    result["response"] = await resp.read()
-                    result["headers"] = resp.headers
-            except Exception as E:
-                self.stats["call_remote_error"] += 1
-                if isinstance(E, ServerResponseAuthError):
-                    self.stats["remote_auth_error"] += 1
-                result["error"] = str(E)
-                logger.warning(
-                    "Call storage remote peer error, host: {host}, remote_path: {remote_path}, exc: {exc}",  # noqa: E501
-                    host=host,
-                    remote_path=remote_path,
-                    exc=str(E),
-                )
-
-        token = self.jwt_bearer.get_jwt_token(host)
-        return result, token
 
     async def get_nft_content(self, request: Request, address: str, query: str = None):
         nft_collection = self.collection_config.get_collection(address)

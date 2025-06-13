@@ -1,10 +1,9 @@
 import redis.asyncio
 import ring
 from loguru import logger
-from pyTON.settings import RedisCacheSettings
 from ring.func.asyncio import Aioredis2Storage
 
-from NFTorrent.settings import BaseCacheManager, MemoryCacheSettings
+from NFTorrent.settings import BaseCacheManager, MemoryCacheSettings, RedisCacheSettings
 
 
 class DisabledCacheManager(BaseCacheManager):
@@ -32,12 +31,12 @@ class RedisCacheManager(BaseCacheManager):
 
     def __init__(self, cache_settings: RedisCacheSettings):
         self.cache_settings = cache_settings
-        redis_url = f"redis://{cache_settings.redis.endpoint}:{cache_settings.redis.port}"
+        redis_url = f"redis://{cache_settings.endpoint}:{cache_settings.port}"
         logger.warning("Redis Cache: {redis_url}", redis_url=redis_url)
         self.cache_redis = redis.asyncio.from_url(
             redis_url,
-            socket_timeout=cache_settings.redis.timeout,
-            socket_connect_timeout=cache_settings.redis.timeout,
+            socket_timeout=cache_settings.timeout,
+            socket_connect_timeout=cache_settings.timeout,
             socket_keepalive=True,
         )
 

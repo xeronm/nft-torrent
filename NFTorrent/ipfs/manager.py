@@ -10,13 +10,13 @@ from urllib.parse import urlencode, urljoin
 import aiohttp
 from fastapi import HTTPException, UploadFile, status
 from loguru import logger
-from pyTON.cache import CacheManager, DisabledCacheManager
 
 from NFTorrent import exceptions, models
 from NFTorrent.modelsbase import MeasurementStore, StatisticMeasurement
-from NFTorrent.pyTON.manager import TonlibManager
+from NFTorrent.tonlib import TonlibManager
 from NFTorrent.settings import IpfsSettings
 from NFTorrent.utils import dict_to_influx, parse_ipfs_uri
+from NFTorrent.cache import BaseCacheManager, DisabledCacheManager
 
 
 class LockShouldWaitError(Exception):
@@ -70,7 +70,7 @@ class IpfsRpcManager:
         settings: IpfsSettings,
         #  num_workers: int = None,
         #  restart_timeout: int = None,
-        cache_manager: CacheManager | None = None,
+        cache_manager: BaseCacheManager | None = None,
         loop: asyncio.BaseEventLoop | None = None,
         tonlib: TonlibManager = None,
     ):

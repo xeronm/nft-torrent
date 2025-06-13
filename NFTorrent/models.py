@@ -31,7 +31,7 @@ class NftMethod(BaseModel):
 
 
 class NftContentMethod(NftMethod):
-    q: str = Query(description="NFT content query", default=None)
+    q: str | None = Query(description="NFT content query", default=None)
 
 
 class BaseNftContentMethod(BaseModel):
@@ -59,42 +59,54 @@ class NewNftTorrentCreate(BaseModel):
 
 
 class LiteserverId(BaseModel):
-    _type: str = Field(..., alias="@type")
+    type: str = Field(..., alias="@type")
     key: str
 
 
 class TonlibWorkerState(BaseModel):
-    ls_index: int
-    ip: int
-    port: int
-    provided: str | None
-    id: LiteserverId
-    is_working: bool
-    is_archival: bool
-    is_enabled: bool
-    last_block: int
-    restart_count: int
-    tasks_count: int
+    ls_index: int = 0
+    is_alive: bool = False
+    is_sync: bool = False
+    is_enabled: bool = True
+    is_archival: bool = False
+    last_block: int = -1
+    last_block_time: float = 0
+    start_mt: float = 0
+    start_time: float = 0
+    restart_count: int = 0
+    tasks_count: int = 0
+    pending_tasks: int = 0
+    sync_time: float = 0
+    sync_mt: float = 0
+    sync_duration: int = 0
+    sync_dur_ema: float = 0
+    off_sync_time: float = 0
+    off_sync_mt: float = 0
+    off_sync_count: int = 0
+    off_sync_duration: int = 0
+    off_sync_dur_ema: float = 0
+    config: dict[str, Any] = None
 
 
-class IndexDbWorkerState(BaseModel):
-    address: str
-    next_index: int
-    stats: dict[str, int]
+class MeasurementItem(BaseModel):
+    tags: dict[str, Any] | None
+    fields: dict[str, Any]
+    timestamp: int
 
 
 class TonlibManagerState(BaseModel):
-    workers: dict[str, TonlibWorkerState]
-    stats: dict[str, int]
+    workers: dict[int, TonlibWorkerState]
+    stats: list[MeasurementItem]
 
 
 class IndexDbState(BaseModel):
-    collections: dict[str, IndexDbWorkerState]
+    collections: list[Any]
+    stats: list[MeasurementItem]
 
 
 class StorageWorkerState(BaseModel):
     client_id: int
-    is_healthy: bool
+    is_sync: bool
     is_enabled: bool
     start_time: float
     restart_count: int
@@ -103,8 +115,8 @@ class StorageWorkerState(BaseModel):
 
 
 class StorageManagerState(BaseModel):
-    workers: dict[str, StorageWorkerState]
-    stats: dict[str, int]
+    workers: dict[int, StorageWorkerState]
+    stats: list[MeasurementItem]
     size: int
     size_pressure: int
 
@@ -228,8 +240,8 @@ class NftContentInfo(BaseModel):
     size: int
     state: NftContentState = NftContentState.READY
     digest: str = None
-    files: list[NftContentFile]
-    pin: NftContentPin = None
+    files: list[NftContentFile] = None
+    pin: NftContentPin | None = None
 
     def make_digest(self):
         digest = hashlib.shake_256((self.hash).encode()).digest(15)

@@ -13,12 +13,18 @@ def guess_type(url: str, strict: bool = True, default_type: str = None, default_
     return mime_type or default_type, encodings or default_encoding
 
 
-def dataclass_to_influx(instance):
+def dataclass_to_influx(instance, excludes: list[str] = None):
     kv = []
     for _field in fields(instance):
+        if excludes and _field.name in set(excludes):
+            continue
         value = getattr(instance, _field.name, None)
         if value is None:
             continue
+        if not isinstance(value, (str, int, float, bool)):
+            continue
+        if isinstance(value, bool):
+            value = 1 if value else 0
         if issubclass(_field.type, str):
             if not isinstance(value, str):
                 value = str(value)

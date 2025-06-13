@@ -2,7 +2,7 @@ import abc
 import datetime
 import time
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from typing import Any
 
 from pytonlib.utils.address import detect_address
@@ -34,6 +34,11 @@ class TonAddress:
         return self.raw_form == other.raw_form
 
 
+@dataclass(frozen=True)
+class StatisticNoTags:
+    pass
+
+
 @dataclass
 class StatisticMeasurement:
     count: int = 0
@@ -61,7 +66,7 @@ class MeasurementStore(defaultdict):
 
     def as_list(self):
         _timestamp = self.get_timestamp()
-        return [{"tags": k, "fields": v, "timestamp": _timestamp} for k, v in self.items()]
+        return [{"tags": asdict(k), "fields": asdict(v), "timestamp": _timestamp} for k, v in self.items()]
 
     def as_influx(self, timestamp):
         timestamp = timestamp or self.get_timestamp()
@@ -133,6 +138,7 @@ class BaseCollectionInfo:
 class CollectionInstance(TonAddress):
     image: str
     meta: dict[str, Any] = field(default_factory=dict)
+    nft_samples: dict[str, str] = None
 
 
 @dataclass

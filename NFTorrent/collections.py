@@ -16,6 +16,11 @@ config = CollectionConfig(
                 "description": "Transform your memories into living digital artifacts — timeless, immutable and authentic, powered by blockchain technology. Share your story with those who'll truly understand, inspire others, and preserve what matters most in a world where nothing truly disappears.\nBecause some stories are too precious to remain just another photo in your smartphone gallery.",
                 "attributes": [],
             },
+            nft_samples={
+                'image_url': 'UQDGmyLShGRLKLTvXT027DQGmIQ5K-FU7U0ULuGsnVRKLGg9',
+                'image_onchain': 'UQBI_r486VLTnscs7SQNE29vETuHajF0mxwpGu57VzSLwPnY',
+                'image_ipfs': 'UQCckh6snB2Yvl7fPY8Jy-fVKEFPMPCY16kRcm7868JVPvOZ',
+            }
         ),
     ],
 )

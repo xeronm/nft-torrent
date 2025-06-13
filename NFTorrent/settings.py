@@ -1,11 +1,18 @@
 import os
+import requests
+import json
 from abc import abstractmethod
 from dataclasses import dataclass
 from importlib import import_module
 
-from pyTON import settings
-
 from NFTorrent.modelsbase import CollectionConfig
+
+def strtobool(val):
+    if val.lower() in ['y', 'yes', 't', 'true', 'on', '1']:
+        return True
+    if val.lower() in ['n', 'no', 'f', 'false', 'off', '0']:
+        return False
+    raise ValueError(f"Invalid bool value {val}")
 
 
 def import_string(dotted_path):
@@ -65,8 +72,8 @@ class WebServerSettings:
     @classmethod
     def from_environment(cls):
         obj = cls.__new__(cls)
-        obj.debug = settings.strtobool(os.environ.get("HTTP_DEBUG", "false"))
-        obj.api_root_path = os.environ.get("HTTP_API_ROOT_PATH", "/")
+        obj.debug = strtobool(os.environ.get("HTTP_DEBUG", "false"))
+        obj.api_root_path = os.environ.get("HTTP_API_ROOT_PATH", "")
         obj.remote_api_root = os.environ.get("HTTP_REMOTE_API_ROOT")
         obj.public_addr = os.environ.get("HTTP_PUBLIC_ADDR", "127.0.0.1")
         obj.jwt_secret = _value_from_file(os.environ.get("HTTP_API_JWT_SECRET", None))
@@ -74,10 +81,10 @@ class WebServerSettings:
         obj.port = os.environ.get("HTTP_PORT", None)
         if obj.port is not None:
             obj.port = int(obj.port)
-        obj.enable_ssl = settings.strtobool(os.environ.get("HTTP_ENABLE_SSL", "true"))
-        obj.verify_ssl = settings.strtobool(os.environ.get("HTTP_VERIFY_SSL", "true"))
-        obj.bearer_auth_response = settings.strtobool(os.environ.get("HTTP_BEARER_AUTH_RESPONSE", "true"))
-        obj.real_ip_header = settings.strtobool(os.environ.get("HTTP_REAL_IP_HEADER", "true"))
+        obj.enable_ssl = strtobool(os.environ.get("HTTP_ENABLE_SSL", "true"))
+        obj.verify_ssl = strtobool(os.environ.get("HTTP_VERIFY_SSL", "true"))
+        obj.bearer_auth_response = strtobool(os.environ.get("HTTP_BEARER_AUTH_RESPONSE", "true"))
+        obj.real_ip_header = strtobool(os.environ.get("HTTP_REAL_IP_HEADER", "true"))
         obj.request_timeout = int(os.environ.get("HTTP_REQUEST_TIMEOUT", cls.request_timeout))
         obj.twa_domains = [x.strip() for x in os.environ.get("HTTP_TWA_DOMAINS", "").split(",") if x.strip()]
         obj.allow_origins = [x.strip() for x in os.environ.get("HTTP_ALLOW_ORIGINS", "").split(",") if x.strip()]
@@ -105,7 +112,7 @@ class IndexDbSettings:
     @classmethod
     def from_environment(cls):
         obj = cls.__new__(cls)
-        obj.enabled = settings.strtobool(os.environ.get("INDEXDB_ENABLED", "false"))
+        obj.enabled = strtobool(os.environ.get("INDEXDB_ENABLED", "false"))
         database_backend = os.environ.get("INDEXDB_DATABASE_BACKEND", "postgresql+psycopg2")
         database_user = os.environ.get("INDEXDB_DATABASE_USER", "postgres")
         database_password = os.environ.get("INDEXDB_DATABASE_PASSWORD", "postgres")
@@ -142,7 +149,7 @@ class IpfsSettings:
     @classmethod
     def from_environment(cls):
         obj = cls.__new__(cls)
-        obj.enabled = settings.strtobool(os.environ.get("IPFS_ENABLED", "false"))
+        obj.enabled = strtobool(os.environ.get("IPFS_ENABLED", "false"))
         obj.kubo_rpc_uri = os.environ.get("IPFS_KUBO_RPC_URI", None)
         obj.cluster_rpc_uri = os.environ.get("IPFS_CLUSTER_RPC_URI", None)
         obj.request_timeout = int(os.environ.get("IPFS_RPC_TIMEOUT", cls.request_timeout))
@@ -166,6 +173,21 @@ class MemoryCacheSettings:
 
 
 @dataclass
+class RedisCacheSettings:
+    endpoint: str = 'localhost'
+    port: int = 6379
+    timeout: int = 1
+
+    @classmethod
+    def from_environment(cls):
+        obj = cls.__new__(cls)
+        obj.endpoint = os.environ.get('CACHE_REDIS_ENDPOINT', cls.endpoint)
+        obj.port = int(os.environ.get('CACHE_REDIS_PORT', cls.port))
+        obj.timeout = int(os.environ.get('CACHE_REDIS_TIMEOUT', cls.timeout))
+        return obj
+
+
+@dataclass
 class CacheSettings:
     enabled: bool
     manager_class: BaseCacheManager
@@ -174,16 +196,51 @@ class CacheSettings:
     @classmethod
     def from_environment(cls):
         obj = cls.__new__(cls)
-        obj.enabled = settings.strtobool(os.environ.get("CACHE_ENABLED", "false"))
+        obj.enabled = strtobool(os.environ.get("CACHE_ENABLED", "false"))
         obj.manager_class = import_string(os.environ.get("CACHE_MANAGER_CLASS", "NFTorrent.cache.MemoryCacheManager"))
         if obj.manager_class.settings_class:
             obj.cache_settings = obj.manager_class.settings_class.from_environment()
         return obj
 
+@dataclass
+class TonlibSettings:
+    parallel_requests: int = 50
+    keystore: str = './ton_keystore/'
+    liteserver_config_path: str = 'https://ton.org/global-config.json'
+    request_timeout: int = 10
+    verbosity_level: int = 0
+    restart_timeout: int = 10
+    max_liteservers: int = 16
+    cdll_path: str = None
+
+
+    @property
+    def liteserver_config(self):
+        if not hasattr(self, '_liteserver_config'):
+            if self.liteserver_config_path.startswith('https://') or self.liteserver_config_path.startswith('http://'):
+                self._liteserver_config = requests.get(self.liteserver_config_path).json()
+            else:
+                with open(self.liteserver_config_path, 'r') as f:
+                    self._liteserver_config = json.load(f)
+        return self._liteserver_config
+
+    @classmethod
+    def from_environment(cls):
+        obj = cls.__new__(cls)
+        obj.max_liteservers = int(os.environ.get('TONLIB_MAX_LITESERVERS', cls.max_liteservers))
+        obj.verbosity_level = int(os.environ.get('TONLIB_VERBOSITY_LEVEL', cls.verbosity_level))
+        obj.parallel_requests = int(os.environ.get('TONLIB_PARALLEL_REQUESTS', cls.parallel_requests))
+        obj.keystore = os.environ.get('TONLIB_KEYSTORE', cls.keystore)
+        obj.liteserver_config_path = os.environ.get('TONLIB_LITESERVER_CONFIG', cls.liteserver_config_path)
+        obj.cdll_path = os.environ.get('TONLIB_CDLL_PATH', None)
+        obj.request_timeout = int(os.environ.get('TONLIB_REQUEST_TIMEOUT', cls.request_timeout))
+        obj.restart_timeout = int(os.environ.get('TONLIB_RESTART_TIMEOUT', cls.restart_timeout))
+        return obj
+
 
 @dataclass
 class Settings:
-    tonlib: settings.TonlibSettings
+    tonlib: TonlibSettings
     webserver: WebServerSettings
     cache: CacheSettings
     indexdb: IndexDbSettings
@@ -194,8 +251,7 @@ class Settings:
         obj = cls.__new__(cls)
         obj.ipfs = IpfsSettings.from_environment()
         obj.webserver = WebServerSettings.from_environment()
-        _pyton = settings.Settings.from_environment()
-        obj.tonlib = _pyton.tonlib
+        obj.tonlib = TonlibSettings.from_environment()
         obj.cache = CacheSettings.from_environment()
         obj.indexdb = IndexDbSettings.from_environment()
         return obj

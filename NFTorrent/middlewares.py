@@ -40,7 +40,7 @@ class StatisticsMiddleware(BaseHTTPMiddleware):
 
         path = request.scope["route"].path if "route" in request.scope else ""
         key = StatisticTags(path=path, method=request.method, status=response.status_code)
-        measurements = self._stats[key]
-        measurements.count += 1
-        measurements.duration += time.perf_counter() - st
+        meas: StatisticMeasurement = self._stats[key]
+        meas.count += 1
+        meas.duration += time.perf_counter() - st
         return response
