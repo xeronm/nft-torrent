@@ -6,7 +6,7 @@ from NFTorrent.auth import ContractAPIKeyCookie, NodeJWTBearer
 
 
 def get_known_peers():
-    return { "192.168.1.10", "192.168.1.20" }
+    return {"192.168.1.10", "192.168.1.20"}
 
 
 class TestNodeJWTBearer(unittest.TestCase):

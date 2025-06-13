@@ -1,25 +1,29 @@
-import os
-import requests
 import json
+import os
 from abc import abstractmethod
 from dataclasses import dataclass
 from importlib import import_module
 
+import requests
+
 from NFTorrent.modelsbase import CollectionConfig
 
+
 def strtobool(val):
-    if val.lower() in ['y', 'yes', 't', 'true', 'on', '1']:
+    if val.lower() in ["y", "yes", "t", "true", "on", "1"]:
         return True
-    if val.lower() in ['n', 'no', 'f', 'false', 'off', '0']:
+    if val.lower() in ["n", "no", "f", "false", "off", "0"]:
         return False
     raise ValueError(f"Invalid bool value {val}")
 
 
-def import_string(dotted_path):
+def import_string(dotted_path, importname: bool = True):
     """
     Import a dotted module path and return the attribute/class designated by the
     last name in the path. Raise ImportError if the import failed.
     """
+    if not dotted_path:
+        return None
     try:
         module_path, class_name = dotted_path.rsplit(".", 1)
     except ValueError as err:
@@ -29,7 +33,11 @@ def import_string(dotted_path):
 
     try:
         value = getattr(module, class_name)
-        value.__importname__ = dotted_path
+        if importname:
+            try:
+                value.__importname__ = dotted_path
+            except AttributeError:
+                pass
         return value
     except AttributeError as err:
         raise ImportError(f'Module "{module_path}" does not define a "{class_name}" attribute/class') from err
@@ -89,7 +97,7 @@ class WebServerSettings:
         obj.twa_domains = [x.strip() for x in os.environ.get("HTTP_TWA_DOMAINS", "").split(",") if x.strip()]
         obj.allow_origins = [x.strip() for x in os.environ.get("HTTP_ALLOW_ORIGINS", "").split(",") if x.strip()]
         obj.collection_config = import_string(
-            os.environ.get("HTTP_COLLECTION_CONFIG", "NFTorrent.collections.config")
+            os.environ.get("HTTP_COLLECTION_CONFIG", "NFTorrent.collections.config"),
         )  # noqa: E501
         obj.allow_networks = [x.strip() for x in os.environ.get("HTTP_ALLOW_NETWORKS", "").split(",") if x.strip()]
         return obj
@@ -174,16 +182,16 @@ class MemoryCacheSettings:
 
 @dataclass
 class RedisCacheSettings:
-    endpoint: str = 'localhost'
+    endpoint: str = "localhost"
     port: int = 6379
     timeout: int = 1
 
     @classmethod
     def from_environment(cls):
         obj = cls.__new__(cls)
-        obj.endpoint = os.environ.get('CACHE_REDIS_ENDPOINT', cls.endpoint)
-        obj.port = int(os.environ.get('CACHE_REDIS_PORT', cls.port))
-        obj.timeout = int(os.environ.get('CACHE_REDIS_TIMEOUT', cls.timeout))
+        obj.endpoint = os.environ.get("CACHE_REDIS_ENDPOINT", cls.endpoint)
+        obj.port = int(os.environ.get("CACHE_REDIS_PORT", cls.port))
+        obj.timeout = int(os.environ.get("CACHE_REDIS_TIMEOUT", cls.timeout))
         return obj
 
 
@@ -202,39 +210,39 @@ class CacheSettings:
             obj.cache_settings = obj.manager_class.settings_class.from_environment()
         return obj
 
+
 @dataclass
 class TonlibSettings:
     parallel_requests: int = 50
-    keystore: str = './ton_keystore/'
-    liteserver_config_path: str = 'https://ton.org/global-config.json'
+    keystore: str = "./ton_keystore/"
+    liteserver_config_path: str = "https://ton.org/global-config.json"
     request_timeout: int = 10
     verbosity_level: int = 0
     restart_timeout: int = 10
     max_liteservers: int = 16
     cdll_path: str = None
 
-
     @property
     def liteserver_config(self):
-        if not hasattr(self, '_liteserver_config'):
-            if self.liteserver_config_path.startswith('https://') or self.liteserver_config_path.startswith('http://'):
+        if not hasattr(self, "_liteserver_config"):
+            if self.liteserver_config_path.startswith("https://") or self.liteserver_config_path.startswith("http://"):
                 self._liteserver_config = requests.get(self.liteserver_config_path).json()
             else:
-                with open(self.liteserver_config_path, 'r') as f:
+                with open(self.liteserver_config_path, "r") as f:
                     self._liteserver_config = json.load(f)
         return self._liteserver_config
 
     @classmethod
     def from_environment(cls):
         obj = cls.__new__(cls)
-        obj.max_liteservers = int(os.environ.get('TONLIB_MAX_LITESERVERS', cls.max_liteservers))
-        obj.verbosity_level = int(os.environ.get('TONLIB_VERBOSITY_LEVEL', cls.verbosity_level))
-        obj.parallel_requests = int(os.environ.get('TONLIB_PARALLEL_REQUESTS', cls.parallel_requests))
-        obj.keystore = os.environ.get('TONLIB_KEYSTORE', cls.keystore)
-        obj.liteserver_config_path = os.environ.get('TONLIB_LITESERVER_CONFIG', cls.liteserver_config_path)
-        obj.cdll_path = os.environ.get('TONLIB_CDLL_PATH', None)
-        obj.request_timeout = int(os.environ.get('TONLIB_REQUEST_TIMEOUT', cls.request_timeout))
-        obj.restart_timeout = int(os.environ.get('TONLIB_RESTART_TIMEOUT', cls.restart_timeout))
+        obj.max_liteservers = int(os.environ.get("TONLIB_MAX_LITESERVERS", cls.max_liteservers))
+        obj.verbosity_level = int(os.environ.get("TONLIB_VERBOSITY_LEVEL", cls.verbosity_level))
+        obj.parallel_requests = int(os.environ.get("TONLIB_PARALLEL_REQUESTS", cls.parallel_requests))
+        obj.keystore = os.environ.get("TONLIB_KEYSTORE", cls.keystore)
+        obj.liteserver_config_path = os.environ.get("TONLIB_LITESERVER_CONFIG", cls.liteserver_config_path)
+        obj.cdll_path = os.environ.get("TONLIB_CDLL_PATH", None)
+        obj.request_timeout = int(os.environ.get("TONLIB_REQUEST_TIMEOUT", cls.request_timeout))
+        obj.restart_timeout = int(os.environ.get("TONLIB_RESTART_TIMEOUT", cls.restart_timeout))
         return obj
 
 
@@ -245,13 +253,21 @@ class Settings:
     cache: CacheSettings
     indexdb: IndexDbSettings
     ipfs: IpfsSettings
+    logger_level: str = "WARNING"
+    logger_config: str = None
 
     @classmethod
     def from_environment(cls):
         obj = cls.__new__(cls)
+
+        obj.logger_level = os.environ.get("LOGGER_LEVEL", cls.logger_level)
+        obj.logger_config = import_string(os.environ.get("LOGGER_CONFIG", None), importname=False)  # noqa: E501
         obj.ipfs = IpfsSettings.from_environment()
         obj.webserver = WebServerSettings.from_environment()
         obj.tonlib = TonlibSettings.from_environment()
         obj.cache = CacheSettings.from_environment()
         obj.indexdb = IndexDbSettings.from_environment()
         return obj
+
+
+__all__ = ["logger_config", "Settings"]

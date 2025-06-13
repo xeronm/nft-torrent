@@ -27,7 +27,6 @@ dependencies = [
   "pytonlib==0.0.65",
   "redis",
   "ring",
-  "loguru",
   "fastapi",
   "pydantic",
   "python-multipart",

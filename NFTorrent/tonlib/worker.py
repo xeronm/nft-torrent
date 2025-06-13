@@ -1,21 +1,23 @@
 import asyncio
+import logging
+import logging.config
+import multiprocessing as mp
+import queue
 import random
 import sys
 import time
-import queue
-import traceback
-import multiprocessing as mp
-
-from pytonlib import TonlibClient, TonlibException, BlockNotFound
+import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-
 from typing import Optional
 
-from NFTorrent.settings import TonlibSettings
-from .models import TonlibWorkerMsgType, TonlibClientResult
+from pytonlib import BlockNotFound, TonlibClient, TonlibException
 
-from loguru import logger
+from NFTorrent.settings import TonlibSettings
+
+from .models import TonlibClientResult, TonlibWorkerMsgType
+
+logger = logging.getLogger(__name__)
 
 
 class TonlibWorkerException(Exception):
@@ -34,6 +36,8 @@ class TonlibWorker(mp.Process):
         input_queue: Optional[mp.Queue] = None,
         output_queue: Optional[mp.Queue] = None,
         sync_verify_address: str = None,
+        logger_config: dict = None,
+        keystore_recreate: bool = False,
     ):
         super(TonlibWorker, self).__init__(daemon=True)
 
@@ -52,21 +56,29 @@ class TonlibWorker(mp.Process):
         self.tonlib = None
         self.threadpool_executor = None
         self.sync_timeout = max(self.sync_timeout, self.settings.request_timeout)
+        self.logger_config = logger_config
+        self.keystore_recreate = keystore_recreate
 
     def run(self):
+        if self.logger_config:
+            logging.config.dictConfig(self.logger_config)
         self.threadpool_executor = ThreadPoolExecutor(max_workers=16)
 
         policy = asyncio.get_event_loop_policy()
         policy.set_event_loop(policy.new_event_loop())
         self.loop = asyncio.new_event_loop()
 
-        Path(self.settings.keystore).mkdir(parents=True, exist_ok=True)
+        keystore = os.path.join(self.settings.keystore, f'ls-{self.ls_index:03d}')
+        p = Path(keystore)
+        if p.exists() and self.keystore_recreate:
+            p.unlink()
+        p.mkdir(parents=True, exist_ok=True)
 
         # init tonlib
         self.tonlib = TonlibClient(
             ls_index=self.ls_index,
             config=self.settings.liteserver_config,
-            keystore=self.settings.keystore,
+            keystore=keystore,
             loop=self.loop,
             cdll_path=self.settings.cdll_path,
             verbosity_level=self.settings.verbosity_level,
@@ -78,9 +90,9 @@ class TonlibWorker(mp.Process):
             self.loop.run_until_complete(self.sync_initial())
             if self.sync_verify_address:
                 self.loop.run_until_complete(self.sync_verify())
-        except Exception as e:
+        except Exception as E:
             logger.error(
-                "TonlibWorker #{ls_index:03d} failed to init and sync tonlib: {exc}", ls_index=self.ls_index, exc=e
+                "TonlibWorker-#%03d: Failed to init and sync tonlib - %s: %s", self.ls_index, type(E).__name__, E
             )
             self.shutdown(11)
 
@@ -101,7 +113,8 @@ class TonlibWorker(mp.Process):
         self.exit_event.set()
         for task in self.tasks.values():
             task.cancel()
-        self.loop.run_until_complete(asyncio.wait(self.tasks.values(), return_when=asyncio.ALL_COMPLETED))
+        if self.tasks.values():
+            self.loop.run_until_complete(asyncio.wait(self.tasks.values(), return_when=asyncio.ALL_COMPLETED))
 
         self.threadpool_executor.shutdown()
 
@@ -123,30 +136,31 @@ class TonlibWorker(mp.Process):
 
     async def sync_initial(self):
         sync_mtimeout = time.monotonic() + self.sync_timeout
-        logger.debug("TonlibWorker #{ls_index:03d}: synchronizing...", ls_index=self.ls_index)
+        logger.debug("TonlibWorker-#%03d: Synchronizing...", self.ls_index)
         result = None
         while result is None and not self.exit_event.is_set():
             try:
                 result = await self.tonlib.sync_tonlib()
                 last_block = result["seqno"]
                 logger.warning(
-                    "TonlibWorker #{ls_index:03d}: sync complete, workchain: {workchain}, last_block: {last_block}",
-                    ls_index=self.ls_index,
-                    workchain=result["workchain"],
-                    last_block=last_block,
+                    "TonlibWorker-#%03d: Sync complete, workchain: %d, last_block: %d",
+                    self.ls_index,
+                    result["workchain"],
+                    last_block,
                 )
             except TonlibException as E:
                 logger.info(
-                    "TonlibWorker #{ls_index:03d}: TonlibException, {exc}",
-                    ls_index=self.ls_index,
-                    exc=E,
+                    "TonlibWorker-#%03d: Initial sync timeout, Tonlib exception - %s: %s",
+                    self.ls_index,
+                    type(E).__name__,
+                    E,
                 )
                 if time.monotonic() >= sync_mtimeout:
                     logger.error(
-                        "TonlibWorker #{ls_index:03d}: Initial sync timeout, last exception of type {exc_type}: {exc}",
-                        ls_index=self.ls_index,
-                        exc_type=type(E).__name__,
-                        exc=E,
+                        "TonlibWorker-#%03d: Initial sync timeout, last exception - %s: %s",
+                        self.ls_index,
+                        type(E).__name__,
+                        E,
                     )
                     raise TonlibWorkerException("Initial sync timeout") from E
                 await asyncio.sleep(self.retry_timeout)
@@ -154,40 +168,41 @@ class TonlibWorker(mp.Process):
     async def sync_verify(self):
         sync_mtimeout = time.monotonic() + self.sync_timeout
         logger.debug(
-            "TonlibWorker #{ls_index:03d}: sync verifying... {address}",
-            ls_index=self.ls_index,
-            address=self.sync_verify_address,
+            "TonlibWorker-#%03d: Sync verifying... contract address: %s",
+            self.ls_index,
+            self.sync_verify_address,
         )
         result = None
         while result is None and not self.exit_event.is_set():
             try:
                 result = await self.tonlib.generic_get_account_state(self.sync_verify_address)
                 logger.warning(
-                    "TonlibWorker #{ls_index:03d}: sync verify complete, address: {address}, balance: {balance}, sync_time: {sync_time}",
-                    ls_index=self.ls_index,
-                    address=self.sync_verify_address,
-                    balance=result["balance"],
-                    sync_time=time.ctime(result["sync_utime"])
+                    "TonlibWorker-#%03d: Sync verify complete, address: %s, balance: %s, sync_time: %s",
+                    self.ls_index,
+                    self.sync_verify_address,
+                    result["balance"],
+                    time.ctime(result["sync_utime"]),
                 )
             except TonlibException as E:
                 logger.info(
-                    "TonlibWorker #{ls_index:03d}: TonlibException, {exc}",
-                    ls_index=self.ls_index,
-                    exc=E,
+                    "TonlibWorker-#%03d: Verify sync timeout, Tonlib exception - %s: %s",
+                    self.ls_index,
+                    type(E).__name__,
+                    E,
                 )
                 if time.monotonic() >= sync_mtimeout:
                     logger.error(
-                        "TonlibWorker #{ls_index:03d}: Verify sync timeout, last exception of type {exc_type}: {exc}",
-                        ls_index=self.ls_index,
-                        exc_type=type(E).__name__,
-                        exc=E,
+                        "TonlibWorker-#%03d: Verify sync timeout, last exception - %s: %s",
+                        self.ls_index,
+                        type(E).__name__,
+                        E,
                     )
                     raise TonlibWorkerException("Sync verify timeout") from E
                 await asyncio.sleep(self.retry_timeout)
 
     async def report_sync(self):
         try:
-            logger.debug("TonlibWorker #{ls_index:03d}[report_sync]: entering main loop", ls_index=self.ls_index)
+            logger.debug("TonlibWorker-#%03d [report_sync]: entering main loop", self.ls_index)
             sync_mtimeout = time.monotonic() + self.sync_timeout
             while not self.exit_event.is_set():
                 last_block = None
@@ -197,19 +212,19 @@ class TonlibWorker(mp.Process):
                     sync_mtimeout = time.monotonic() + self.sync_timeout
                 except TonlibException as E:
                     logger.info(
-                        "TonlibWorker #{ls_index:03d}[report_sync]: Tonlib exception of type {exc_type}: {exc}",
-                        ls_index=self.ls_index,
-                        exc_type=type(E).__name__,
-                        exc=E,
+                        "TonlibWorker-#%03d [report_sync]: Tonlib exception - %s: %s",
+                        self.ls_index,
+                        type(E).__name__,
+                        E,
                     )
                     if time.monotonic() >= sync_mtimeout:
                         logger.error(
-                            "TonlibWorker #{ls_index:03d}[report_sync]: Loop sync timeout, last exception of type {exc_type}: {exc}",
-                            ls_index=self.ls_index,
-                            exc_type=type(E).__name__,
-                            exc=E,
+                            "TonlibWorker-#%03d [report_sync]: Loop sync timeout, last exception - %s: %s",
+                            self.ls_index,
+                            type(E).__name__,
+                            E,
                         )
-                        raise TonlibWorkerException("report_sync: loop sync timeout") from E
+                        raise TonlibWorkerException("report_sync: Sync timeout") from E
 
                 if last_block is not None:
                     self.last_block = last_block
@@ -220,27 +235,26 @@ class TonlibWorker(mp.Process):
                     )
                 await asyncio.sleep(self.retry_timeout)
         except asyncio.CancelledError:
-            logger.debug("TonlibWorker #{ls_index:03d}[report_sync]: Task was cancelled", ls_index=self.ls_index)
+            logger.debug("TonlibWorker-#%03d [report_sync]: Task was cancelled", self.ls_index)
             return
         except TonlibWorkerException as E:
             logger.error(
-                "TonlibWorker #{ls_index:03d}[report_sync]: Task terminated with exception of type {exc_type}: {exc}",
-                ls_index=self.ls_index,
-                exc_type=type(E).__name__,
-                exc=E,
+                "TonlibWorker-#%03d [report_sync]: Task terminated with exception - %s: %s",
+                self.ls_index,
+                type(E).__name__,
+                E,
             )
             raise
-        except (Exception, BaseException):
-            logger.critical(
-                "TonlibWorker #{ls_index:03d}[report_sync]: Task terminated with unhandled exception: {exc}",
-                ls_index=self.ls_index,
-                exc=traceback.format_exc(),
+        except (Exception, BaseException) as E:
+            logger.exception(
+                "TonlibWorker-#%03d [report_sync]: Task terminated with unhandled exception",
+                self.ls_index,
             )
             raise
 
     async def report_archival(self):
         try:
-            logger.debug("TonlibWorker #{ls_index:03d}[report_archival]: entering main loop", ls_index=self.ls_index)
+            logger.debug("TonlibWorker-#%03d[report_archival]: entering main loop", self.ls_index)
             while not self.exit_event.is_set():
                 try:
                     block_transactions = await self.tonlib.get_block_transactions(
@@ -249,12 +263,12 @@ class TonlibWorker(mp.Process):
                     self.is_archival = True
                 except BlockNotFound as e:
                     self.is_archival = False
-                except TonlibException as e:
+                except TonlibException as E:
                     logger.error(
-                        "TonlibWorker #{ls_index:03d}[report_archival] exception of type {exc_type}: {exc}",
-                        ls_index=self.ls_index,
-                        exc_type=type(e).__name__,
-                        exc=e,
+                        "TonlibWorker-#%03d [report_archival] Tonlib exception - %s: %s",
+                        self.ls_index,
+                        type(e).__name__,
+                        E,
                     )
 
                 await self.loop.run_in_executor(
@@ -264,13 +278,19 @@ class TonlibWorker(mp.Process):
                 )
                 await asyncio.sleep(600)
         except asyncio.CancelledError:
-            logger.debug("TonlibWorker #{ls_index:03d}[report_archival]: Task was cancelled", ls_index=self.ls_index)
+            logger.debug("TonlibWorker-#%03d [report_archival]: Task was cancelled", self.ls_index)
             return
+        except (Exception, BaseException) as E:
+            logger.exception(
+                "TonlibWorker-#%03d [report_archival]: Task terminated with unhandled exception",
+                self.ls_index,
+            )
+            raise
 
     async def main_loop(self):
-        logger.debug("TonlibWorker #{ls_index:03d}[main_loop]: entering main loop", ls_index=self.ls_index)
-        while not self.exit_event.is_set():
-            try:
+        logger.debug("TonlibWorker-#%03d [main_loop]: entering main loop", self.ls_index)
+        try:
+            while not self.exit_event.is_set():
                 try:
                     task_id, timeout, method, args, kwargs = await self.loop.run_in_executor(
                         self.threadpool_executor, self.input_queue.get, True, 1
@@ -279,16 +299,15 @@ class TonlibWorker(mp.Process):
                     continue
 
                 self.loop.create_task(self.process_task(task_id, timeout, method, args, kwargs))
-            except asyncio.CancelledError:
-                logger.debug("TonlibWorker #{ls_index:03d}[main_loop]: Task was cancelled", ls_index=self.ls_index)
-                return
-            except (Exception, BaseException):
-                logger.critical(
-                    "TonlibWorker #{ls_index:03d}[main_loop]: Task terminated with unhandled exception: {exc}",
-                    ls_index=self.ls_index,
-                    exc=traceback.format_exc(),
-                )
-                raise
+        except asyncio.CancelledError:
+            logger.debug("TonlibWorker-#%03d [main_loop]: Task was cancelled", self.ls_index)
+            return
+        except (Exception, BaseException) as E:
+            logger.exception(
+                "TonlibWorker-#%03d [main_loop]: Task terminated with unhandled exception",
+                self.ls_index,
+            )
+            raise
 
     async def process_task(self, task_id, timeout, method, args, kwargs):
         result = None
@@ -298,31 +317,22 @@ class TonlibWorker(mp.Process):
         if start_time < timeout:
             try:
                 result = await self.tonlib.__getattribute__(method)(*args, **kwargs)
-            except Exception as e:
-                exception = e
+            except Exception as E:
+                exception = E
                 logger.warning(
-                    "TonlibWorker #{ls_index:03d}: raised exception of type {exc_type} while executing task. Method: {method}, args: {args}, kwargs: {kwargs}, exception: {exc}",
-                    ls_index=self.ls_index,
-                    method=method,
-                    args=args,
-                    kwargs=kwargs,
-                    exc_type=type(e).__name__,
-                    exc=e,
+                    "TonlibWorker-#%03d: Task '%s.%s' got exception - %s: %s",
+                    self.ls_index,
+                    task_id,
+                    method,
+                    type(E).__name__,
+                    E,
+                    extra={"method": method, "args": args, "kwargs": kwargs},
                 )
             else:
-                logger.debug(
-                    "TonlibWorker #{ls_index:03d}: got result {method} for task '{task_id}'",
-                    ls_index=self.ls_index,
-                    method=method,
-                    task_id=task_id,
-                )
+                logger.debug("TonlibWorker-#%03d: Task '%s.%s' got response", self.ls_index, task_id, method)
         else:
             exception = asyncio.TimeoutError()
-            logger.warning(
-                "TonlibWorker #{ls_index:03d}: received task '{task_id}' after timeout",
-                ls_index=self.ls_index,
-                task_id=task_id,
-            )
+            logger.warning("TonlibWorker-#%03d: Task '%s.%s' skipped by timeout", self.ls_index, task_id, method)
         end_time = time.monotonic()
         elapsed_time = end_time - start_time
 

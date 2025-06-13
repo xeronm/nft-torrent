@@ -1,30 +1,36 @@
 import asyncio
 import io
+import logging
+import logging.config
 import time
-from collections import Counter
 from urllib.parse import urljoin
 
-import aiohttp
 from fastapi import Request, status
 from fastapi.exceptions import HTTPException
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
-from loguru import logger
 
-from NFTorrent.auth import ContractAPIKeyCookie, NodeJWTBearer, ServerResponseAuthError
+from NFTorrent.auth import ContractAPIKeyCookie, NodeJWTBearer
 from NFTorrent.cache import DisabledCacheManager
 from NFTorrent.indexer import IndexDb
 from NFTorrent.ipfs import IpfsRpcManager
 from NFTorrent.models import HealthCheckResult
 from NFTorrent.modelsbase import CollectionConfig
-from NFTorrent.tonlib import TonlibManager
 from NFTorrent.settings import Settings
+from NFTorrent.tonlib import TonlibManager
 from NFTorrent.utils import dict_to_influx, guess_type, parse_ipfs_uri
+
+logger = logging.getLogger(__name__)
 
 
 class Server:
 
     def __init__(self, settings: Settings = None, collection_config: CollectionConfig = None):
         self.settings = settings or Settings.from_environment()
+        if self.settings.logger_config:
+            logging.config.dictConfig(self.settings.logger_config)
+        else:
+            logging.basicConfig(level=self.settings.logger_level)
+
         self.collection_config = collection_config or self.settings.webserver.collection_config
         self.tonlib: TonlibManager = None
         self.indexer: IndexDb = None
@@ -54,24 +60,24 @@ class Server:
         logger.warning("Server startup initiated...")
         logger.warning(
             "Parameters:\n"
-            " - webserver.allow_networks: {networks}\n"
-            " - webserver.api_root_path: {api_root}\n"
-            " - webserver.twa_domains: {domains}\n"
-            " - webserver.allow_origins: {allow_origins}\n"
-            " - webserver.collections: {collections} <{collection_config}>\n"
-            " - ipfs.enabled: {ipfs}\n"
-            " - cache.enabled: {cache_enabled} <{cache_manager}>\n"
-            " - indexdb.enabled: {indexdb_enabled}\n",
-            ipfs=self.settings.ipfs.enabled,
-            api_root=self.settings.webserver.api_root_path,
-            allow_origins=self.settings.webserver.allow_origins,
-            domains=self.settings.webserver.twa_domains,
-            networks=self.settings.webserver.allow_networks,
-            collections=[x.address for x in self.settings.webserver.collection_config.collections],
-            collection_config=self.settings.webserver.collection_config.__importname__,
-            cache_enabled=self.settings.cache.enabled,
-            cache_manager=self.settings.cache.manager_class.__importname__,
-            indexdb_enabled=self.settings.indexdb.enabled,
+            " - webserver.allow_networks: %s\n"
+            " - webserver.api_root_path: %s\n"
+            " - webserver.twa_domains: %s\n"
+            " - webserver.allow_origins: %s\n"
+            " - webserver.collections: %s <%s>\n"
+            " - ipfs.enabled: %s\n"
+            " - cache.enabled: %s <%s>\n"
+            " - indexdb.enabled: %s\n",
+            self.settings.webserver.allow_networks,
+            self.settings.webserver.api_root_path,
+            self.settings.webserver.twa_domains,
+            self.settings.webserver.allow_origins,
+            [x.address for x in self.settings.webserver.collection_config.collections],
+            self.settings.webserver.collection_config.__importname__,
+            self.settings.ipfs.enabled,
+            self.settings.cache.enabled,
+            self.settings.cache.manager_class.__importname__,
+            self.settings.indexdb.enabled,
         )
 
         cache_manager = None
@@ -88,6 +94,7 @@ class Server:
             cache_manager=cache_manager,
             loop=loop,
             collection_config=self.collection_config,
+            logger_config=self.settings.logger_config
         )
 
         if self.settings.ipfs.enabled:
@@ -139,7 +146,7 @@ class Server:
                 stotage_state = ipfs_state["peers"] > self.ipfs.settings.min_peers_count
         if self.indexer is not None:
             indexer_state = self.indexer.get_indexdb_state()
-            last_checked = [x["fields"]["last_checked"] for x in indexer_state['stats']]
+            last_checked = [x["fields"]["last_checked"] for x in indexer_state["stats"]]
             indexer_state = len(last_checked) == len(
                 [x for x in last_checked if x >= time.time() - self.indexer.settings.indexer_timeout * 2]
             )
@@ -155,7 +162,7 @@ class Server:
     def get_measurements(self, timestamp: int):
         hc = self.get_healthcheck()
         _stats = hc.dict()
-        _stats['start_time'] = self.start_time
+        _stats["start_time"] = self.start_time
         measurements = [f"NFTorrentServer {dict_to_influx(_stats)} {timestamp}"]
         if self.tonlib is not None:
             measurements += self.tonlib.get_measurements(timestamp)

@@ -1,30 +1,39 @@
 import asyncio
 import datetime
 import io
+import logging
 import math
 import pickle
 import random
 import time
-import traceback
-from collections import Counter
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import (
+    dataclass,
+)
 
 import aiohttp
 from fastapi import status
-from loguru import logger
 from PIL import Image
 from pytonlib import TonlibException
 from sqlalchemy.exc import NoResultFound
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 
+from NFTorrent.cache import BaseCacheManager, DisabledCacheManager
 from NFTorrent.ipfs import IpfsRpcManager
 from NFTorrent.models import CollectionData
-from NFTorrent.modelsbase import BaseNftModel, CollectionConfig, CollectionInstance, StatisticMeasurement, MeasurementStore, StatisticNoTags
-from NFTorrent.tonlib import TonlibRequestError, TonlibManager
+from NFTorrent.modelsbase import (
+    BaseNftModel,
+    CollectionConfig,
+    CollectionInstance,
+    MeasurementStore,
+    StatisticMeasurement,
+    StatisticNoTags,
+)
 from NFTorrent.settings import IndexDbSettings
-from NFTorrent.cache import BaseCacheManager, DisabledCacheManager
+from NFTorrent.tonlib import TonlibManager, TonlibRequestError
+
+logger = logging.getLogger(__name__)
 
 
 class BaseCollectionModel(SQLModel, table=False):
@@ -46,6 +55,7 @@ class CollectionTaskData:
 @dataclass(frozen=True)
 class StatisticTags:
     address: str
+
 
 @dataclass
 class CollectionMeasurement:
@@ -113,11 +123,11 @@ class IndexDb:
         # cache setup
         self.setup_cache()
 
-        logger.warning("IndexDb: Initializing database...")
+        logger.warning("Initializing database...")
         self.dbengine = create_engine(self.settings.database_url)
         SQLModel.metadata.create_all(self.dbengine)
 
-        logger.warning("IndexDb: starting... workers: {num_workers}", num_workers=self.num_workers)
+        logger.warning("Starting... workers: %d", self.num_workers)
         self.threadpool_executor = ThreadPoolExecutor(max_workers=max(32, self.num_workers))
 
         # workers spawn
@@ -143,17 +153,17 @@ class IndexDb:
     async def nft_indexer(self, data: CollectionTaskData):
         address = data.nft_collection.b64url
         meas: CollectionMeasurement = self.stats[StatisticTags(address)]
-        logger.warning("IndexDb[nft_indexer:{address}]: Collection indexer, entering main loop", address=address)
+        logger.warning("[%s]: Indexer task entering main loop", address)
         while True:
             await asyncio.sleep(self.settings.indexer_timeout)
-            logger.info("IndexDb[nft_indexer:{address}]: Updating collection info...", address=address)
             try:
                 if self.tonlib is None:
                     continue
-                if sum([1 for x in self.tonlib.get_workers_state().values() if x['is_sync']]) == 0:
-                    logger.warning("IndexDb[nft_indexer:{address}]: No active Tonlib workers", address=address)
+                if sum([1 for x in self.tonlib.get_workers_state().values() if x["is_sync"]]) == 0:
+                    logger.warning("[%s]: No active Tonlib workers", address)
                     continue
 
+                logger.info("[%s]: Updating collection info...", address)
                 # Refresh data from DB
                 data.instance = await self.loop.run_in_executor(
                     self.threadpool_executor, self.sync_collection_upsert, data.nft_collection
@@ -166,25 +176,25 @@ class IndexDb:
                 meas.bc_next_index = next_index
                 if data.instance.index > next_index:
                     logger.error(
-                        "IndexDb[nft_indexer:{address}]: collection On-Chain index less than IndexDB, db_index: {index}, chain_index: {new_index}",  # noqa: E501
-                        address=address,
-                        index=data.instance.index,
-                        new_index=next_index,
+                        "[%s]: Collection On-Chain index less than IndexDB, db_index: %d, chain_index: %d",  # noqa: E501
+                        address,
+                        data.instance.index,
+                        next_index,
                     )
                 elif data.instance.index < next_index:
                     logger.info(
-                        "IndexDb[nft_indexer:{address}]: collection IndexDB, db_index: {index}, chain_index: {new_index}",  # noqa: E501
-                        address=address,
-                        index=data.instance.index,
-                        new_index=next_index,
+                        "[%s]: Collection IndexDB, db_index: %d, chain_index: %d",  # noqa: E501
+                        address,
+                        data.instance.index,
+                        next_index,
                     )
                     bulk = []
                     while data.instance.index < next_index and len(bulk) < self.settings.bulk_size:
                         nft_address = await self.tonlib.get_nft_item_address(address, data.instance.index)
                         logger.info(
-                            "IndexDb[nft_indexer:{address}]: indexing NFT, address: {nft_address}",
-                            address=address,
-                            nft_address=nft_address,
+                            "[%s]: Indexing NFT, address: %s",
+                            address,
+                            nft_address,
                         )
                         try:
                             nft_data = await self.tonlib.get_nft_data(nft_address, skip_verification=True)
@@ -196,11 +206,12 @@ class IndexDb:
                         except TonlibRequestError as E:
                             meas.nft_index_error += 1
                             logger.warning(
-                                "IndexDb[nft_indexer:{address}]: Contract request error, address: {nft_address}, index: {index}, {exc}",  # noqa: E501
-                                address=address,
-                                nft_address=nft_address,
-                                index=data.instance.index,
-                                exc=str(E),
+                                "[%s]: Contract request error, address: %s, index: %d - %s: %s",  # noqa: E501
+                                address,
+                                nft_address,
+                                data.instance.index,
+                                type(E).__name__,
+                                E,
                             )
                         data.instance.index += 1
 
@@ -216,19 +227,17 @@ class IndexDb:
                 meas.last_checked = int(time.time())
             except (TonlibException, asyncio.TimeoutError) as E:
                 logger.warning(
-                    "IndexDb[nft_indexer:{address}]: Got error type {error_type}: {exc}",
-                    address=address,
-                    error_type=type(E).__name__,
-                    exc=str(E),
+                    "[%s]: Got error - %s: %s",
+                    address,
+                    type(E).__name__,
+                    E,
                 )
             except asyncio.CancelledError:
-                logger.info("IndexDb[nft_indexer:{address}]: Task was cancelled", address=address)
+                logger.info("[%s]: Indexer task was cancelled", address)
                 return
             except (Exception, BaseException):
-                logger.critical(
-                    "IndexDb[nft_indexer:{address}]: Task terminated with exception: {exc}",
-                    address=address,
-                    exc=traceback.format_exc(),
+                logger.exception(
+                    "[%s]: Indexer task got unhandled exception, sleep for %d", address, self.restart_timeout
                 )
                 await asyncio.sleep(self.restart_timeout)
 
@@ -236,9 +245,9 @@ class IndexDb:
         buffer = None
         if instance.image:
             logger.info(
-                "IndexDb: getting image for NFT icons, address: {address}, uri: {image_uri}",
-                address=instance.address,
-                image_uri=instance.image,
+                "Getting image for NFT icons, address: %s, uri: %s",
+                instance.address,
+                instance.image,
             )
             try:
                 if instance.image.startswith("ipfs://"):
@@ -249,10 +258,10 @@ class IndexDb:
                         async with await session.get(instance.image) as resp:
                             if resp.status != status.HTTP_200_OK:
                                 logger.warning(
-                                    "IndexDb: NFT icons, get http image error, address: {address}, status: {status}, text: {text}",  # noqa: E501
-                                    address=instance.address,
-                                    status=resp.status,
-                                    text=await resp.text(),
+                                    "NFT icons, got http image error, address: %s, status: %s, text: %s",  # noqa: E501
+                                    instance.address,
+                                    resp.status,
+                                    await resp.text(),
                                 )
                             else:
                                 buffer = await resp.read()
@@ -260,9 +269,10 @@ class IndexDb:
                 instance.error_time = datetime.datetime.now(datetime.timezone.utc)
                 instance.error_code = type(E).__name__[:40]
                 logger.warning(
-                    "IndexDb: NFT icons, get http image error, address: {address}, {exc}",
-                    address=instance.address,
-                    exc=str(E),
+                    "NFT icons, get http image error, address: %s - %s: %s",
+                    instance.address,
+                    type(E).__name__,
+                    E,
                 )
                 return False
 
@@ -291,7 +301,7 @@ class IndexDb:
             instance.error_time = datetime.datetime.now(datetime.timezone.utc)
             instance.error_code = type(E).__name__[:40]
             logger.warning(
-                "IndexDb: NFT icons convert error, address: {address}, {exc}", address=instance.address, exc=str(E)
+                "NFT icons convert error, address: %s - %s: %s", instance.address, type(E).__name__, E
             )
             return False
         return True
@@ -318,9 +328,7 @@ class IndexDb:
         model_class = self.collection_config.dbmodel_class
         with Session(self.dbengine) as session:
             try:
-                instance = session.exec(
-                    select(model_class).where(model_class.address == collection.b64url)
-                ).one()
+                instance = session.exec(select(model_class).where(model_class.address == collection.b64url)).one()
             except NoResultFound:
                 instance = None
             if instance is None:
@@ -332,8 +340,10 @@ class IndexDb:
 
     def get_indexdb_state(self):
         return {
-            'collections': [{'config': x.nft_collection, 'blockchain': x.collection_data} for x in self.collections.values()],
-            'stats': self.stats.as_list()
+            "collections": [
+                {"config": x.nft_collection, "blockchain": x.collection_data} for x in self.collections.values()
+            ],
+            "stats": self.stats.as_list(),
         }
 
     def get_measurements(self, timestamp: int) -> list[str]:

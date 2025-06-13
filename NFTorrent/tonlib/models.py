@@ -1,6 +1,7 @@
-from typing import Optional, Any
-from enum import Enum
 from dataclasses import dataclass
+from enum import Enum
+from typing import Any, Optional
+
 
 @dataclass
 class TonlibClientResult:
@@ -11,6 +12,7 @@ class TonlibClientResult:
     result: Optional[Any] = None
     exception: Optional[Exception] = None
     liteserver_info: Optional[Any] = None
+
 
 class TonlibWorkerMsgType(Enum):
     TASK_RESULT = 0

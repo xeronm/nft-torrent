@@ -17,10 +17,10 @@ config = CollectionConfig(
                 "attributes": [],
             },
             nft_samples={
-                'image_url': 'UQDGmyLShGRLKLTvXT027DQGmIQ5K-FU7U0ULuGsnVRKLGg9',
-                'image_onchain': 'UQBI_r486VLTnscs7SQNE29vETuHajF0mxwpGu57VzSLwPnY',
-                'image_ipfs': 'UQCckh6snB2Yvl7fPY8Jy-fVKEFPMPCY16kRcm7868JVPvOZ',
-            }
+                "image_url": "UQDGmyLShGRLKLTvXT027DQGmIQ5K-FU7U0ULuGsnVRKLGg9",
+                "image_onchain": "UQBI_r486VLTnscs7SQNE29vETuHajF0mxwpGu57VzSLwPnY",
+                "image_ipfs": "UQCckh6snB2Yvl7fPY8Jy-fVKEFPMPCY16kRcm7868JVPvOZ",
+            },
         ),
     ],
 )

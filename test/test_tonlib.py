@@ -1,10 +1,10 @@
-import unittest
 import asyncio
 import dataclasses
+import unittest
 
-from NFTorrent.tonlib import TonlibManager
-from NFTorrent.settings import TonlibSettings
 from NFTorrent.collections import config
+from NFTorrent.settings import TonlibSettings
+from NFTorrent.tonlib import TonlibManager
 
 
 class TestTonlibManager(unittest.IsolatedAsyncioTestCase):

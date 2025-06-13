@@ -2,6 +2,7 @@ import base64
 import hashlib
 import http.cookies
 import ipaddress
+import logging
 import struct
 import time
 from collections.abc import Callable
@@ -15,11 +16,12 @@ from aiohttp import ClientResponse
 from fastapi import HTTPException, Request, status
 from fastapi.security import APIKeyCookie, HTTPAuthorizationCredentials, HTTPBearer
 from jwt.exceptions import InvalidTokenError
-from loguru import logger
 from nacl.signing import VerifyKey
 
 from NFTorrent import models
 from NFTorrent.modelsbase import TonAddress
+
+logger = logging.getLogger(__name__)
 
 
 class InvalidSubjectError(InvalidTokenError):
@@ -59,9 +61,7 @@ class NodeJWTBearer(HTTPBearer):
     async def __call__(self, request: Request):
         client_ip = request.client.host
         real_ip = request.headers.get("X-Real-IP")
-        logger.debug(
-            "NodeJWTBearer: Authorization request, real_ip: {real_ip}, host: {host}", real_ip=real_ip, host=client_ip
-        )
+        logger.debug("NodeJWTBearer: Authorization request, real_ip: %s, host: %s", real_ip, client_ip)
         if self.real_ip_header:
             client_ip = request.headers.get("X-Real-IP", client_ip)
         if self.allow_networks and [True for x in self.allow_networks if ipaddress.ip_address(client_ip) in x]:
@@ -75,10 +75,11 @@ class NodeJWTBearer(HTTPBearer):
             payload = self.verify_jwt_token(credentials.credentials, client_ip)
         except InvalidTokenError as E:
             logger.info(
-                "NodeJWTBearer: token validation error, token: {token}, client_ip: {client_ip}, {exc}",
-                token=credentials.credentials,
-                client_ip=client_ip,
-                exc=str(E),
+                "NodeJWTBearer: token validation error, token: %s, client_ip: %s - %s: %s",
+                credentials.credentials,
+                client_ip,
+                type(E).__name__,
+                E,
             )
             if self.auto_error:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid or expired token") from E
@@ -99,10 +100,11 @@ class NodeJWTBearer(HTTPBearer):
             payload = self.verify_jwt_token(response_token, server_ip)
         except InvalidTokenError as E:
             logger.info(
-                "NodeJWTBearer: token validation error, token: {token}, server_ip: {server_ip}, {exc}",
-                token=response_token,
-                server_ip=server_ip,
-                exc=str(E),
+                "NodeJWTBearer: token validation error, token: %s, server_ip: %s - %s: %s",
+                response_token,
+                server_ip,
+                type(E).__name__,
+                E,
             )
             if self.auto_error:
                 raise ServerResponseAuthError("Invalid or expired token") from E
@@ -129,9 +131,9 @@ class NodeJWTBearer(HTTPBearer):
     def verify_jwt_token(self, jwtoken: str, subject_ip: str):
         payload = jwt.decode(jwtoken, self.jwt_secret, audience=self.subject, algorithms=[self.jwt_algorithm])
         logger.debug(
-            "NodeJWTBearer:verify_jwt_token: decoded token, subject: {subject_ip}, payload: {payload}",
-            subject_ip=subject_ip,
-            payload=str(payload),
+            "NodeJWTBearer: decoded token, subject: %s, payload: %s",
+            subject_ip,
+            str(payload),
         )
 
         subject = payload.get("sub", None)
@@ -172,9 +174,9 @@ class ContractAPIKeyCookie(APIKeyCookie):
         client_ip = request.client.host
         real_ip = request.headers.get("X-Real-IP")
         logger.debug(
-            "ContractAPIKeyCookie: Authorization request, real_ip: {real_ip}, host: {host}",
-            real_ip=real_ip,
-            host=client_ip,
+            "ContractAPIKeyCookie: Authorization request, real_ip: %s, host: %s",
+            real_ip,
+            client_ip,
         )
         if self.real_ip_header:
             client_ip = request.headers.get("X-Real-IP", client_ip)
@@ -187,11 +189,12 @@ class ContractAPIKeyCookie(APIKeyCookie):
             payload = jwt.decode(api_key, self.jwt_secret, audience=self.audience, algorithms=[self.jwt_algorithm])
         except InvalidTokenError as E:
             logger.info(
-                "ContractAPIKeyCookie: token validation error, token: {token}, client_ip: {client_ip}, host: {host}, {exc}",  # noqa: E501
-                token=api_key,
-                client_ip=client_ip,
-                host=request.client.host,
-                exc=str(E),
+                "ContractAPIKeyCookie: token validation error, token: %s, client_ip: %s, host: %s - %s: %s",  # noqa: E501
+                api_key,
+                client_ip,
+                request.client.host,
+                type(E).__name__,
+                E,
             )
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid or expired token") from E
 
@@ -242,9 +245,10 @@ class ContractAPIKeyCookie(APIKeyCookie):
             self.auth_verify(account, proof, public_key)
         except (InvalidTokenError, SignatureVerificationError) as E:
             logger.warning(
-                "ContractAPIKeyCookie: signature validation error, account: {address}, {exc}",
-                address=account.address,
-                exc=str(E),
+                "ContractAPIKeyCookie: signature validation error, account: %s - %s: %s",
+                account.address,
+                type(E).__name__,
+                E,
             )
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired signature") from E
 
