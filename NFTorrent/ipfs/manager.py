@@ -165,7 +165,7 @@ class IpfsRpcManager:
             kwargs["data"] = data
         with self.stats[StatisticTags(method=stat_name)]:
             try:
-                logger.info("IPFS Call \"%s: %s\"", method.__name__.upper(), uri)
+                logger.info('IPFS Call "%s: %s"', method.__name__.upper(), uri)
                 result = None
                 async with method(uri, **kwargs) as resp:
                     if resp.status != status.HTTP_200_OK:
@@ -179,7 +179,7 @@ class IpfsRpcManager:
                 return result
             except (aiohttp.client_exceptions.ClientError, aiohttp.client_exceptions.ClientConnectorError) as E:
                 logger.error(
-                    "IPFS Call \"%s: %s\" got error - %s: %s",
+                    'IPFS Call "%s: %s" got error - %s: %s',
                     method.__name__.upper(),
                     uri,
                     type(E).__name__,

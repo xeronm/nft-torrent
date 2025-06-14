@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
@@ -8,10 +8,10 @@ class TonlibClientResult:
     task_id: str
     method: str
     elapsed_time: float
-    params: Optional[Any] = None
-    result: Optional[Any] = None
-    exception: Optional[Exception] = None
-    liteserver_info: Optional[Any] = None
+    params: Any | None = None
+    result: Any | None = None
+    exception: Exception | None = None
+    liteserver_info: Any | None = None
 
 
 class TonlibWorkerMsgType(Enum):

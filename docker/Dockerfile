@@ -42,13 +42,12 @@ WORKDIR /opt/nftorrent
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 RUN --mount=from=dist,target=/mnt/dist \
-    python3 -m pip install ton_nft_torrent==${NFTORRENT_VERSION} gunicorn --no-cache-dir \
-        --find-links /mnt/dist && \
-    python3 -m pip install pytonlib==0.0.65 --no-cache-dir
+    python3 -m pip install ton_nft_torrent==${NFTORRENT_VERSION} gunicorn uvicorn --no-cache-dir \
+        --find-links /mnt/dist
 
-ENV LOGURU_LEVEL=INFO \
+ENV LOGGER_LEVEL=WARNING \
     TONLIB_LITESERVER_CONFIG=https://ton.org/global-config.json \
-    TONLIB_KEYSTORE=/storage-db/.ton_keystore/
+    TONLIB_KEYSTORE=/tmp/.ton_keystore/
 
 USER nftorrent
 

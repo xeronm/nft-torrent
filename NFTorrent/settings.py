@@ -228,7 +228,7 @@ class TonlibSettings:
             if self.liteserver_config_path.startswith("https://") or self.liteserver_config_path.startswith("http://"):
                 self._liteserver_config = requests.get(self.liteserver_config_path).json()
             else:
-                with open(self.liteserver_config_path, "r") as f:
+                with open(self.liteserver_config_path) as f:
                     self._liteserver_config = json.load(f)
         return self._liteserver_config
 
@@ -270,4 +270,4 @@ class Settings:
         return obj
 
 
-__all__ = ["logger_config", "Settings"]
+__all__ = ["Settings"]

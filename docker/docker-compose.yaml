@@ -62,8 +62,7 @@ services:
     image: dtec/nft-torrent:${NFTORRENT_VERSION}
     restart: unless-stopped
     environment:
-      LOGURU_LEVEL: WARNING
-      LOGURU_COLORIZE: 1
+      LOGGER_CONFIG: NFTorrent.logger.config
       IPFS_ENABLED: 1
       IPFS_KUBO_RPC_URI: http://ipfs-cluster:9095
       IPFS_CLUSTER_RPC_URI: http://ipfs-cluster:9094

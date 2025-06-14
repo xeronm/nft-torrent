@@ -94,7 +94,7 @@ class Server:
             cache_manager=cache_manager,
             loop=loop,
             collection_config=self.collection_config,
-            logger_config=self.settings.logger_config
+            logger_config=self.settings.logger_config,
         )
 
         if self.settings.ipfs.enabled:
@@ -135,7 +135,7 @@ class Server:
     def get_healthcheck(self) -> HealthCheckResult:
         stotage_state = tonlib_state = indexer_state = None
         if self.tonlib is not None:
-            tonlib_state = sum([1 for x in self.tonlib.get_workers_state().values() if x["is_sync"]])
+            tonlib_state = len([w for w in self.tonlib.workers.values() if w.is_sync]) >= 2  # 2 min liyterservers
 
         load = redundancy = 0
         if self.ipfs is not None:
@@ -143,7 +143,7 @@ class Server:
             if ipfs_state is not None:
                 load = ipfs_state["storage"]["RepoSize"] * 100 / ipfs_state["storage"]["StorageMax"]
                 redundancy = len(ipfs_state["cluster_peers"]) >= self.settings.ipfs.min_redundancy
-                stotage_state = ipfs_state["peers"] > self.ipfs.settings.min_peers_count
+                stotage_state = ipfs_state["peers"] >= self.ipfs.settings.min_peers_count
         if self.indexer is not None:
             indexer_state = self.indexer.get_indexdb_state()
             last_checked = [x["fields"]["last_checked"] for x in indexer_state["stats"]]
@@ -222,6 +222,8 @@ class Server:
                     "Content-Disposition": f'inline; filename="{address}.webp"',
                 },
             )
+        if query == "uri":
+            return JSONResponse({"attributes": nft_content.metadata_attributes()})
 
         # TODO: Generate dynamic default image with pets Name
         return HTTPException(status_code=status.HTTP_404_NOT_FOUND)

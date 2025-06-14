@@ -5,7 +5,6 @@ import random
 import time
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
-from copy import deepcopy
 from dataclasses import InitVar, asdict, dataclass
 from datetime import datetime
 from typing import Any
@@ -36,7 +35,7 @@ class TonlibRequestError(Exception):
     pass
 
 
-class TonlibSelectWorkerError(Exception):
+class TonlibSelectWorkerError(TonlibRequestError):
     pass
 
 
@@ -52,25 +51,26 @@ class WorkerControl:
     _reader: InitVar[asyncio.Task]
     _futures: InitVar[dict[str, Any]] = None
     ls_index: int = 0
+    ls_config: dict = None
     is_alive: bool = False
     is_sync: bool = False
     is_enabled: bool = True
     is_archival: bool = False
     last_block: int = -1
-    last_block_time: float = 0
+    last_block_time: int = 0
     start_mt: float = 0
-    start_time: float = 0
+    start_time: int = 0
     restart_count: int = 0
     tasks_count: int = 0
     pending_tasks: int = 0
-    sync_time: float = 0
+    sync_time: int = 0
     sync_mt: float = 0
-    sync_duration: int = 0
+    sync_duration: float = 0
     sync_dur_ema: float = 0
-    off_sync_time: float = 0
+    off_sync_time: int = 0
     off_sync_mt: float = 0
     off_sync_count: int = 0
-    off_sync_duration: int = 0
+    off_sync_duration: float = 0
     off_sync_dur_ema: float = 0
     restart_retry_mt: float = None
     restart_retry_count: int = None
@@ -79,6 +79,7 @@ class WorkerControl:
         self._worker = worker
         self._reader = reader
         self.ls_index = worker.ls_index
+        self.ls_config = worker.settings.liteserver_config["liteservers"][worker.ls_index]
         self._futures = futures or {}
 
     @property
@@ -92,10 +93,6 @@ class WorkerControl:
     @property
     def reader(self) -> asyncio.Task:
         return self._reader
-
-    @property
-    def config(self):
-        return self.worker.tonlib.local_config if self.worker.tonlib else None
 
     def set_worker(self, worker: TonlibWorker, reader: asyncio.Task):
         if worker.ls_index != self.ls_index:
@@ -116,7 +113,8 @@ class TonlibManager:
         cache_manager: BaseCacheManager = None,
         loop: asyncio.BaseEventLoop = None,
         collection_config: CollectionConfig = None,
-        logger_config = None,
+        logger_config: dict = None,
+        keystore_recreate: bool = False,
     ):
         self.restart_timeout = restart_timeout or settings.restart_timeout
         self.collection_config = collection_config
@@ -129,6 +127,7 @@ class TonlibManager:
         self.consensus_block = -1
         self.consensus_block_mt = 0
         self.logger_config = logger_config
+        self.keystore_recreate = keystore_recreate
 
         # cache setup
         self.setup_cache()
@@ -211,12 +210,24 @@ class TonlibManager:
 
             wctl.restart_count += 1
             wctl.set_worker(
-                TonlibWorker(ls_index, self.settings, sync_verify_address=sync_verify_address, logger_config=self.logger_config),
+                TonlibWorker(
+                    ls_index,
+                    self.settings,
+                    sync_verify_address=sync_verify_address,
+                    logger_config=self.logger_config,
+                    keystore_recreate=self.keystore_recreate,
+                ),
                 self.loop.create_task(self.read_results(ls_index)),
             )
         else:
             wctl = WorkerControl(
-                TonlibWorker(ls_index, self.settings, sync_verify_address=sync_verify_address, logger_config=self.logger_config),
+                TonlibWorker(
+                    ls_index,
+                    self.settings,
+                    sync_verify_address=sync_verify_address,
+                    logger_config=self.logger_config,
+                    keystore_recreate=self.keystore_recreate,
+                ),
                 self.loop.create_task(self.read_results(ls_index)),
             )
             self.workers[ls_index] = wctl
@@ -226,7 +237,7 @@ class TonlibManager:
             ls_index,
             wctl.restart_count,
         )
-        ctime = time.time()
+        ctime = int(time.time())
         mtime = time.monotonic()
         wctl.start_mt = mtime
         wctl.start_time = ctime
@@ -243,7 +254,7 @@ class TonlibManager:
         wctl.last_block_time = 0
 
     async def worker_control(self, ls_index, enabled):
-        if enabled == False:
+        if not enabled:
             self.terminate_worker(ls_index, timeout=3)
         self.workers[ls_index].is_enabled = enabled
 
@@ -265,11 +276,11 @@ class TonlibManager:
         }
 
         logger.info(
-            "[Worker-#%03d]: Task \"%s.%s\" received result: %s",
+            '[Worker-#%03d]: Task "%s.%s" received result: %s',
+            ls_index,
             task_result.task_id,
             task_result.method,
             result_type,
-            ls_index,
             extra=rec,
         )
 
@@ -303,21 +314,21 @@ class TonlibManager:
                 if msg_type == TonlibWorkerMsgType.LAST_BLOCK_UPDATE:
                     if wctl.last_block != msg_content:
                         wctl.last_block = msg_content
-                        wctl.last_block_time = time.time()
+                        wctl.last_block_time = int(time.time())
 
                 if msg_type == TonlibWorkerMsgType.ARCHIVAL_UPDATE:
                     wctl.is_archival = msg_content
             except asyncio.CancelledError:
                 logger.info("[Worker-#%03d]: Reader was cancelled", ls_index)
                 return
-            except:
+            except (Exception, BaseException):
                 logger.exception(
                     "[Worker-#%03d]: Reader terminated with exception",
                     ls_index,
                 )
 
     async def check_working(self):
-        logger.info("[check_children_alive]: entering main loop")
+        logger.info("[check_working]: entering main loop")
         while True:
             try:
                 last_blocks = [wctl.last_block for wctl in self.workers.values() if wctl.last_block != -1]
@@ -377,7 +388,7 @@ class TonlibManager:
             except asyncio.CancelledError:
                 logger.info("[check_working]: Task was cancelled")
                 return
-            except:
+            except (Exception, BaseException):
                 logger.exception(
                     "[check_working]: Unhandled exception",
                 )
@@ -391,7 +402,11 @@ class TonlibManager:
                     current_time = time.monotonic()
                     wctl = self.workers[ls_index]
 
-                    wctl.is_enabled = wctl.is_enabled or wctl.restart_retry_mt is None or current_time > wctl.restart_retry_mt or wctl.restart_retry_count > 0
+                    wctl.is_enabled = (
+                        wctl.restart_retry_mt is None
+                        or current_time > wctl.restart_retry_mt
+                        or wctl.restart_retry_count > 0
+                    )
 
                     _is_alive = wctl.worker.is_alive()
                     if wctl.is_alive and not _is_alive:
@@ -415,17 +430,14 @@ class TonlibManager:
             except asyncio.CancelledError:
                 logger.info("[check_children_alive]: Task was cancelled")
                 return
-            except:
+            except (Exception, BaseException):
                 logger.exception(
                     "[check_children_alive]: Unhandled exception",
                 )
                 await asyncio.sleep(10)
 
     def get_workers_state(self):
-        result = {}
-        for ls_index, wctl in self.workers.items():
-            result[ls_index] = asdict(wctl)
-        return result
+        return {ls_index: asdict(wctl) for ls_index, wctl in self.workers.items()}
 
     def get_tonlib_state(self):
         return {
@@ -456,7 +468,7 @@ class TonlibManager:
         return suitable[:count] if count > 1 else suitable[0]
 
     async def dispatch_request_to_worker(self, method: str, ls_index: int, *args, **kwargs):
-        task_id = "{}:{}".format(time.time(), random.random())
+        task_id = f"{time.time()}:{random.random()}"
         timeout = time.monotonic() + self.settings.request_timeout
         with self.stats[StatisticTags(ls_index, method)]:
             wctl = self.workers[ls_index]
@@ -464,7 +476,7 @@ class TonlibManager:
             wctl.pending_tasks += 1
 
             logger.info(
-                "[Worker-#%03d]: Sending new task \"%s.%s\"",
+                '[Worker-#%03d]: Sending new task "%s.%s"',
                 ls_index,
                 task_id,
                 method,
@@ -480,7 +492,7 @@ class TonlibManager:
                 await asyncio.wait_for(wctl.futures[task_id], timeout=self.settings.request_timeout + 1)
                 result = wctl.futures[task_id].result()
                 logger.info(
-                    "[Worker-#%03d]: Task \"%s.%s\" received result",
+                    '[Worker-#%03d]: Task "%s.%s" received result',
                     ls_index,
                     task_id,
                     method,
@@ -498,12 +510,12 @@ class TonlibManager:
         ls_index = None
         try:
             ls_index = self.select_worker(archival=True)
-        except TonlibSelectWorkerError as E:
+        except TonlibSelectWorkerError:
             ls_index = self.select_worker(archival=False)
         return self.dispatch_request_to_worker(method, ls_index, *args, **kwargs)
 
     def get_measurements(self, timestamp: int) -> list[str]:
-        excludes = {"ls_index", "last_block_time", "start_mt"}
+        excludes = {"ls_index", "last_block_time", "start_mt", "sync_mt", "off_sync_mt", "restart_retry_mt"}
         return self.stats.as_influx(timestamp) + [
             f"NFTorrentLiteserverWorker,ls_index={x.ls_index} {dataclass_to_influx(x, excludes=excludes)} {timestamp}"
             for x in self.workers.values()

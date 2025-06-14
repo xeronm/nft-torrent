@@ -15,11 +15,11 @@ config = {
         },
     },
     "loggers": {
-        'pytonlib': {
-            'handlers': ['console'],
-            'level': 'WARNING',
-            'propagate': False,
-        },
+        # 'pytonlib': {
+        #     'handlers': ['console'],
+        #     'level': 'INFO',
+        #     'propagate': False,
+        # },
         # 'NFTorrent.tonlib': {
         #     'handlers': ['console'],
         #     'level': 'INFO',

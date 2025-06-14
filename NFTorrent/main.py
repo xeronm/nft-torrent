@@ -4,7 +4,7 @@ from functools import wraps
 
 import aiohttp
 import aiohttp.client_exceptions
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.params import Depends
@@ -254,7 +254,8 @@ async def get_nft_content(
     Get NFT standard content.
     """
     response = await ws.get_nft_content(rawRequest, request.address, query=request.q)
-    response.headers["Cache-Control"] = "public, max-age=3600"
+    if isinstance(response, Response):
+        response.headers["Cache-Control"] = "public, max-age=3600"
     return response
 
 
@@ -265,7 +266,8 @@ async def get_nft_torrent_content(request: models.BaseNftContentMethod = Depends
     Get NFT torrent content by digest.
     """
     response = await ws.get_nft_torrent_content(request.address, digest=request.digest)
-    response.headers["Cache-Control"] = "public, max-age=86400, immutable"
+    if isinstance(response, Response):
+        response.headers["Cache-Control"] = "public, max-age=86400, immutable"
     return response
 
 
@@ -296,8 +298,8 @@ async def get_nft_address_information(request: models.NftMethod = Depends()):  #
     Get NFT Address information.
     """
     nft_state = await ws.tonlib.generic_get_account_state(request.address)
-    del nft_state["data"]
-    del nft_state["code"]
+    nft_state.pop("data", None)
+    nft_state.pop("code", None)
     return nft_state
 
 

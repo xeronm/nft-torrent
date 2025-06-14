@@ -65,6 +65,7 @@ class LiteserverId(BaseModel):
 
 class TonlibWorkerState(BaseModel):
     ls_index: int = 0
+    ls_config: dict[str, Any] = None
     is_alive: bool = False
     is_sync: bool = False
     is_enabled: bool = True
@@ -78,14 +79,13 @@ class TonlibWorkerState(BaseModel):
     pending_tasks: int = 0
     sync_time: float = 0
     sync_mt: float = 0
-    sync_duration: int = 0
+    sync_duration: float = 0
     sync_dur_ema: float = 0
     off_sync_time: float = 0
     off_sync_mt: float = 0
     off_sync_count: int = 0
-    off_sync_duration: int = 0
+    off_sync_duration: float = 0
     off_sync_dur_ema: float = 0
-    config: dict[str, Any] = None
 
 
 class MeasurementItem(BaseModel):
@@ -201,16 +201,16 @@ class NftItemHeader(BaseModel):
     address: str
     index: int
     owner_address: str
-    collection_address: str = None
-    image: str = None
-    image_data: str = None
-    icons: dict[str, list[str]] = None
+    collection_address: str | None = None
+    image: str | None = None
+    image_data: str | None = None
+    icons: dict[str, list[str]] | None = None
 
 
 class CollectionItemsMethod(BaseModel):
-    lang: str = Query(default=None)
-    country: str = Query(default=None)
-    species: str = Query(default=None)
+    lang: str | None = Query(default=None)
+    country: str | None = Query(default=None)
+    species: int | None = Query(default=None)
     limit: int = Query(default=100)
     offset: int = Query(default=0)
     icon_size: str = Query(default="small")

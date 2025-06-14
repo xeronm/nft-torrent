@@ -1,5 +1,6 @@
 import asyncio
 import dataclasses
+import logging
 import unittest
 
 from NFTorrent.collections import config
@@ -10,6 +11,7 @@ from NFTorrent.tonlib import TonlibManager
 class TestTonlibManager(unittest.IsolatedAsyncioTestCase):
 
     async def test_tonlib(self):
+        logging.basicConfig(level=logging.INFO)
         self.tonlib = TonlibManager(
             TonlibSettings(
                 max_liteservers=1,
@@ -18,12 +20,14 @@ class TestTonlibManager(unittest.IsolatedAsyncioTestCase):
                 request_timeout=20,
             ),
             collection_config=config,
+            keystore_recreate=True,
         )
 
         while not self.tonlib.workers[0].is_sync:
             await asyncio.sleep(1)
 
         result = self.tonlib.get_tonlib_state()
+        self.assertIsNotNone(result)
         self.assertGreater(
             dataclasses.asdict(self.tonlib.workers[0]).items(),
             {
@@ -64,7 +68,7 @@ class TestTonlibManager(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-        for name, address in config.collections[0].nft_samples.items():
+        for address in config.collections[0].nft_samples.values():
             nft_data = await self.tonlib.get_nft_data(address)
             self.assertIsNotNone(nft_data)
 

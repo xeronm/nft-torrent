@@ -2,11 +2,12 @@ import asyncio
 import logging
 import logging.config
 import multiprocessing as mp
+import os
 import queue
 import random
+import shutil
 import sys
 import time
-import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
@@ -27,19 +28,19 @@ class TonlibWorkerException(Exception):
 class TonlibWorker(mp.Process):
 
     retry_timeout = 1
-    sync_timeout = 30
+    sync_timeout = 90
 
     def __init__(
         self,
         ls_index: int,
         settings: TonlibSettings,
-        input_queue: Optional[mp.Queue] = None,
-        output_queue: Optional[mp.Queue] = None,
+        input_queue: Optional[mp.Queue] = None,  # noqa: UP007
+        output_queue: Optional[mp.Queue] = None,  # noqa: UP007
         sync_verify_address: str = None,
         logger_config: dict = None,
         keystore_recreate: bool = False,
     ):
-        super(TonlibWorker, self).__init__(daemon=True)
+        super().__init__(daemon=True)
 
         self.input_queue = input_queue or mp.Queue()
         self.output_queue = output_queue or mp.Queue()
@@ -68,10 +69,10 @@ class TonlibWorker(mp.Process):
         policy.set_event_loop(policy.new_event_loop())
         self.loop = asyncio.new_event_loop()
 
-        keystore = os.path.join(self.settings.keystore, f'ls-{self.ls_index:03d}')
+        keystore = os.path.join(self.settings.keystore, f"ls_{self.ls_index:03d}")
         p = Path(keystore)
         if p.exists() and self.keystore_recreate:
-            p.unlink()
+            shutil.rmtree(keystore)
         p.mkdir(parents=True, exist_ok=True)
 
         # init tonlib
@@ -245,7 +246,7 @@ class TonlibWorker(mp.Process):
                 E,
             )
             raise
-        except (Exception, BaseException) as E:
+        except (Exception, BaseException):
             logger.exception(
                 "TonlibWorker-#%03d [report_sync]: Task terminated with unhandled exception",
                 self.ls_index,
@@ -257,17 +258,17 @@ class TonlibWorker(mp.Process):
             logger.debug("TonlibWorker-#%03d[report_archival]: entering main loop", self.ls_index)
             while not self.exit_event.is_set():
                 try:
-                    block_transactions = await self.tonlib.get_block_transactions(
+                    await self.tonlib.get_block_transactions(
                         -1, -9223372036854775808, random.randint(2, 4096), count=10
                     )
                     self.is_archival = True
-                except BlockNotFound as e:
+                except BlockNotFound:
                     self.is_archival = False
                 except TonlibException as E:
                     logger.error(
                         "TonlibWorker-#%03d [report_archival] Tonlib exception - %s: %s",
                         self.ls_index,
-                        type(e).__name__,
+                        type(E).__name__,
                         E,
                     )
 
@@ -280,7 +281,7 @@ class TonlibWorker(mp.Process):
         except asyncio.CancelledError:
             logger.debug("TonlibWorker-#%03d [report_archival]: Task was cancelled", self.ls_index)
             return
-        except (Exception, BaseException) as E:
+        except (Exception, BaseException):
             logger.exception(
                 "TonlibWorker-#%03d [report_archival]: Task terminated with unhandled exception",
                 self.ls_index,
@@ -302,7 +303,7 @@ class TonlibWorker(mp.Process):
         except asyncio.CancelledError:
             logger.debug("TonlibWorker-#%03d [main_loop]: Task was cancelled", self.ls_index)
             return
-        except (Exception, BaseException) as E:
+        except (Exception, BaseException):
             logger.exception(
                 "TonlibWorker-#%03d [main_loop]: Task terminated with unhandled exception",
                 self.ls_index,
@@ -326,7 +327,7 @@ class TonlibWorker(mp.Process):
                     method,
                     type(E).__name__,
                     E,
-                    extra={"method": method, "args": args, "kwargs": kwargs},
+                    extra={"method": method, "margs": args, "mkwargs": kwargs},
                 )
             else:
                 logger.debug("TonlibWorker-#%03d: Task '%s.%s' got response", self.ls_index, task_id, method)

@@ -114,7 +114,7 @@ class NodeJWTBearer(HTTPBearer):
 
     def get_jwt_token(self, audience: str) -> dict[str, Any]:
         token, expires = self._jwt_cache.get(audience, (None, None))
-        curr_time = time.time()
+        curr_time = int(time.time())
         if expires is not None and expires > curr_time + 60:
             return token
 
@@ -201,7 +201,7 @@ class ContractAPIKeyCookie(APIKeyCookie):
         return models.JWTPayload(**payload)
 
     def get_auth_payload(self) -> str:
-        expires = time.time() + self.auth_payload_expires_timeout
+        expires = int(time.time()) + self.auth_payload_expires_timeout
         payload = {"aud": [self.audience], "exp": expires}
         token = jwt.encode(payload, self.jwt_secret, algorithm=self.jwt_algorithm)
         return token
@@ -252,7 +252,7 @@ class ContractAPIKeyCookie(APIKeyCookie):
             )
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired signature") from E
 
-        expires = time.time() + self.session_token_timeout
+        expires = int(time.time()) + self.session_token_timeout
         payload = {"sub": account.address, "aud": [self.audience], "exp": expires}
         token = jwt.encode(payload, self.jwt_secret, algorithm=self.jwt_algorithm)
         return models.JWTPayload(**payload), token

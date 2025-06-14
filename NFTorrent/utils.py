@@ -21,7 +21,7 @@ def dataclass_to_influx(instance, excludes: list[str] = None):
         value = getattr(instance, _field.name, None)
         if value is None:
             continue
-        if not isinstance(value, (str, int, float, bool)):
+        if not isinstance(value, str | int | float | bool):
             continue
         if isinstance(value, bool):
             value = 1 if value else 0

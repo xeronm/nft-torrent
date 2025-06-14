@@ -27,8 +27,6 @@ from NFTorrent.modelsbase import (
     CollectionConfig,
     CollectionInstance,
     MeasurementStore,
-    StatisticMeasurement,
-    StatisticNoTags,
 )
 from NFTorrent.settings import IndexDbSettings
 from NFTorrent.tonlib import TonlibManager, TonlibRequestError
@@ -300,9 +298,7 @@ class IndexDb:
         except Exception as E:
             instance.error_time = datetime.datetime.now(datetime.timezone.utc)
             instance.error_code = type(E).__name__[:40]
-            logger.warning(
-                "NFT icons convert error, address: %s - %s: %s", instance.address, type(E).__name__, E
-            )
+            logger.warning("NFT icons convert error, address: %s - %s: %s", instance.address, type(E).__name__, E)
             return False
         return True
 
