@@ -1,8 +1,15 @@
-- name: '"{{ service.name }}" package "{{ service.package }}" is installed'
-  yum:
+- name: 'RedHat: "{{ service.name }}" package "{{ service.package }}" is installed'
+  dnf:
     name: "{{ service.package }}"
     state: present
     exclude: "{{ service.exclude | default('') }}"
+  when: ansible_os_family == "RedHat"
+
+- name: 'Debian: "{{ service.name }}" package "{{ service.package }}" is installed'
+  apt:
+    name: "{{ service.package }}"
+    state: present
+  when: ansible_os_family == "Debian"
 
 - name: '"{{ service.name }}" is running and enabled as configured'
   service:
@@ -11,5 +18,11 @@
     enabled: yes
 
 - name: '"{{ service.name }}" systemd unit params'
-  include_tasks: service_param.yaml
+  ansible.builtin.ini_file:
+    path: /usr/lib/systemd/system/{{ service.name }}.service
+    section: Service
+    option: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
   with_items: "{{ service.params }}"
+

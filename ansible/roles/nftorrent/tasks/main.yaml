@@ -52,6 +52,15 @@
     mode: '0750'
   tags: nftorrent
 
+- name: NFTorrent IPFS storage "~/nft-torrent/cluster-db"
+  file:
+    path: "/home/{{ oam.user }}/nft-torrent/cluster-db"
+    state: directory
+    owner: "{{ oam.user }}"
+    group: "{{ oam.group }}"
+    mode: '0750'
+  tags: nftorrent
+
 - name: NFTorrent IPFS Cluster DB bootstrap peerstore
   template:
     src: ./peerstore.j2

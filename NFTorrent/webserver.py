@@ -1,37 +1,42 @@
 import asyncio
 import io
+import logging
+import logging.config
 import time
-from collections import Counter
 from urllib.parse import urljoin
 
-import aiohttp
 from fastapi import Request, status
 from fastapi.exceptions import HTTPException
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
-from loguru import logger
 
-from NFTorrent.auth import ContractAPIKeyCookie, NodeJWTBearer, ServerResponseAuthError
+from NFTorrent.auth import ContractAPIKeyCookie, NodeJWTBearer
 from NFTorrent.cache import DisabledCacheManager
 from NFTorrent.indexer import IndexDb
 from NFTorrent.ipfs import IpfsRpcManager
 from NFTorrent.models import HealthCheckResult
 from NFTorrent.modelsbase import CollectionConfig
-from NFTorrent.pyTON.manager import TonlibManager
 from NFTorrent.settings import Settings
+from NFTorrent.tonlib import TonlibManager
 from NFTorrent.utils import dict_to_influx, guess_type, parse_ipfs_uri
+
+logger = logging.getLogger(__name__)
 
 
 class Server:
 
     def __init__(self, settings: Settings = None, collection_config: CollectionConfig = None):
         self.settings = settings or Settings.from_environment()
+        if self.settings.logger_config:
+            logging.config.dictConfig(self.settings.logger_config)
+        else:
+            logging.basicConfig(level=self.settings.logger_level)
+
         self.collection_config = collection_config or self.settings.webserver.collection_config
         self.tonlib: TonlibManager = None
         self.indexer: IndexDb = None
         self.ipfs: IpfsRpcManager = None
         self.peer_hostnames = {}
         self.loop = None
-        self.stats = Counter()
 
         self.jwt_bearer = NodeJWTBearer(
             subject=self.settings.webserver.public_addr or "127.0.0.1",
@@ -50,29 +55,29 @@ class Server:
         )
 
     async def startup(self):
-        self.stats["started"] = int(time.time())
+        self.start_time = int(time.time())
         self.loop = loop = asyncio.get_event_loop()
         logger.warning("Server startup initiated...")
         logger.warning(
             "Parameters:\n"
-            " - webserver.allow_networks: {networks}\n"
-            " - webserver.api_root_path: {api_root}\n"
-            " - webserver.twa_domains: {domains}\n"
-            " - webserver.allow_origins: {allow_origins}\n"
-            " - webserver.collections: {collections} <{collection_config}>\n"
-            " - ipfs.enabled: {ipfs}\n"
-            " - cache.enabled: {cache_enabled} <{cache_manager}>\n"
-            " - indexdb.enabled: {indexdb_enabled}\n",
-            ipfs=self.settings.ipfs.enabled,
-            api_root=self.settings.webserver.api_root_path,
-            allow_origins=self.settings.webserver.allow_origins,
-            domains=self.settings.webserver.twa_domains,
-            networks=self.settings.webserver.allow_networks,
-            collections=[x.address for x in self.settings.webserver.collection_config.collections],
-            collection_config=self.settings.webserver.collection_config.__importname__,
-            cache_enabled=self.settings.cache.enabled,
-            cache_manager=self.settings.cache.manager_class.__importname__,
-            indexdb_enabled=self.settings.indexdb.enabled,
+            " - webserver.allow_networks: %s\n"
+            " - webserver.api_root_path: %s\n"
+            " - webserver.twa_domains: %s\n"
+            " - webserver.allow_origins: %s\n"
+            " - webserver.collections: %s <%s>\n"
+            " - ipfs.enabled: %s\n"
+            " - cache.enabled: %s <%s>\n"
+            " - indexdb.enabled: %s\n",
+            self.settings.webserver.allow_networks,
+            self.settings.webserver.api_root_path,
+            self.settings.webserver.twa_domains,
+            self.settings.webserver.allow_origins,
+            [x.address for x in self.settings.webserver.collection_config.collections],
+            self.settings.webserver.collection_config.__importname__,
+            self.settings.ipfs.enabled,
+            self.settings.cache.enabled,
+            self.settings.cache.manager_class.__importname__,
+            self.settings.indexdb.enabled,
         )
 
         cache_manager = None
@@ -85,11 +90,11 @@ class Server:
             raise RuntimeError("Tonlib liteserver_config required")
 
         self.tonlib = TonlibManager(
-            tonlib_settings=self.settings.tonlib,
-            dispatcher=None,
+            settings=self.settings.tonlib,
             cache_manager=cache_manager,
             loop=loop,
             collection_config=self.collection_config,
+            logger_config=self.settings.logger_config,
         )
 
         if self.settings.ipfs.enabled:
@@ -130,7 +135,7 @@ class Server:
     def get_healthcheck(self) -> HealthCheckResult:
         stotage_state = tonlib_state = indexer_state = None
         if self.tonlib is not None:
-            tonlib_state = sum([1 for x in self.tonlib.get_workers_state().values() if x["is_working"]])
+            tonlib_state = len([w for w in self.tonlib.workers.values() if w.is_sync]) >= 2  # 2 min liyterservers
 
         load = redundancy = 0
         if self.ipfs is not None:
@@ -138,10 +143,10 @@ class Server:
             if ipfs_state is not None:
                 load = ipfs_state["storage"]["RepoSize"] * 100 / ipfs_state["storage"]["StorageMax"]
                 redundancy = len(ipfs_state["cluster_peers"]) >= self.settings.ipfs.min_redundancy
-                stotage_state = ipfs_state["peers"] > self.ipfs.settings.min_peers_count
+                stotage_state = ipfs_state["peers"] >= self.ipfs.settings.min_peers_count
         if self.indexer is not None:
             indexer_state = self.indexer.get_indexdb_state()
-            last_checked = [x["stats"]["last_checked"] for x in indexer_state.values()]
+            last_checked = [x["fields"]["last_checked"] for x in indexer_state["stats"]]
             indexer_state = len(last_checked) == len(
                 [x for x in last_checked if x >= time.time() - self.indexer.settings.indexer_timeout * 2]
             )
@@ -157,7 +162,7 @@ class Server:
     def get_measurements(self, timestamp: int):
         hc = self.get_healthcheck()
         _stats = hc.dict()
-        _stats.update(self.stats)
+        _stats["start_time"] = self.start_time
         measurements = [f"NFTorrentServer {dict_to_influx(_stats)} {timestamp}"]
         if self.tonlib is not None:
             measurements += self.tonlib.get_measurements(timestamp)
@@ -166,43 +171,6 @@ class Server:
         if self.indexer is not None:
             measurements += self.indexer.get_measurements(timestamp)
         return measurements
-
-    async def remote_call(self, host: str, remote_path: str):
-        # host = await self._get_peer_hostname(peer["ip_str"])
-        result = {}
-        logger.info(
-            "Call storage remote peer, host: {host}, remote_path: {remote_path}", host=host, remote_path=remote_path
-        )
-        async with aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=self.settings.webserver.request_timeout)
-        ) as session:
-            try:
-                self.stats["call_remote"] += 1
-                async with await session.get(
-                    self._get_peer_uri(host, remote_path),
-                    headers=self._get_peer_headers(host),
-                    verify_ssl=self.settings.webserver.verify_ssl,
-                    allow_redirects=False,
-                ) as resp:
-                    if self.settings.webserver.bearer_auth_response:
-                        await self.jwt_bearer.response_credentials(resp, host)
-                    result["status"] = resp.status
-                    result["response"] = await resp.read()
-                    result["headers"] = resp.headers
-            except Exception as E:
-                self.stats["call_remote_error"] += 1
-                if isinstance(E, ServerResponseAuthError):
-                    self.stats["remote_auth_error"] += 1
-                result["error"] = str(E)
-                logger.warning(
-                    "Call storage remote peer error, host: {host}, remote_path: {remote_path}, exc: {exc}",  # noqa: E501
-                    host=host,
-                    remote_path=remote_path,
-                    exc=str(E),
-                )
-
-        token = self.jwt_bearer.get_jwt_token(host)
-        return result, token
 
     async def get_nft_content(self, request: Request, address: str, query: str = None):
         nft_collection = self.collection_config.get_collection(address)
@@ -254,6 +222,8 @@ class Server:
                     "Content-Disposition": f'inline; filename="{address}.webp"',
                 },
             )
+        if query == "uri":
+            return JSONResponse({"attributes": nft_content.metadata_attributes()})
 
         # TODO: Generate dynamic default image with pets Name
         return HTTPException(status_code=status.HTTP_404_NOT_FOUND)

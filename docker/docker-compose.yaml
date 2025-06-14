@@ -62,20 +62,18 @@ services:
     image: dtec/nft-torrent:${NFTORRENT_VERSION}
     restart: unless-stopped
     environment:
-      LOGURU_LEVEL: WARNING
-      LOGURU_COLORIZE: 1
-      TON_STORAGE_NUM_WORKERS: 0
+      LOGGER_CONFIG: NFTorrent.logger.config
       IPFS_ENABLED: 1
       IPFS_KUBO_RPC_URI: http://ipfs-cluster:9095
       IPFS_CLUSTER_RPC_URI: http://ipfs-cluster:9094
       IPFS_MIN_REDUNDANCY: 2
       IPFS_CONFIRMATION_TIMEOUT: 60
-      TON_API_TONLIB_KEYSTORE: /ton_keystore/
-      TON_API_TONLIB_REQUEST_TIMEOUT: 20
-      TON_API_TONLIB_LITESERVER_CONFIG: /run/secrets/liteserver_config
+      TONLIB_KEYSTORE: /ton_keystore/
+      TONLIB_REQUEST_TIMEOUT: 20
+      TONLIB_LITESERVER_CONFIG: /run/secrets/liteserver_config
       CACHE_ENABLED: 1
-      # TON_API_CACHE_REDIS_ENDPOINT: cache
-      # TON_API_CACHE_REDIS_TIMEOUT: 2
+      # CACHE_REDIS_ENDPOINT: cache
+      # CACHE_REDIS_TIMEOUT: 2
       INDEXDB_ENABLED: 1
       INDEXDB_INDEXER_TIMEOUT: 30
       INDEXDB_DATABASE_HOST: db
@@ -88,6 +86,7 @@ services:
       HTTP_COLLECTION_CONFIG: nftcollections.config
     volumes:
       - ./ton_keystore:/ton_keystore
+      - ./entrypoint.d:/etc/entrypoint.d/
       - ./nftcollections.py:/opt/nftorrent/nftcollections.py
       - ./assets:/opt/nftorrent/assets
     secrets:

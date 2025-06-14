@@ -4,12 +4,12 @@ from functools import wraps
 
 import aiohttp
 import aiohttp.client_exceptions
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.params import Depends
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
-from pydantic.error_wrappers import ValidationError
+from pydantic import ValidationError
 from pytonlib import TonlibException
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -17,7 +17,7 @@ from NFTorrent import __meta__, models
 from NFTorrent.auth import set_cookie
 from NFTorrent.ipfs import IpfsRpcHttpException
 from NFTorrent.middlewares import StatisticsMiddleware, StatisticsStore
-from NFTorrent.pyTON.manager import ContractRequestError
+from NFTorrent.tonlib import TonlibRequestError
 from NFTorrent.webserver import Server
 
 ws = Server()
@@ -106,7 +106,7 @@ async def ipfs_exception_handler(request, exc):
     return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-@app.exception_handler(ContractRequestError)
+@app.exception_handler(TonlibRequestError)
 async def invalid_contract_result_exception_handler(request, exc):
     res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_400_BAD_REQUEST)
     return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_400_BAD_REQUEST)
@@ -202,7 +202,7 @@ if ws.settings.indexdb.enabled:
         """
         Get IndexDB state.
         """
-        return {"collections": ws.indexer.get_indexdb_state()}
+        return ws.indexer.get_indexdb_state()
 
 
 @app.get("/api/v1/account/authPayload", tags=["account"])
@@ -254,7 +254,8 @@ async def get_nft_content(
     Get NFT standard content.
     """
     response = await ws.get_nft_content(rawRequest, request.address, query=request.q)
-    response.headers["Cache-Control"] = "public, max-age=3600"
+    if isinstance(response, Response):
+        response.headers["Cache-Control"] = "public, max-age=3600"
     return response
 
 
@@ -265,7 +266,8 @@ async def get_nft_torrent_content(request: models.BaseNftContentMethod = Depends
     Get NFT torrent content by digest.
     """
     response = await ws.get_nft_torrent_content(request.address, digest=request.digest)
-    response.headers["Cache-Control"] = "public, max-age=86400, immutable"
+    if isinstance(response, Response):
+        response.headers["Cache-Control"] = "public, max-age=86400, immutable"
     return response
 
 
@@ -295,9 +297,9 @@ async def get_nft_address_information(request: models.NftMethod = Depends()):  #
     """
     Get NFT Address information.
     """
-    nft_state = await ws.tonlib.raw_get_account_state(request.address)
-    del nft_state["data"]
-    del nft_state["code"]
+    nft_state = await ws.tonlib.generic_get_account_state(request.address)
+    nft_state.pop("data", None)
+    nft_state.pop("code", None)
     return nft_state
 
 

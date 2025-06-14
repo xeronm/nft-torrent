@@ -38,9 +38,9 @@ class PetMemoryNft(BaseNftModel, table=True):
     # Mutable Data
     owner: str = Field(index=True, max_length=48)
     fee_due_time: int = Field()
-    uri: str | None = Field(default=None, max_length=1000)
-    description: str | None = Field(default=None, max_length=256)
-    image: str | None = Field(default=None, max_length=256)
+    uri: str | None = Field(default=None, max_length=500)
+    description: str | None = Field(default=None, max_length=2000)
+    image: str | None = Field(default=None, max_length=500)
     image_data: bytes | None = Field(default=None)
     #
     icons: bytes | None = Field(default=None)

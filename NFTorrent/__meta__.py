@@ -1,3 +1,3 @@
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 __title__ = "TON NFT Torrent content HTTP Gateway"
 __description__ = "HTTP API Gateway to access NFT content and data maintained with IPFS"

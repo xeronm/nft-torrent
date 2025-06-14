@@ -27,14 +27,14 @@ class PetMemoryNftImmutableData:
     species: int
     name: str
     sex: int
-    country_code: str
     birth_date: str
     death_date: str
-    species_name: str = None
-    breed: str = None
-    lang: str = None
-    geo_point: GeoPoint = None
-    location: str = None
+    country_code: str | None = None
+    species_name: str | None = None
+    breed: str | None = None
+    lang: str | None = None
+    geo_point: GeoPoint | None = None
+    location: str | None = None
 
     @classmethod
     def from_tvm(cls, cs: CellSlice):
@@ -110,6 +110,35 @@ class PetMemoryNftContent(BaseNftContent):
 
     def storage_due_time(self):
         return self.fee_due_time
+
+    def metadata_attributes(self):
+        gp = self.imm_data.geo_point
+        attrs = {
+            "name": self.imm_data.name,
+            "species": (
+                self.imm_data.species_name
+                if self.imm_data.species_name
+                else (["Other", "Dog", "Cat"][self.imm_data.species])
+            ),
+            "breed": self.imm_data.breed,
+            "sex": "Female" if self.imm_data.sex else "Male",
+            "birth_date": self.imm_data.birth_date,
+            "death_date": self.imm_data.death_date,
+            "country_code": self.imm_data.country_code,
+            "language": self.imm_data.lang,
+            "location": self.imm_data.location,
+            "geo_point": (
+                f"{int(gp.is_south)}:{gp.latitude:.04f}:{gp.longitude:.04f}"
+                if self.imm_data.geo_point is not None
+                else None
+            ),
+            "fee_due_time": self.fee_due_time,
+        }
+        if self.data.image is not None:
+            attrs["image_uri"] = self.data.image
+        if self.data.uri is not None:
+            attrs["uri"] = self.data.uri
+        return [{"trait_type": k, "value": v} for k, v in attrs.items()]
 
 
 def load_string(stack, opt: bool = False):

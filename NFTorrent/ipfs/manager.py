@@ -1,22 +1,23 @@
 import asyncio
 import datetime
 import json
+import logging
 import time
-import traceback
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlencode, urljoin
 
 import aiohttp
 from fastapi import HTTPException, UploadFile, status
-from loguru import logger
-from pyTON.cache import CacheManager, DisabledCacheManager
 
 from NFTorrent import exceptions, models
+from NFTorrent.cache import BaseCacheManager, DisabledCacheManager
 from NFTorrent.modelsbase import MeasurementStore, StatisticMeasurement
-from NFTorrent.pyTON.manager import TonlibManager
 from NFTorrent.settings import IpfsSettings
+from NFTorrent.tonlib import TonlibManager
 from NFTorrent.utils import dict_to_influx, parse_ipfs_uri
+
+logger = logging.getLogger(__name__)
 
 
 class LockShouldWaitError(Exception):
@@ -64,13 +65,15 @@ class StatisticTags:
 
 class IpfsRpcManager:
     node_state_cache_timeout = 60
+    node_state_restart_timeout = 30
+    node_state_check_timeout = 5
 
     def __init__(
         self,
         settings: IpfsSettings,
         #  num_workers: int = None,
         #  restart_timeout: int = None,
-        cache_manager: CacheManager | None = None,
+        cache_manager: BaseCacheManager | None = None,
         loop: asyncio.BaseEventLoop | None = None,
         tonlib: TonlibManager = None,
     ):
@@ -110,28 +113,28 @@ class IpfsRpcManager:
         self.raw_get_cid_info = self.cache_manager.cached(expire=60)(self.raw_get_cid_info)
 
     async def check_ipfs_alive(self):
-        logger.warning("IpfsRpcManager[check_ipfs_alive]: entering main loop")
+        logger.warning("[check_ipfs_alive]: Entering main loop")
         while True:
             try:
                 try:
                     await self.get_node_state()
                 except Exception as E:
                     logger.warning(
-                        "IpfsRpcManager[check_ipfs_alive]: failed to get node state, exc: {excname}: {exc}",
-                        excname=type(E),
-                        exc=str(E),
+                        "[check_ipfs_alive]: Failed to get node state - %s: %s",
+                        type(E),
+                        E,
                     )
 
-                await asyncio.sleep(5)
+                await asyncio.sleep(self.node_state_check_timeout)
             except asyncio.CancelledError:
-                logger.info("IpfsRpcManager[check_ipfs_alive]: Task was cancelled")
+                logger.info("[check_ipfs_alive]: Task was cancelled")
                 return
             except (Exception, BaseException):
-                logger.critical(
-                    "IpfsRpcManager[check_ipfs_alive]: Task terminated with exception: {exc}",
-                    exc=traceback.format_exc(),
+                logger.exception(
+                    "[check_ipfs_alive]: Unhandled exception, sleep for %d sec",
+                    self.node_state_restart_timeout,
                 )
-                await asyncio.sleep(30)
+                await asyncio.sleep(self.node_state_restart_timeout)
 
     async def get_nft_cid(
         self, address: str, skip_verification: bool = False, owner: str = None, raise_error: bool = False
@@ -162,7 +165,7 @@ class IpfsRpcManager:
             kwargs["data"] = data
         with self.stats[StatisticTags(method=stat_name)]:
             try:
-                logger.info("IPFS RPC Call, method: {method}, uri: {uri}", method=method.__name__, uri=uri)
+                logger.info('IPFS Call "%s: %s"', method.__name__.upper(), uri)
                 result = None
                 async with method(uri, **kwargs) as resp:
                     if resp.status != status.HTTP_200_OK:
@@ -176,10 +179,11 @@ class IpfsRpcManager:
                 return result
             except (aiohttp.client_exceptions.ClientError, aiohttp.client_exceptions.ClientConnectorError) as E:
                 logger.error(
-                    "IPFS RPC call error, method: {method}, uri: {uri}, {exc}",
-                    method=method.__name__,
-                    uri=uri,
-                    exc=str(E),
+                    'IPFS Call "%s: %s" got error - %s: %s',
+                    method.__name__.upper(),
+                    uri,
+                    type(E).__name__,
+                    E,
                 )
                 raise
 
@@ -268,17 +272,18 @@ class IpfsRpcManager:
                         if curr_cid != cid:
                             raise TimeoutError()
 
-                        logger.warning("IPFS CID pin confirmed, NFT: {address}, cid: {cid}", address=address, cid=cid)
+                        logger.warning("Pin confirmed for CID, NFT: %s, cid: %s", address, cid)
                         await self.cid_pin(cid, name=address, address=address, expire_at=nft_content.storage_due_time())
                         if old_cid is not None:
                             await self.cid_unpin(old_cid)
         except Exception as E:
             logger.warning(
-                "IPFS CID was not pinned, NFT: {address}, cid: {cid}, curr_cid: {curr_cid}, error: {exc}",  # noqa: E501
-                address=address,
-                cid=cid,
-                curr_cid=curr_cid,
-                exc=str(E),
+                "CID was not pinned, NFT: %s, cid: %s, curr_cid: %s due to error - %s: %s",  # noqa: E501
+                address,
+                cid,
+                curr_cid,
+                type(E).__name__,
+                E,
             )
 
     def get_cached_node_state(self):
@@ -403,9 +408,9 @@ class IpfsRpcManager:
             if [f.size for f in files if f.size > self.settings.file_size_limit]:
                 raise exceptions.TorrentSizeLimit(f"file limit: {self.settings.file_size_limit}")
             logger.warning(
-                "Creating new IPFS CID for new NFT, owner: {owner}, size={size}",  # noqa: E501
-                owner=owner,
-                size=total_size,
+                "Creating CID for new NFT, owner: %s, size: %d",  # noqa: E501
+                owner,
+                total_size,
             )
             content = None
             try:
@@ -413,10 +418,11 @@ class IpfsRpcManager:
                     content = await self.cid_add_local(files=files)
             except Exception as E:
                 logger.warning(
-                    "Error creating IPFS CID, for new NFT, owner: {owner}, size={size}, {exc}",  # noqa: E501
-                    owner=owner,
-                    size=total_size,
-                    exc=str(E),
+                    "Creating CID, for new NFT, owner: %s, size: %d failed with error - %s: %s",  # noqa: E501
+                    owner,
+                    total_size,
+                    type(E).__name__,
+                    E,
                 )
                 raise
             return content
@@ -439,10 +445,10 @@ class IpfsRpcManager:
                 )
 
             logger.warning(
-                "Creating new IPFS CID, NFT: {address}, curr_cid: {cid}, size={size}",  # noqa: E501
-                address=address,
-                cid=cid,
-                size=total_size,
+                "Creating CID, NFT: %s, curr_cid: %s, size: %d",  # noqa: E501
+                address,
+                cid,
+                total_size,
             )
             try:
                 async with OperationLock(f"nft:{address}:add", self.cid_wlock, wait=False):
@@ -451,25 +457,26 @@ class IpfsRpcManager:
 
                     if cid != new_cid:
                         logger.info(
-                            "Waiting for confirmation newly created IPFS CID, NFT: {address}, new cid: {cid}",  # noqa: E501
-                            address=address,
-                            cid=new_cid,
+                            "Waiting for confirmation created CID, NFT: %s, new cid: %s",  # noqa: E501
+                            address,
+                            new_cid,
                         )
                         self.loop.create_task(self.confirm_content(address, cid, new_cid))
                     else:
                         self.stats["create_confirm"] += 1
                         logger.warning(
-                            "Newly created IPFS CID already confirmed, NFT: {address}, cid: {cid}",
-                            address=address,
-                            cid=new_cid,
+                            "Created CID has already been confirmed, NFT: %s, cid: %s",
+                            address,
+                            new_cid,
                         )
                         await self.cid_pin(new_cid, name=address, expire_at=nft_content.storage_due_time())
             except Exception as E:
                 logger.warning(
-                    "Error creating IPFS CID, NFT: {address}, size={size}, {exc}",  # noqa: E501
-                    address=address,
-                    size=total_size,
-                    exc=str(E),
+                    "Creating CID, NFT: %s, size: %d - failed with error - %s: %s",  # noqa: E501
+                    address,
+                    total_size,
+                    type(E).__name__,
+                    E,
                 )
                 raise
 
