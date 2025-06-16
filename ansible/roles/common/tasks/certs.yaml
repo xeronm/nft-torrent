@@ -1,35 +1,35 @@
 - name: 'Public Ceritificates path'
   file:
-    path: "/etc/pki/tls/certs/{{ item.domain }}"
+    path: "/etc/pki/tls/certs/{{ item }}"
     state: directory
     owner: root
     group: root
     mode: 0755
-  with_items: "{{ certs }}"
+  with_items: "{{ ssl_domains }}"
 
 - name: 'Private Ceritificates path'
   file:
-    path: "/etc/pki/tls/private/{{ item.domain }}"
+    path: "/etc/pki/tls/private/{{ item }}"
     state: directory
     owner: root
     group: root
     mode: 0700
-  with_items: "{{ certs }}"
+  with_items: "{{ ssl_domains }}"
 
-- name: 'SSL Public Ceritificate'
+- name: 'SSL Public Bootstrap Ceritificate'
   copy:
-    src: "{{ inventory_dir }}/certs/{{ item.domain }}/{{ item.public_cert }}"
-    dest: "/etc/pki/tls/certs/{{ item.domain }}/{{ item.public_cert }}"
+    src: "{{ inventory_dir }}/certs/{{ item }}/fullchain.pem"
+    dest: "/etc/pki/tls/certs/{{ item }}/fullchain.pem"
     owner: root
     group: root
     mode: 0644
-  with_items: "{{ certs }}"
+  with_items: "{{ ssl_domains }}"
 
 - name: 'SSL Private Ceritificate Key'
   copy:
-    src: "{{ inventory_dir }}/certs/{{ item.domain }}/{{ item.private_key }}"
-    dest: "/etc/pki/tls/private/{{ item.domain }}/{{ item.private_key }}"
+    src: "{{ inventory_dir }}/certs/{{ item }}/privkey.pem"
+    dest: "/etc/pki/tls/private/{{ item }}/privkey.pem"
     owner: root
     group: root
     mode: 0600
-  with_items: "{{ certs }}"
+  with_items: "{{ ssl_domains }}"

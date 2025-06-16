@@ -7,6 +7,14 @@
     mode: '0755'
   tags: nftorrent
 
+- name: NFTorrent python package
+  copy:
+    src: "{{ nftorrent.package }}"
+    dest: "/home/{{ oam.user }}/nft-torrent"
+    owner: "{{ oam.user }}"
+    group: "{{ oam.group }}"
+  tags: nftorrent
+
 - name: NFTorrent Assets "~/nft-torrent/assets"
   copy:
     src: ./assets

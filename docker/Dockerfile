@@ -32,8 +32,10 @@ COPY --from=builder /ton/build/tonlib/libtonlibjson.so.0.5 /usr/local/lib/
 RUN groupadd -r nftorrent --gid=${GROUP_ID} && \
     useradd -r -g nftorrent --uid=${USER_ID} --home-dir=/opt/nftorrent --shell=/bin/bash nftorrent && \
     apt-get update && \
-    apt-get install -y wget curl unzip python3 python3-pip libatomic1 libjemalloc2 libsodium23 && \
+    apt-get install -y wget curl unzip python3 python3-pip libatomic1 libjemalloc2 libsodium23 locales && \
     apt-get clean && \
+    locale-gen en_US.UTF-8 && \
+    update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 && \
     python3 -m pip install pip -U --no-cache-dir && \
     ln -s libtonlibjson.so.0.5 /usr/local/lib/libtonlibjson.so
 
@@ -45,7 +47,9 @@ RUN --mount=from=dist,target=/mnt/dist \
     python3 -m pip install ton_nft_torrent==${NFTORRENT_VERSION} gunicorn uvicorn --no-cache-dir \
         --find-links /mnt/dist
 
-ENV LOGGER_LEVEL=WARNING \
+ENV LC_ALL=en_US.UTF-8 \
+    LANG=en_US.UTF-8 \
+    LOGGER_LEVEL=WARNING \
     TONLIB_LITESERVER_CONFIG=https://ton.org/global-config.json \
     TONLIB_KEYSTORE=/tmp/.ton_keystore/
 

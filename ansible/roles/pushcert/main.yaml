@@ -1,0 +1,23 @@
+- name: Push fullchain.pem
+  copy:
+    src: "/etc/letsencrypt/live/{{ domain }}/fullchain.pem"
+    dest: "/etc/pki/tls/certs/{{ domain }}/fullchain.pem"
+    owner: root
+    group: root
+    mode: '0644'
+  tags: pushcert
+
+- name: Push privkey.pem
+  copy:
+    src: "/etc/letsencrypt/live/{{ domain }}/privkey.pem"
+    dest: "/etc/pki/tls/private/{{ domain }}/privkey.pem"
+    owner: root
+    group: root
+    mode: '0600'
+  tags: pushcert
+
+- name: Reload nginx
+  service:
+    name: nginx
+    state: reloaded
+  tags: pushcert

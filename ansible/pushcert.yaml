@@ -1,0 +1,7 @@
+- name: Push updated TLS certificates
+  hosts: webservers
+  become: true
+  vars:
+    domain: "{{ domain }}"
+  roles:
+    - pushcert

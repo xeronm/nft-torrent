@@ -4,7 +4,7 @@
     apply:
       tags: nginx
   vars:
-    certs: "{{ certificates }}"
+    ssl_domains: "{{ ssl_domains }}"
   tags: nginx
 
 - name: "Nginx conf.d path"
