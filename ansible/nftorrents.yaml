@@ -2,6 +2,7 @@
   remote_user: root
   roles:
     - common
+    - certs
     - nginx
     - website
     - nftorrent

@@ -15,9 +15,12 @@ if [ -z "$RENEWED_LINEAGE" ]; then
   exit 1
 fi
 
+DOMAIN=$(basename "$RENEWED_LINEAGE")
+
 ansible-playbook ${SCRIPT_DIR}/pushcert.yaml \
-  -i ${SCRIPT_DIR}/inventory \
-  -e domain="$DOMAIN"
+  -i ${SCRIPT_DIR}/inventory/production.yaml \
+  -e domain="$DOMAIN" \
+  --private-key ~/.ssh/certbot_ansible_key
 STATUS=$?
 
 if [ $STATUS -ne 0 ]; then

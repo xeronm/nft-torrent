@@ -1,6 +1,6 @@
-- name: Push updated TLS certificates
-  hosts: webservers
-  become: true
+- hosts: nftorrents
+  name: Push updated TLS certificates
+  remote_user: root
   vars:
     domain: "{{ domain }}"
   roles:

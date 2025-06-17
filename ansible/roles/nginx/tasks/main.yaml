@@ -1,12 +1,3 @@
-- name: '"Nginx" Certificates'
-  include_tasks:
-    file: ./../common/tasks/certs.yaml
-    apply:
-      tags: nginx
-  vars:
-    ssl_domains: "{{ ssl_domains }}"
-  tags: nginx
-
 - name: "Nginx conf.d path"
   file:
     path: "{{ item }}"

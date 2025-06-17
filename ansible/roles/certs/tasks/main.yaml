@@ -6,6 +6,7 @@
     group: root
     mode: 0755
   with_items: "{{ ssl_domains }}"
+  tags: certs
 
 - name: 'Private Ceritificates path'
   file:
@@ -15,6 +16,7 @@
     group: root
     mode: 0700
   with_items: "{{ ssl_domains }}"
+  tags: certs
 
 - name: 'SSL Public Bootstrap Ceritificate'
   copy:
@@ -24,6 +26,9 @@
     group: root
     mode: 0644
   with_items: "{{ ssl_domains }}"
+  notify:
+    - restart nginx
+  tags: certs
 
 - name: 'SSL Private Ceritificate Key'
   copy:
@@ -33,3 +38,14 @@
     group: root
     mode: 0600
   with_items: "{{ ssl_domains }}"
+  notify:
+    - restart nginx
+  tags: certs
+
+- name: Certbot Deploy SSH key
+  authorized_key:
+    user: root
+    state: present
+    key: "{{ certbot_deploy.sshkey }}"
+  when: certbot_deploy.enabled != 0
+  tags: certs
