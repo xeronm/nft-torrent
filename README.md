@@ -114,3 +114,18 @@ website:
 ```sh
 ansible-playbook -i ./inventory/production.yaml nftorrents.yaml
 ```
+
+
+5. Configure Master-Host and obtain ceritificate
+
+Setup properly:
+  - DNS Credentials `/etc/letsencrypt/<plugin>.ini`;
+  - Deploy hook `/etc/letsencrypt/renewal/<domain>`;
+
+```sh
+pip3 install ansible certbot
+certbot certonly -a dns -d <domain> -d *.<domain> --dns-propagation-seconds 300
+certbot renew --dry-run
+```
+
+
