@@ -1,0 +1,76 @@
+- name: Install geoip2 module
+  copy:
+    src: ./etc/nginx/ngx_http_geoip2_module.so
+    dest: /usr/share/nginx/modules/ngx_http_geoip2_module.so
+    owner: root
+    group: root
+    mode: 0755
+  notify:
+    - restart nginx
+  tags: geoip
+
+- name: Install geoip2 module conf
+  copy:
+    src: ./etc/nginx/ngx_http_geoip2_module.conf
+    dest: /usr/share/nginx/modules/ngx_http_geoip2_module.conf
+    owner: root
+    group: root
+    mode: 0644
+  notify:
+    - restart nginx
+  tags: geoip
+
+- name: Check existance GeoIP2 Country database
+  ansible.builtin.stat:
+    path: /etc/nginx/GeoLite2-Country.mmdb
+  register: geoipdb
+  tags: geoip
+
+- name: Download GeoIP2 Country database
+  ansible.builtin.command: >
+    curl -sSL -u {{ webserver.geoip_account_id }}:{{ webserver.geoip_license_key }}
+    -o /tmp/GeoLite2-Country.mmdb.tar.gz "{{ webserver.geoip_db_url }}"
+  args:
+    creates: "/tmp/GeoLite2-Country.mmdb.tar.gz"
+  when: not geoipdb.stat.exists
+  tags: geoip
+
+- name: Extract GeoLite2 Country database
+  unarchive:
+    src: /tmp/GeoLite2-Country.mmdb.tar.gz
+    dest: /etc/nginx
+    remote_src: yes
+    extra_opts: [--strip-components=1]
+  notify:
+    - restart nginx
+  when: not geoipdb.stat.exists
+  tags: geoip
+
+- name: Remove archive file
+  file:
+    path: /tmp/GeoLite2-Country.mmdb.tar.gz
+    state: absent
+  when: not geoipdb.stat.exists
+  tags: geoip
+
+- name: Nginx GeoIP is configured
+  template:
+    src: ./etc/nginx/geoip.j2.conf
+    dest: /etc/nginx/conf.d/geoip.conf
+    owner: root
+    group: root
+    mode: 0644
+  notify:
+    - restart nginx
+  tags: geoip
+
+- name: Nginx Default Server GeoIP is configured
+  template:
+    src: ./etc/nginx/server.geoip.j2.conf
+    dest: /etc/nginx/default.d/server.geoip.conf
+    owner: root
+    group: root
+    mode: 0644
+  notify:
+    - restart nginx
+  tags: geoip

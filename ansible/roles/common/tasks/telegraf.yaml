@@ -44,15 +44,10 @@
     - /etc/telegraf
   tags: telegraf
 
-- name: '"telegraf" service'
-  include_role:
-    name: common
-    tasks_from: service
-  vars:
-    service:
-      name: telegraf
-      package: telegraf
-      params: "{{ telegraf.service_params }}"
+- name: '"telegraf" package present'
+  dnf:
+    name: telegraf
+    state: present
   tags: telegraf
 
 - name: '"telegraf" is configured'
@@ -64,6 +59,17 @@
     mode: 0600
   notify:
     - restart telegraf
+  tags: telegraf
+
+- name: '"telegraf" service'
+  include_role:
+    name: common
+    tasks_from: service
+  vars:
+    service:
+      name: telegraf
+      package: telegraf
+      params: "{{ telegraf.service_params }}"
   tags: telegraf
 
 - name: adding existing user 'telegraf' to group 'docker'

@@ -14,9 +14,9 @@ packages:
     - iptables
     - firewalld
     - sysstat
-    - crudini
     - git
     - python3
+    - python3-pip
 timezone: Europe/Moscow
 chrony:
   servers:

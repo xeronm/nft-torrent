@@ -20,6 +20,7 @@ services:
 
   ipfs:
     image: ipfs/kubo:release
+    restart: unless-stopped
     user: 9001:9001
     ports:
       - 4001:4001
@@ -33,6 +34,7 @@ services:
 
   ipfs-cluster:
     image: ipfs/ipfs-cluster:latest
+    restart: unless-stopped
     depends_on:
       - ipfs
     environment:

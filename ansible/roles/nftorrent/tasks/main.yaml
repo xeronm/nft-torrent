@@ -135,8 +135,8 @@
   tags: nftorrent
 
 - name: NFTorrent Nginx is configured
-  copy:
-    src: ./etc/nginx/conf.d/nftorrent.conf
+  template:
+    src: ./etc/nginx/conf.d/nftorrent.j2.conf
     dest: /etc/nginx/conf.d/nftorrent.conf
     owner: root
     group: root

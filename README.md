@@ -115,6 +115,10 @@ website:
 ansible-playbook -i ./inventory/production.yaml nftorrents.yaml
 ```
 
+Check Geo-routing
+```sh
+curl -i https://www.petsmem.site/ --resolve www.petsmem.site:443:45.144.222.100
+```
 
 5. Configure Master-Host and obtain ceritificate
 

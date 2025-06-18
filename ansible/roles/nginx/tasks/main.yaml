@@ -36,6 +36,16 @@
     - restart nginx
   tags: nginx
 
+- name: GeoIP
+  include_tasks:
+    file: geoip.yaml
+    apply:
+      tags: nginx
+  when: webserver.geoip
+  tags:
+    - nginx
+    - geoip
+
 - name: '"Nginx" service'
   include_tasks:
     file: ./../common/tasks/service.yaml
