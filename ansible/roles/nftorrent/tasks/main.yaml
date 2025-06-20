@@ -69,13 +69,6 @@
     mode: '0750'
   tags: nftorrent
 
-- name: NFTorrent IPFS Cluster DB bootstrap peerstore
-  template:
-    src: ./peerstore.j2
-    dest: "/home/{{ oam.user }}/nft-torrent/cluster-db/peerstore"
-    mode: '0644'
-  tags: nftorrent
-
 - name: NFTorrent docker-compose
   copy:
     src: ./docker-compose.yaml
@@ -122,6 +115,15 @@
     project_src: "/home/{{ oam.user }}/nft-torrent"
     state: "{{ 'restarted' if vcompose_env.changed else 'present' }}"
   tags: nftorrent
+
+- name: IPFS Setup
+  include_tasks:
+    file: ipfs.yaml
+    apply:
+      tags: nftorrent
+  tags:
+    - nftorrent
+    - ipfs
 
 - name: NFTorrent Telegraf is configured
   copy:

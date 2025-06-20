@@ -159,11 +159,10 @@ class ContractAPIKeyCookie(APIKeyCookie):
         jwt_secret: str = None,
         jwt_algorithm: str = None,
         domains: list[str] = None,
-        auto_error: bool = True,
         allow_networks: list[str] = None,
         real_ip_header: bool = True,
     ):
-        super().__init__(name=self.cookie_name, auto_error=auto_error)
+        super().__init__(name=self.cookie_name, auto_error=False)
         self.domains = set(domains or [])
         self.allow_networks = [ipaddress.ip_network(x) for x in allow_networks or []]
         self.real_ip_header = real_ip_header
@@ -180,10 +179,14 @@ class ContractAPIKeyCookie(APIKeyCookie):
         )
         if self.real_ip_header:
             client_ip = request.headers.get("X-Real-IP", client_ip)
-        if self.allow_networks and [True for x in self.allow_networks if ipaddress.ip_address(client_ip) in x]:
-            return
 
         api_key: str = await super().__call__(request)
+        if not api_key:
+            if self.allow_networks and [True for x in self.allow_networks if ipaddress.ip_address(client_ip) in x]:
+                return
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Not authenticated"
+            )
 
         try:
             payload = jwt.decode(api_key, self.jwt_secret, audience=self.audience, algorithms=[self.jwt_algorithm])

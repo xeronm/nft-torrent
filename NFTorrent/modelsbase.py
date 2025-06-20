@@ -173,6 +173,7 @@ class NftItemData:
     owner_address: str
     collection_address: str = None
     individual_content: BaseNftContent = None
+    torrent_digest: str | None = None
 
 
 @dataclass(frozen=True)
