@@ -34,16 +34,8 @@ class NftContentMethod(NftMethod):
     q: str | None = Query(description="NFT content query", default=None)
 
 
-class BaseNftContentMethod(BaseModel):
-    address: str = Path(description="Address of NFT item")
+class BaseNftContentMethod(NftMethod):
     digest: str = Path(description="Content digest")
-
-    @validator("address")
-    def validate_contract_address(cls, v):
-        try:
-            return TonAddress(v).b64url
-        except Exception as E:
-            raise ValueError("Ivalid TON contract address format") from E
 
 
 class NftStorageTorrentMethod(NftMethod):
@@ -195,6 +187,7 @@ class NftItemData(BaseModel):
     owner_address: str
     collection_address: str = None
     individual_content: Any = None
+    torrent_digest: str | None = None
 
 
 class NftItemHeader(BaseModel):
@@ -235,20 +228,24 @@ class NftContentPin(BaseModel):
     expires: int = None
 
 
+def torrent_digest(hash: str, filename: str = None) -> str:
+    if filename:
+       hash += filename
+    digest = hashlib.shake_256(hash.encode()).digest(15)
+    return base64.b32encode(digest).decode().lower()
+
+
 class NftContentInfo(BaseModel):
     hash: str
     size: int
     state: NftContentState = NftContentState.READY
     digest: str = None
     files: list[NftContentFile] = None
-    pin: NftContentPin | None = None
 
     def make_digest(self):
-        digest = hashlib.shake_256((self.hash).encode()).digest(15)
-        self.digest = base64.b32encode(digest).decode().lower()
+        self.digest = torrent_digest(self.hash)
         for f in self.files:
-            digest = hashlib.shake_256((self.hash + f.name).encode()).digest(15)
-            f.digest = base64.b32encode(digest).decode().lower()
+            f.digest = torrent_digest(self.hash, f.name)
 
     def get_file(self, filename: str = None, digest: str = None):
         for info in self.files:

@@ -108,9 +108,8 @@ class IpfsRpcManager:
 
     def setup_cache(self):
         self.get_cid_file = self.cache_manager.cached(expire=15)(self.get_cid_file)
-        self.get_cid_info = self.cache_manager.cached(expire=15)(self.get_cid_info)
-        self.cid_pin_status = self.cache_manager.cached(expire=15)(self.cid_pin_status)
-        self.raw_get_cid_info = self.cache_manager.cached(expire=60)(self.raw_get_cid_info)
+        self.get_cid_info = self.cache_manager.cached(expire=60)(self.get_cid_info)
+        self.cid_pin_status = self.cache_manager.cached(expire=60)(self.cid_pin_status)
 
     async def check_ipfs_alive(self):
         logger.warning("[check_ipfs_alive]: Entering main loop")
@@ -321,21 +320,9 @@ class IpfsRpcManager:
             result += [f"NFTorrentIpfs {dict_to_influx(_ipfs)} {timestamp}"]
         return result
 
-    async def raw_get_cid_info(self, cid: str = None):
-        return await self.call_rpc_method("cid_ls", self.client.post, f"ls?arg={cid}", json=True)
-
-    async def get_cid_info(self, cid: str = None, with_pin: bool = False) -> models.NftContentInfo:
+    async def get_cid_info(self, cid: str = None) -> models.NftContentInfo:
         with self.stats[StatisticTags(method="get_cid_info")]:
-            _resp = await self.raw_get_cid_info(cid=cid)
-            pin_info = None
-            if with_pin:
-                _pin = await self.cid_pin_status(cid)
-                if _pin["metadata"] and _pin["metadata"]["nft"]:
-                    pin_info = models.NftContentPin(
-                        redundancy=len(_pin["allocations"]),
-                        expires=float(_pin["metadata"].get("expires", "0")),
-                        created=time.mktime(time.strptime(_pin["created"], "%Y-%m-%dT%H:%M:%SZ")),
-                    )
+            _resp = await self.call_rpc_method("cid_ls", self.client.post, f"ls?arg={cid}", json=True)
 
             _content = _resp["Objects"][0]
             content = models.NftContentInfo(
@@ -344,7 +331,6 @@ class IpfsRpcManager:
                 files=[
                     models.NftContentFile(name=x["Name"], size=x["Size"], hash=x["Hash"]) for x in _content["Links"]
                 ],
-                pin=pin_info,
             )
             content.size = sum([x.size for x in content.files])
             content.make_digest()
@@ -482,6 +468,3 @@ class IpfsRpcManager:
 
             return content
 
-    async def get_nft_cid_info(self, address: str = None, with_pin: bool = False) -> models.NftContentInfo:
-        cid, _ = await self.get_nft_cid(address, raise_error=True)
-        return await self.get_cid_info(cid=cid, with_pin=with_pin)

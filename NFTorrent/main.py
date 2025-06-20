@@ -330,19 +330,43 @@ async def get_nft_ipfs_content_file(
 
 
 if ws.settings.ipfs.enabled:
-
     @app.get(
-        "/api/v1/nft/{address}/ipfs",
+        "/api/v1/nft/{address}/ipfs/{digest}",
         response_model_exclude_none=True,
         dependencies=[Depends(ws.jwt_session)],  # noqa: B008
         tags=["nft"],
     )
     @wrap_result
-    async def get_nft_ipfs_info(request: models.NftMethod = Depends()):  # noqa: B008
+    async def get_nft_ipfs_cid(request: models.BaseNftContentMethod = Depends()):  # noqa: B008
         """
-        Get NFT IPFS Content information.
+        Get NFT IPFS CID information.
         """
-        return await ws.ipfs.get_nft_cid_info(address=request.address, with_pin=True)
+        return await ws.get_nft_cid_info(request.address, request.digest)
+
+    @app.get(
+        "/api/v1/nft/{address}/ipfs/{digest}/pin",
+        response_model_exclude_none=True,
+        dependencies=[Depends(ws.jwt_session)],  # noqa: B008
+        tags=["nft"],
+    )
+    @wrap_result
+    async def get_nft_ipfs_cid_pin(request: models.BaseNftContentMethod = Depends()):  # noqa: B008
+        """
+        Get NFT IPFS CID Pin status.
+        """
+        return await ws.get_nft_cid_pin(request.address, request.digest)
+
+    @app.post("/api/v1/nft/ipfs", response_model_exclude_none=True, tags=["nft"])
+    async def create_new_nft_ipfs_content(
+        request: models.NewNftTorrentCreate = Depends(),  # noqa: B008
+        jwt_payload: models.JWTPayload = Depends(ws.jwt_session),  # noqa: B008
+    ):
+        """
+        Create new NFT IPFS Content.
+        """
+        return await ws.ipfs.new_nft_create_content(
+            request.files, owner=jwt_payload.sub if jwt_payload is not None else None
+        )
 
     @app.post("/api/v1/nft/{address}/ipfs", response_model_exclude_none=True, tags=["nft"])
     async def create_nft_ipfs_content(
@@ -356,17 +380,6 @@ if ws.settings.ipfs.enabled:
             request.address, request.files, owner=jwt_payload.sub if jwt_payload is not None else None
         )
 
-    @app.post("/api/v1/nft/ipfs", response_model_exclude_none=True, tags=["nft"])
-    async def create_new_nft_ipfs_content(
-        request: models.NewNftTorrentCreate = Depends(),  # noqa: B008
-        jwt_payload: models.JWTPayload = Depends(ws.jwt_session),  # noqa: B008
-    ):
-        """
-        Create new NFT IPFS Content.
-        """
-        return await ws.ipfs.new_nft_create_content(
-            request.files, owner=jwt_payload.sub if jwt_payload is not None else None
-        )
 
 
 if ws.settings.indexdb.enabled:
