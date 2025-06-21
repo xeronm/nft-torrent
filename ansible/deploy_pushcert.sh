@@ -28,4 +28,9 @@ if [ $STATUS -ne 0 ]; then
   exit $STATUS
 fi
 
+ansible-playbook ${SCRIPT_DIR}/geoipupd.yaml \
+  -i ${SCRIPT_DIR}/inventory/production.yaml \
+  --private-key ~/.ssh/certbot_ansible_key
+STATUS=$?
+
 exit 0

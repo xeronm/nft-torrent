@@ -1,0 +1,93 @@
+- name: Ensure temp dir exists on localhost
+  file:
+    path: "{{ geoip.local_path }}"
+    state: directory
+    mode: '0755'
+  delegate_to: localhost
+  run_once: true
+  tags: geoip
+
+- name: Download remote SHA256
+  uri:
+    url: "{{ geoip.sha_url }}"
+    url_username: "{{ geoip.account_id }}"
+    url_password: "{{ geoip.license_key }}"
+    return_content: true
+  register: remote_sha
+  delegate_to: localhost
+  run_once: true
+  tags: geoip
+
+- name: Check local SHA256 file
+  stat:
+    path: "{{ geoip.local_db }}.sha256"
+  register: local_sha
+  delegate_to: localhost
+  run_once: true
+  tags: geoip
+
+- name: Read local SHA256 content
+  slurp:
+    src: "{{ geoip.local_db }}.sha256"
+  register: current_sha
+  when: local_sha.stat.exists
+  delegate_to: localhost
+  run_once: true
+  tags: geoip
+
+- name: Set change detection flag
+  set_fact:
+    geoip_db_changed: "{{ (current_sha.content | b64decode).strip() != remote_sha.content.strip() }}"
+  when: local_sha.stat.exists
+  delegate_to: localhost
+  run_once: true
+  tags: geoip
+
+- name: Set change flag to true if no local file
+  set_fact:
+    geoip_db_changed: true
+  when: not local_sha.stat.exists
+  delegate_to: localhost
+  run_once: true
+  tags: geoip
+
+- name: Download GeoIP2 archive to temp file
+  get_url:
+    url: "{{ geoip.db_url }}"
+    url_username: "{{ geoip.account_id }}"
+    url_password: "{{ geoip.license_key }}"
+    dest: "{{ geoip.local_db }}.part"
+    mode: '0644'
+    force: true
+  when: geoip_db_changed
+  delegate_to: localhost
+  run_once: true
+  tags: geoip
+
+- name: Rename temp archive to target file
+  command: mv "{{ geoip.local_db }}.part" "{{ geoip.local_db }}"
+  when: geoip_db_changed
+  args:
+    creates: "{{ geoip.local_db }}"
+  delegate_to: localhost
+  run_once: true
+  tags: geoip
+
+- name: Update local SHA256 file
+  copy:
+    content: "{{ remote_sha.content }}"
+    dest: "{{ geoip.local_db }}.sha256"
+    mode: '0644'
+  when: geoip_db_changed
+  delegate_to: localhost
+  run_once: true
+  tags: geoip
+
+- name: Copy GeoIP2 archive to remote host
+  copy:
+    src: "{{ geoip.local_db }}"
+    dest: "/etc/nginx/GeoLite2-Country.mmdb.tar.gz"
+    mode: '0644'
+  when: geoip_db_changed
+  notify: unpack geoip database
+  tags: geoip

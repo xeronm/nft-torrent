@@ -27,11 +27,13 @@
   tags: geoip
 
 - name: Download GeoIP2 Country database
-  ansible.builtin.command: >
-    curl -sSL -u {{ webserver.geoip_account_id }}:{{ webserver.geoip_license_key }}
-    -o /tmp/GeoLite2-Country.mmdb.tar.gz "{{ webserver.geoip_db_url }}"
-  args:
-    creates: "/tmp/GeoLite2-Country.mmdb.tar.gz"
+  get_url:
+    url: "{{ geoip.db_url }}"
+    url_username: "{{ geoip.account_id }}"
+    url_password: "{{ geoip.license_key }}"
+    dest: "/tmp/GeoLite2-Country.mmdb.tar.gz"
+    mode: '0644'
+    force: true
   when: not geoipdb.stat.exists
   tags: geoip
 
