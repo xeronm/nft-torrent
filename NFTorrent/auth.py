@@ -1,7 +1,9 @@
 import base64
 import hashlib
+import hmac
 import http.cookies
 import ipaddress
+import json
 import logging
 import struct
 import time
@@ -158,6 +160,7 @@ class ContractAPIKeyCookie(APIKeyCookie):
         self,
         jwt_secret: str = None,
         jwt_algorithm: str = None,
+        bot_token: str = None,
         domains: list[str] = None,
         allow_networks: list[str] = None,
         real_ip_header: bool = True,
@@ -168,6 +171,9 @@ class ContractAPIKeyCookie(APIKeyCookie):
         self.real_ip_header = real_ip_header
         self.jwt_secret = jwt_secret
         self.jwt_algorithm = jwt_algorithm
+        self.bot_secret = None
+        if bot_token:
+            self.bot_secret = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
 
     async def __call__(self, request: Request):
         client_ip = request.client.host
@@ -184,9 +190,7 @@ class ContractAPIKeyCookie(APIKeyCookie):
         if not api_key:
             if self.allow_networks and [True for x in self.allow_networks if ipaddress.ip_address(client_ip) in x]:
                 return
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, detail="Not authenticated"
-            )
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authenticated")
 
         try:
             payload = jwt.decode(api_key, self.jwt_secret, audience=self.audience, algorithms=[self.jwt_algorithm])
@@ -203,9 +207,45 @@ class ContractAPIKeyCookie(APIKeyCookie):
 
         return models.JWTPayload(**payload)
 
-    def get_auth_payload(self) -> str:
+    def validate_init_data(self, init_data: dict) -> dict:
+        """
+        Validates Telegram WebApp.initData string.
+
+        :param init_data: Raw initData from Telegram (query string format)
+        :return: Parsed dict if valid, else raises ValueError
+        """
+        if "hash" not in init_data:
+            raise ValueError("Missing 'hash' attribute")
+
+        try:
+            received_hash = init_data["hash"]
+
+            # Data-check-string is a chain of all received fields, sorted alphabetically,
+            # in the format key=<value> with a line feed character ('\n', 0x0A) used as separator
+            sorted_fields = sorted([(k, v) for k, v in init_data.items() if k != "hash"])
+            data_check_string = "\n".join(f"{k}={v}" for k, v in sorted_fields)
+
+            computed_hash = hmac.new(self.bot_secret, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+            if not hmac.compare_digest(computed_hash, received_hash):
+                raise ValueError("Invalid signature")
+        except Exception as E:
+            raise ValueError(f"initData validation failed: {str(E)}") from E
+
+    def get_auth_payload(self, init_data: dict = None) -> str:
+        user = None
+        if init_data and self.bot_secret:
+            try:
+                self.validate_init_data(init_data)
+                user = {
+                    k: v
+                    for k, v in json.loads(init_data.get("user", {})).items()
+                    if k in {"id", "username", "is_premium"}
+                }
+            except ValueError as E:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(E)) from E
+
         expires = int(time.time()) + self.auth_payload_expires_timeout
-        payload = {"aud": [self.audience], "exp": expires}
+        payload = {"aud": [self.audience], "exp": expires, "user": user}
         token = jwt.encode(payload, self.jwt_secret, algorithm=self.jwt_algorithm)
         return token
 
@@ -241,11 +281,11 @@ class ContractAPIKeyCookie(APIKeyCookie):
         except Exception as E:
             raise SignatureVerificationError("Signature verification failed") from E
 
-        jwt.decode(proof.payload, self.jwt_secret, audience=self.audience, algorithms=[self.jwt_algorithm])
+        return jwt.decode(proof.payload, self.jwt_secret, audience=self.audience, algorithms=[self.jwt_algorithm])
 
     def auth_session(self, account: models.Account, proof: models.TonProof, public_key: str = None):
         try:
-            self.auth_verify(account, proof, public_key)
+            jwt_token = self.auth_verify(account, proof, public_key)
         except (InvalidTokenError, SignatureVerificationError) as E:
             logger.warning(
                 "ContractAPIKeyCookie: signature validation error, account: %s - %s: %s",
@@ -256,7 +296,7 @@ class ContractAPIKeyCookie(APIKeyCookie):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired signature") from E
 
         expires = int(time.time()) + self.session_token_timeout
-        payload = {"sub": account.address, "aud": [self.audience], "exp": expires}
+        payload = {"sub": account.address, "aud": [self.audience], "exp": expires, "user": jwt_token.get("user")}
         token = jwt.encode(payload, self.jwt_secret, algorithm=self.jwt_algorithm)
         return models.JWTPayload(**payload), token
 

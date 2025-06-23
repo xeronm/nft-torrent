@@ -206,11 +206,11 @@ if ws.settings.indexdb.enabled:
 
 
 @app.get("/api/v1/account/authPayload", tags=["account"])
-async def get_account_auth_payload() -> models.AuthPayload:
+async def get_account_auth_payload(request: Request) -> models.AuthPayload:
     """
     Get authentication payload
     """
-    return models.AuthPayload(payload=ws.jwt_session.get_auth_payload())
+    return models.AuthPayload(payload=ws.jwt_session.get_auth_payload(init_data=dict(request.query_params)))
 
 
 @app.post("/api/v1/account/auth", tags=["account"])
@@ -310,7 +310,10 @@ async def sync_nft_data(
     """
     Sync NFT OffChain data.
     """
-    return await ws.sync_nft_data(request.address, owner=jwt_payload.sub if jwt_payload is not None else None)
+    if jwt_payload is not None:
+        return await ws.sync_nft_data(request.address, owner=jwt_payload.sub, userdata=jwt_payload.user)
+    else:
+        return await ws.sync_nft_data(request.address)
 
 
 @app.get(
@@ -330,6 +333,7 @@ async def get_nft_ipfs_content_file(
 
 
 if ws.settings.ipfs.enabled:
+
     @app.get(
         "/api/v1/nft/{address}/ipfs/{digest}",
         response_model_exclude_none=True,
@@ -379,7 +383,6 @@ if ws.settings.ipfs.enabled:
         return await ws.ipfs.create_content(
             request.address, request.files, owner=jwt_payload.sub if jwt_payload is not None else None
         )
-
 
 
 if ws.settings.indexdb.enabled:

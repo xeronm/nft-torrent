@@ -6,15 +6,15 @@ import time
 from urllib.parse import urljoin
 
 from fastapi import Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import HTTPException
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
-from fastapi.encoders import jsonable_encoder
 
 from NFTorrent.auth import ContractAPIKeyCookie, NodeJWTBearer
 from NFTorrent.cache import DisabledCacheManager
 from NFTorrent.indexer import IndexDb
 from NFTorrent.ipfs import IpfsRpcManager
-from NFTorrent.models import HealthCheckResult, NftContentState, NftContentPin, torrent_digest
+from NFTorrent.models import HealthCheckResult, NftContentState, torrent_digest
 from NFTorrent.modelsbase import CollectionConfig
 from NFTorrent.settings import Settings
 from NFTorrent.tonlib import TonlibManager
@@ -52,6 +52,7 @@ class Server:
             jwt_algorithm=self.settings.webserver.jwt_algorithm,
             real_ip_header=self.settings.webserver.real_ip_header,
             domains=self.settings.webserver.twa_domains,
+            bot_token=self.settings.webserver.bot_token,
             allow_networks=self.settings.webserver.allow_networks,
         )
 
@@ -247,16 +248,20 @@ class Server:
                 )
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
-    async def sync_nft_data(self, address: str = None, owner: str = None):
+    async def sync_nft_data(self, address: str = None, owner: str = None, userdata: str = None):
         nft_data = await self.tonlib.get_nft_data(address, owner=owner)
         nft_content = nft_data.individual_content
         if nft_content is not None:
             image = nft_content.image()
             if image and image.startswith("ipfs://"):
                 cid, _, _ = parse_ipfs_uri(image)
-                cid_info = await self.ipfs.get_cid_info(cid=cid, with_pin=True)
-                if nft_content.storage_due_time() > (cid_info.pin.expires if cid_info.pin else time.time()):
-                    self.loop.create_task(self.ipfs.confirm_content(address, old_cid=None, cid=cid))
+                pin_status = await self.ipfs.cid_pin_status(cid=cid)
+                if (
+                    nft_content.storage_due_time() > (pin_status.expires if pin_status else time.time())
+                    or pin_status.userdata is None
+                    and userdata is not None
+                ):
+                    self.loop.create_task(self.ipfs.confirm_content(address, old_cid=None, cid=cid, userdata=userdata))
             # TODO: Update IndexDB
 
     async def get_nft_cid_info(self, address: str, digest: str = None):
@@ -266,10 +271,10 @@ class Server:
 
         response = await self.ipfs.get_cid_info(cid=cid)
         if digest and response.state == NftContentState.READY:
-            return JSONResponse(jsonable_encoder(response), headers={
-                "Cache-Control": "public, max-age=864000, immutable",
-                "ETag": response.hash
-            })
+            return JSONResponse(
+                jsonable_encoder(response),
+                headers={"Cache-Control": "public, max-age=864000, immutable", "ETag": response.hash},
+            )
 
         return JSONResponse(jsonable_encoder(response))
 
@@ -278,11 +283,7 @@ class Server:
         if digest and digest != torrent_digest(cid):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
-        _pin = await self.ipfs.cid_pin_status(cid)
-        if _pin["metadata"] and _pin["metadata"]["nft"]:
-            return NftContentPin(
-                redundancy=len(_pin["allocations"]),
-                expires=float(_pin["metadata"].get("expires", "0")),
-                created=time.mktime(time.strptime(_pin["created"], "%Y-%m-%dT%H:%M:%SZ")),
-            )
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+        pin_status = await self.ipfs.cid_pin_status(cid)
+        if not pin_status:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+        return pin_status

@@ -165,6 +165,7 @@ class JWTPayload(BaseModel):
     sub: str
     aud: list[str]
     exp: int
+    user: Any = None
 
 
 class AuthSession(BaseModel):
@@ -226,11 +227,12 @@ class NftContentPin(BaseModel):
     redundancy: int
     created: int = None
     expires: int = None
+    userdata: Any | None = None
 
 
 def torrent_digest(hash: str, filename: str = None) -> str:
     if filename:
-       hash += filename
+        hash += filename
     digest = hashlib.shake_256(hash.encode()).digest(15)
     return base64.b32encode(digest).decode().lower()
 

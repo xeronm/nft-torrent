@@ -1,0 +1,7 @@
+- name: restart nftorrent
+  community.docker.docker_compose_v2:
+    recreate: auto
+    project_name: nft-torrent
+    project_src: "/home/{{ oam.user }}/nft-torrent"
+    state: restarted
+  tags: nftorrent

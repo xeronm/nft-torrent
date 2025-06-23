@@ -14,6 +14,7 @@ from pytonlib.utils.tokens import parse_nft_collection_data, parse_nft_item_data
 from tonpy.types import CellSlice
 
 from NFTorrent.cache import DisabledCacheManager
+from NFTorrent.models import torrent_digest
 from NFTorrent.modelsbase import (
     CollectionConfig,
     CollectionData,
@@ -23,7 +24,6 @@ from NFTorrent.modelsbase import (
     TonAddress,
     dataclass_to_influx,
 )
-from NFTorrent.models import torrent_digest
 from NFTorrent.settings import BaseCacheManager, TonlibSettings
 from NFTorrent.utils import parse_ipfs_uri
 

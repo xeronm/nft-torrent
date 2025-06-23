@@ -109,7 +109,7 @@ class IpfsRpcManager:
     def setup_cache(self):
         self.get_cid_file = self.cache_manager.cached(expire=15)(self.get_cid_file)
         self.get_cid_info = self.cache_manager.cached(expire=60)(self.get_cid_info)
-        self.cid_pin_status = self.cache_manager.cached(expire=60)(self.cid_pin_status)
+        self.cid_pin_status = self.cache_manager.cached(expire=30)(self.cid_pin_status)
 
     async def check_ipfs_alive(self):
         logger.warning("[check_ipfs_alive]: Entering main loop")
@@ -208,7 +208,9 @@ class IpfsRpcManager:
             content.make_digest()
         return content
 
-    async def cid_pin(self, cid: str = None, name: str = None, expire_at: float = None, address: str = None):
+    async def cid_pin(
+        self, cid: str = None, name: str = None, expire_at: float = None, address: str = None, userdata: Any = None
+    ):
         name = name or ""
         if self.settings.cluster_rpc_uri:
             expire_at_str = datetime.datetime.fromtimestamp(expire_at).isoformat() + "Z" if expire_at else ""
@@ -224,6 +226,8 @@ class IpfsRpcManager:
                 query_params["meta-expires"] = expire_at
             if address:
                 query_params["meta-nft"] = address
+            if userdata:
+                query_params["meta-userdata"] = json.dumps(userdata, separators=(",", ":"))
             uri = f"/pins/{cid}?{urlencode(query_params)}"
             return await self.call_rpc_method("pin", self.cluster.post, uri, json=True)
         else:
@@ -242,19 +246,33 @@ class IpfsRpcManager:
             if E.status_code != status.HTTP_404_NOT_FOUND:
                 raise
 
-    async def cid_pin_status(self, cid: str = None):
+    async def cid_pin_status(self, cid: str = None) -> models.NftContentPin:
         try:
             if self.settings.cluster_rpc_uri:
                 uri = f"/pins/{cid}"
-                return await self.call_rpc_method("pin_status", self.cluster.get, uri, json=True)
+                pin_status = await self.call_rpc_method("pin_status", self.cluster.get, uri, json=True)
             else:
                 uri = f"pin/ls?arg={cid}"
-                return await self.call_rpc_method("pin_status", self.cluster.post, uri, json=True)
+                pin_status = await self.call_rpc_method("pin_status", self.cluster.post, uri, json=True)
+
+            if not pin_status["metadata"]:
+                pin_status["metadata"] = {}
+            userdata = pin_status["metadata"].get("userdata", None)
+            if userdata:
+                userdata = json.loads(userdata)
+
+            return models.NftContentPin(
+                redundancy=len(pin_status["allocations"]),
+                expires=float(pin_status["metadata"].get("expires", "0")),
+                created=time.mktime(time.strptime(pin_status["created"], "%Y-%m-%dT%H:%M:%SZ")),
+                userdata=userdata,
+            )
         except IpfsRpcHttpException as E:
             if E.status_code != status.HTTP_404_NOT_FOUND:
                 raise
+        return None
 
-    async def confirm_content(self, address, old_cid, cid):
+    async def confirm_content(self, address: str, old_cid: str, cid: str, userdata: Any = None):
         try:
             with self.stats[StatisticTags(method="confirm")]:
                 async with OperationLock(f"nft:{address}:pin", self.cid_wlock, wait=False):
@@ -272,7 +290,13 @@ class IpfsRpcManager:
                             raise TimeoutError()
 
                         logger.warning("Pin confirmed for CID, NFT: %s, cid: %s", address, cid)
-                        await self.cid_pin(cid, name=address, address=address, expire_at=nft_content.storage_due_time())
+                        await self.cid_pin(
+                            cid,
+                            name=address,
+                            address=address,
+                            expire_at=nft_content.storage_due_time(),
+                            userdata=userdata,
+                        )
                         if old_cid is not None:
                             await self.cid_unpin(old_cid)
         except Exception as E:
@@ -436,6 +460,7 @@ class IpfsRpcManager:
                 cid,
                 total_size,
             )
+            userdata = None  # TODO: set to telegram user_id
             try:
                 async with OperationLock(f"nft:{address}:add", self.cid_wlock, wait=False):
                     content = await self.cid_add_local(files=files)
@@ -447,7 +472,7 @@ class IpfsRpcManager:
                             address,
                             new_cid,
                         )
-                        self.loop.create_task(self.confirm_content(address, cid, new_cid))
+                        self.loop.create_task(self.confirm_content(address, cid, new_cid, userdata=userdata))
                     else:
                         self.stats["create_confirm"] += 1
                         logger.warning(
@@ -455,7 +480,9 @@ class IpfsRpcManager:
                             address,
                             new_cid,
                         )
-                        await self.cid_pin(new_cid, name=address, expire_at=nft_content.storage_due_time())
+                        await self.cid_pin(
+                            new_cid, name=address, expire_at=nft_content.storage_due_time(), userdata=userdata
+                        )
             except Exception as E:
                 logger.warning(
                     "Creating CID, NFT: %s, size: %d - failed with error - %s: %s",  # noqa: E501
@@ -467,4 +494,3 @@ class IpfsRpcManager:
                 raise
 
             return content
-

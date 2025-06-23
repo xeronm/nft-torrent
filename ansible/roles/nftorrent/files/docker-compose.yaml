@@ -83,6 +83,7 @@ services:
       INDEXDB_DATABASE_HOST: db
       # HTTP_API_ROOT_PATH: ${HTTP_API_ROOT_PATH}
       HTTP_API_JWT_SECRET: file:/run/secrets/jwt_key
+      HTTP_TWA_BOT_TOKEN: file:/run/secrets/bot_token
       HTTP_TWA_DOMAINS: localhost:9000,${HTTP_TWA_DOMAINS}
       HTTP_ALLOW_ORIGINS: ${HTTP_ALLOW_ORIGINS}
       HTTP_ALLOW_NETWORKS: 127.0.0.1/32,192.168.0.0/16
@@ -95,6 +96,7 @@ services:
     secrets:
       - liteserver_config
       - jwt_key
+      - bot_token
     ports:
       - 127.0.0.1:8002:8002
     networks:
@@ -114,6 +116,8 @@ secrets:
     file: ./private/testnet-global-config.json
   jwt_key:
     file: ./private/jwt.key
+  bot_token:
+    file: ./private/bot_token.key
   ipfs_secret:
     environment: "IPFS_CLUSTER_SECRET"
 networks:
