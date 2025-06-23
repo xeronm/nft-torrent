@@ -9,6 +9,10 @@ def get_known_peers():
     return {"192.168.1.10", "192.168.1.20"}
 
 
+#   initData:
+#     'user=%7B%22id%22%3A413537817%2C%22first_name%22%3A%22Denis%22%2C%22last_name%22%3A%22M%22%2C%22username%22%3A%22MuratovDe%22%2C%22language_code%22%3A%22ru%22%2C%22is_premium%22%3Atrue%2C%22allows_write_to_pm%22%3Atrue%2C%22photo_url%22%3A%22https%3A%5C%2F%5C%2Ft.me%5C%2Fi%5C%2Fuserpic%5C%2F320%5C%2FA9dHGRWXtJkMDL6M3T4JIHHJsNsrVDxI8i8kRCFn2Pg.svg%22%7D&chat_instance=-231214982729915704&chat_type=sender&auth_date=1750587194&signature=q91aeQ5L4wpLAZol4A57QD_XyZh3F0ivVPzk4-xb0x0KaGgH2te1Sozd_JjiHx-HmHOzdmgrk3y7uWfGHpa8BA&hash=890d5169d947344f1ea437820d25751e472e40e666adb91bee1373d9c61f3402',
+
+
 class TestNodeJWTBearer(unittest.TestCase):
 
     def test_jwt_bearer(self):

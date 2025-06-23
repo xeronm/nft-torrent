@@ -68,6 +68,7 @@ class WebServerSettings:
     remote_api_root: str = None
     public_addr: str = None
     twa_domains: list[str] = None
+    bot_token: str = None
     allow_origins: list[str] = None
     enable_ssl: bool = True
     verify_ssl: bool = True
@@ -86,6 +87,8 @@ class WebServerSettings:
         obj.public_addr = os.environ.get("HTTP_PUBLIC_ADDR", "127.0.0.1")
         obj.jwt_secret = _value_from_file(os.environ.get("HTTP_API_JWT_SECRET", None))
         obj.jwt_algorithm = os.environ.get("HTTP_API_JWT_ALGORITHM", "HS256")
+        obj.bot_token = _value_from_file(os.environ.get("HTTP_TWA_BOT_TOKEN", None))
+
         obj.port = os.environ.get("HTTP_PORT", None)
         if obj.port is not None:
             obj.port = int(obj.port)

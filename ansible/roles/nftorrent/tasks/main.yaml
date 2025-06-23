@@ -39,7 +39,17 @@
     owner: "{{ oam.user }}"
     group: "{{ oam.group }}"
     mode: '0600'
-  register: vcompose_env
+  notify: restart nftorrent
+  tags: nftorrent
+
+- name: NFTorrent TWA Bot token
+  copy:
+    content: "{{ nftorrent.bot_token }}"
+    dest: "/home/{{ oam.user }}/nft-torrent/private/bot_token.key"
+    owner: "{{ oam.user }}"
+    group: "{{ oam.group }}"
+    mode: '0600'
+  notify: restart nftorrent
   tags: nftorrent
 
 - name: NFTorrent tonlib keystore "~/nft-torrent/ton_keystore"
@@ -76,7 +86,7 @@
     owner: "{{ oam.user }}"
     group: "{{ oam.group }}"
     mode: '0640'
-  register: vcompose
+  notify: restart nftorrent
   tags: nftorrent
 
 - name: NFTorrent docker-compose environment
@@ -86,7 +96,7 @@
     owner: "{{ oam.user }}"
     group: "{{ oam.group }}"
     mode: '0600'
-  register: vcompose_env
+  notify: restart nftorrent
   tags: nftorrent
 
 - name: NFTorrent Collections
@@ -96,7 +106,7 @@
     owner: "{{ oam.user }}"
     group: "{{ oam.group }}"
     mode: '0664'
-  register: vcompose_env
+  notify: restart nftorrent
   tags: nftorrent
 
 - name: Download TON Blockchain Config
@@ -110,10 +120,9 @@
 
 - name: NFTorrent docker service
   community.docker.docker_compose_v2:
-    recreate: "{{ 'always' if vcompose.changed else omit }}"
     project_name: nft-torrent
     project_src: "/home/{{ oam.user }}/nft-torrent"
-    state: "{{ 'restarted' if vcompose_env.changed else 'present' }}"
+    state: present
   tags: nftorrent
 
 - name: IPFS Setup
