@@ -1,11 +1,9 @@
 import codecs
 from dataclasses import dataclass
-from typing import List
 
 from tonpy.types import CellSlice
 
 from ..modelsbase import BaseNftContent
-from .address import parse_bag_id
 from .encoders import bcd2c_to_string, date_mask_to_string, flatten_snake_cell
 
 
@@ -29,14 +27,14 @@ class PetMemoryNftImmutableData:
     species: int
     name: str
     sex: int
-    country_code: str
     birth_date: str
     death_date: str
-    species_name: str = None
-    breed: str = None
-    lang: str = None
-    geo_point: GeoPoint = None
-    location: str = None
+    country_code: str | None = None
+    species_name: str | None = None
+    breed: str | None = None
+    lang: str | None = None
+    geo_point: GeoPoint | None = None
+    location: str | None = None
 
     @classmethod
     def from_tvm(cls, cs: CellSlice):
@@ -78,8 +76,8 @@ class NftMutableMetaData:
         if _sc1.load_uint(1):
             _img = _sc1.load_ref(as_cs=True)
             if _img.load_uint(8) != 0:  # CONTENT_DATA_FORMAT_SNAKE
-                raise ValueError('Only snake format is supported')
-            obj.image_data = codecs.encode(flatten_snake_cell(_img), 'base64')
+                raise ValueError("Only snake format is supported")
+            obj.image_data = codecs.encode(flatten_snake_cell(_img), "base64")
         return obj
 
 
@@ -97,9 +95,7 @@ class PetMemoryNftContent(BaseNftContent):
         _sc2 = _sc1.load_ref(as_cs=True)
         data = NftMutableMetaData.from_tvm(_sc2)
         fee_due_time = _sc2.load_uint(32)
-        return PetMemoryNftContent(imm_data=imm_data,
-                                   data=data,
-                                   fee_due_time=fee_due_time)
+        return PetMemoryNftContent(imm_data=imm_data, data=data, fee_due_time=fee_due_time)
 
     def uri(self):
         return self.data.uri
@@ -110,16 +106,45 @@ class PetMemoryNftContent(BaseNftContent):
     def image_data(self):
         if not self.data.image_data:
             return None
-        return codecs.decode(self.data.image_data, 'base64')
+        return codecs.decode(self.data.image_data, "base64")
 
     def storage_due_time(self):
         return self.fee_due_time
 
+    def metadata_attributes(self):
+        gp = self.imm_data.geo_point
+        attrs = {
+            "name": self.imm_data.name,
+            "species": (
+                self.imm_data.species_name
+                if self.imm_data.species_name
+                else (["Other", "Dog", "Cat"][self.imm_data.species])
+            ),
+            "breed": self.imm_data.breed,
+            "sex": "Female" if self.imm_data.sex else "Male",
+            "birth_date": self.imm_data.birth_date,
+            "death_date": self.imm_data.death_date,
+            "country_code": self.imm_data.country_code,
+            "language": self.imm_data.lang,
+            "location": self.imm_data.location,
+            "geo_point": (
+                f"{int(gp.is_south)}:{gp.latitude:.04f}:{gp.longitude:.04f}"
+                if self.imm_data.geo_point is not None
+                else None
+            ),
+            "fee_due_time": self.fee_due_time,
+        }
+        if self.data.image is not None:
+            attrs["image_uri"] = self.data.image
+        if self.data.uri is not None:
+            attrs["uri"] = self.data.uri
+        return [{"trait_type": k, "value": v} for k, v in attrs.items()]
+
 
 def load_string(stack, opt: bool = False):
-    if opt and 'bytes' not in stack[1]:
+    if opt and "bytes" not in stack[1]:
         return None
-    return CellSlice(stack[1]['bytes']).load_string()
+    return CellSlice(stack[1]["bytes"]).load_string()
 
 
 @dataclass
@@ -134,14 +159,16 @@ class PetsCollectionInfo:
     fb_uri: str
 
     @classmethod
-    def from_tvm(cls, stack: List):
+    def from_tvm(cls, stack: list):
         if len(stack) != 8:
-            raise ValueError(f'Invalid PetsCollectionInfo response length: {len(stack)}')
-        return PetsCollectionInfo(fee_storage=int(stack[0][1], 16)/1e9,
-                                  fee_class_a=int(stack[1][1], 16)/1e9,
-                                  fee_class_b=int(stack[2][1], 16)/1e9,
-                                  balance=int(stack[3][1], 16)/1e9,
-                                  balance_class_a=int(stack[4][1], 16)/1e9,
-                                  balance_class_b=int(stack[5][1], 16)/1e9,
-                                  fb_mode=int(stack[6][1], 16),
-                                  fb_uri=load_string(stack[7]))
+            raise ValueError(f"Invalid PetsCollectionInfo response length: {len(stack)}")
+        return PetsCollectionInfo(
+            fee_storage=int(stack[0][1], 16) / 1e9,
+            fee_class_a=int(stack[1][1], 16) / 1e9,
+            fee_class_b=int(stack[2][1], 16) / 1e9,
+            balance=int(stack[3][1], 16) / 1e9,
+            balance_class_a=int(stack[4][1], 16) / 1e9,
+            balance_class_b=int(stack[5][1], 16) / 1e9,
+            fb_mode=int(stack[6][1], 16),
+            fb_uri=load_string(stack[7]),
+        )

@@ -55,8 +55,8 @@ ENV LOGURU_LEVEL=INFO \
     TON_STORAGE_NUM_WORKERS=8 \
     TON_STORAGE_CONFIRMATION_TIMEOUT=60 \
     TON_STORAGE_MIN_REDUNDANCY=1 \
-    TON_API_TONLIB_LITESERVER_CONFIG=https://ton.org/global-config.json \
-    TON_API_TONLIB_KEYSTORE=/storage-db/.ton_keystore/
+    TONLIB_LITESERVER_CONFIG=https://ton.org/global-config.json \
+    TONLIB_KEYSTORE=/storage-db/.ton_keystore/
 
 VOLUME storage-db
 

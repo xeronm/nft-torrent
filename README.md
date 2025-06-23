@@ -97,7 +97,7 @@ nftorrent:
   environment:
     IPFS_CLUSTER_SECRET: <32byte hexencoded cluster secret>
     IPFS_CLUSTER_PEERNAME: "{{ inventory_hostname }}"
-    NFTORRENT_VERSION: 0.2.0
+    NFTORRENT_VERSION: 0.2.1
     HTTP_TWA_DOMAINS: ton-connect.github.io, petsmem.site
     HTTP_ALLOW_ORIGINS: http://localhost:9000, https://petsmem.site
   ton_config: https://ton.org/testnet-global-config.json
@@ -114,3 +114,22 @@ website:
 ```sh
 ansible-playbook -i ./inventory/production.yaml nftorrents.yaml
 ```
+
+Check Geo-routing
+```sh
+curl -i https://www.petsmem.site/ --resolve www.petsmem.site:443:45.144.222.100
+```
+
+5. Configure Master-Host and obtain ceritificate
+
+Setup properly:
+  - DNS Credentials `/etc/letsencrypt/<plugin>.ini`;
+  - Deploy hook `/etc/letsencrypt/renewal/<domain>`;
+
+```sh
+pip3 install ansible certbot
+certbot certonly -a dns -d <domain> -d *.<domain> --dns-propagation-seconds 300
+certbot renew --dry-run
+```
+
+

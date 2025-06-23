@@ -1,13 +1,12 @@
 import time
-from collections import defaultdict
 from dataclasses import dataclass
-from typing import Optional
 
-from starlette.middleware.base import (BaseHTTPMiddleware, DispatchFunction,
-                                       RequestResponseEndpoint)
+from starlette.middleware.base import BaseHTTPMiddleware, DispatchFunction, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.types import ASGIApp
+
+from NFTorrent.modelsbase import MeasurementStore
 
 
 @dataclass(frozen=True)
@@ -18,25 +17,20 @@ class StatisticTags:
 
 
 @dataclass
-class StatisticMeasurements:
+class StatisticMeasurement:
     count: int = 0
     duration: float = 0
 
 
-class StatisticsStore(defaultdict):
+class StatisticsStore(MeasurementStore):
 
     def __init__(self):
-        super().__init__(StatisticMeasurements)
-
-    def as_list(self):
-        _timestamp = int(time.time() * 1000000)
-        return [{'tags': k, 'fields': v, 'timestamp': _timestamp}
-                for k, v in self.items()]
+        super().__init__("NFTorrentHTTP", StatisticMeasurement)
 
 
 class StatisticsMiddleware(BaseHTTPMiddleware):
 
-    def __init__(self, app: ASGIApp, stats_store: StatisticsStore = None, dispatch: Optional[DispatchFunction] = None):
+    def __init__(self, app: ASGIApp, stats_store: StatisticsStore = None, dispatch: DispatchFunction | None = None):
         super().__init__(app, dispatch=dispatch)
         self._stats = stats_store
 
@@ -44,9 +38,9 @@ class StatisticsMiddleware(BaseHTTPMiddleware):
         st = time.perf_counter()
         response = await call_next(request)
 
-        path = request.scope['route'].path if 'route' in request.scope else ''
+        path = request.scope["route"].path if "route" in request.scope else ""
         key = StatisticTags(path=path, method=request.method, status=response.status_code)
-        measurements = self._stats[key]
-        measurements.count += 1
-        measurements.duration += time.perf_counter() - st
+        meas: StatisticMeasurement = self._stats[key]
+        meas.count += 1
+        meas.duration += time.perf_counter() - st
         return response

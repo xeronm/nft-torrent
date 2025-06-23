@@ -1,0 +1,14 @@
+- name: unpack geoip database
+  unarchive:
+    src: "/etc/nginx/GeoLite2-Country.mmdb.tar.gz"
+    dest: "/etc/nginx/GeoLite2-Country.mmdb"
+    remote_src: yes
+    extra_opts: [--strip-components=1]
+  notify: restart nginx
+  tags: geoip
+
+- name: restart nginx
+  service:
+    name: nginx
+    state: restarted
+  tags: geoip

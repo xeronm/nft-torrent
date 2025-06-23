@@ -9,6 +9,22 @@
     - /etc/nginx/conf.d
   tags: nginx
 
+- name: 'Nginx user group'
+  group:
+    name: nginx
+    state: present
+  tags: nginx
+
+- name: Nginx user
+  user:
+    name: nginx
+    state: present
+    groups:
+      - nginx
+    create_home: no
+    append: yes
+  tags: nginx
+
 - name: Nginx is configured
   copy:
     src: ./etc/nginx/nginx.conf
@@ -20,9 +36,19 @@
     - restart nginx
   tags: nginx
 
+- name: GeoIP
+  include_tasks:
+    file: geoip.yaml
+    apply:
+      tags: nginx
+  when: webserver.geoip
+  tags:
+    - nginx
+    - geoip
+
 - name: '"Nginx" service'
   include_tasks:
-    file: service.yaml
+    file: ./../common/tasks/service.yaml
     apply:
       tags: nginx
   vars:
@@ -33,17 +59,17 @@
       params: "{{ nginx.service_params }}"
   tags: nginx
 
-- name: Certbot present packages
-  dnf:
-    name: "{{ packages }}"
-    state: present
-  vars:
-    packages:
-      - certbot
-      - python3-certbot-nginx
-  tags: nginx
+# - name: Certbot present packages
+#   dnf:
+#     name: "{{ packages }}"
+#     state: present
+#   vars:
+#     packages:
+#       - certbot
+#       - python3-certbot-nginx
+#   tags: nginx
 
-- name: "Nginx Firewall services"
+- name: "RedHat: Nginx Firewall services"
   firewalld:
     service: "{{ item }}"
     permanent: true
@@ -52,6 +78,17 @@
   with_items:
     - http
     - https
+  when: ansible_os_family == "RedHat"
+  tags: nginx
+
+- name: "Debian: Nginx Firewall through UFW"
+  ansible.builtin.ufw:
+    rule: allow
+    name: "{{ item }}"
+  with_items:
+    - http
+    - https
+  when: ansible_os_family == "Debian"
   tags: nginx
 
 - name: Set httpd_can_network_connect flag on and keep it persistent across reboots
@@ -59,4 +96,6 @@
     name: httpd_can_network_connect
     state: yes
     persistent: yes
+  when: ansible_os_family == "RedHat"
   tags: nginx
+

@@ -1,0 +1,51 @@
+- name: 'Public Ceritificates path'
+  file:
+    path: "/etc/pki/tls/certs/{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: 0755
+  with_items: "{{ ssl_domains }}"
+  tags: certs
+
+- name: 'Private Ceritificates path'
+  file:
+    path: "/etc/pki/tls/private/{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: 0700
+  with_items: "{{ ssl_domains }}"
+  tags: certs
+
+- name: 'SSL Public Bootstrap Ceritificate'
+  copy:
+    src: "{{ inventory_dir }}/certs/{{ item }}/fullchain.pem"
+    dest: "/etc/pki/tls/certs/{{ item }}/fullchain.pem"
+    owner: root
+    group: root
+    mode: 0644
+  with_items: "{{ ssl_domains }}"
+  notify:
+    - restart nginx
+  tags: certs
+
+- name: 'SSL Private Ceritificate Key'
+  copy:
+    src: "{{ inventory_dir }}/certs/{{ item }}/privkey.pem"
+    dest: "/etc/pki/tls/private/{{ item }}/privkey.pem"
+    owner: root
+    group: root
+    mode: 0600
+  with_items: "{{ ssl_domains }}"
+  notify:
+    - restart nginx
+  tags: certs
+
+- name: Certbot Deploy SSH key
+  authorized_key:
+    user: root
+    state: present
+    key: "{{ certbot_deploy.sshkey }}"
+  when: certbot_deploy.enabled != 0
+  tags: certs

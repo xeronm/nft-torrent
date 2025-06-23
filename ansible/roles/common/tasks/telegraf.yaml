@@ -1,4 +1,4 @@
-- name: InfluxDB Repository - RHEL
+- name: "RedHat: InfluxDB Repository"
   yum_repository:
     name: influxdb
     description: InfluxDB Repository - RHEL
@@ -6,6 +6,31 @@
     gpgkey:  https://repos.influxdata.com/influxdata-archive_compat.key
     gpgcheck: yes
     enabled: yes
+  when: ansible_os_family == "RedHat"
+  tags: telegraf
+
+- name: "Debian: Download influxdata archive key"
+  ansible.builtin.get_url:
+    url: https://repos.influxdata.com/influxdata-archive.key
+    dest: /tmp/influxdata-archive.key
+    mode: '0644'
+  when: ansible_os_family == "Debian"
+  tags: telegraf
+
+- name: "Debian: Convert influxdata archive key to GPG format"
+  ansible.builtin.command:
+    cmd: gpg --dearmor -o /etc/apt/trusted.gpg.d/influxdata-archive.gpg /tmp/influxdata-archive.key
+  args:
+    creates: /etc/apt/trusted.gpg.d/influxdata-archive.gpg
+  when: ansible_os_family == "Debian"
+  tags: telegraf
+
+- name: "Debian: Add influxdata APT repository"
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/etc/apt/trusted.gpg.d/influxdata-archive.gpg] https://repos.influxdata.com/debian stable main"
+    state: present
+    filename: influxdata
+  when: ansible_os_family == "Debian"
   tags: telegraf
 
 - name: '"telegraf" config path'
@@ -17,6 +42,12 @@
     mode: 0755
   with_items:
     - /etc/telegraf
+  tags: telegraf
+
+- name: '"telegraf" package present'
+  dnf:
+    name: telegraf
+    state: present
   tags: telegraf
 
 - name: '"telegraf" is configured'

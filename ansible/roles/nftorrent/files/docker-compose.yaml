@@ -1,9 +1,9 @@
 services:
-  cache:
-    image: redis:latest
-    restart: unless-stopped
-    networks:
-      - internal
+  # cache:
+  #   image: redis:latest
+  #   restart: unless-stopped
+  #   networks:
+  #     - internal
 
   db:
     image: postgres:latest
@@ -12,7 +12,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_USER: postgres
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:5434:5432"
     volumes:
       - ./index-db:/var/lib/postgresql/data
     networks:
@@ -20,6 +20,7 @@ services:
 
   ipfs:
     image: ipfs/kubo:release
+    restart: unless-stopped
     user: 9001:9001
     ports:
       - 4001:4001
@@ -33,6 +34,7 @@ services:
 
   ipfs-cluster:
     image: ipfs/ipfs-cluster:latest
+    restart: unless-stopped
     depends_on:
       - ipfs
     environment:
@@ -64,25 +66,24 @@ services:
     image: dtec/nft-torrent:${NFTORRENT_VERSION}
     restart: unless-stopped
     environment:
-      LOGURU_LEVEL: WARNING
-      LOGURU_COLORIZE: 1
-      TON_STORAGE_NUM_WORKERS: 0
+      LOGGER_CONFIG: NFTorrent.logger.config
       IPFS_ENABLED: 1
       IPFS_KUBO_RPC_URI: http://ipfs-cluster:9095
       IPFS_CLUSTER_RPC_URI: http://ipfs-cluster:9094
       IPFS_MIN_REDUNDANCY: 2
       IPFS_CONFIRMATION_TIMEOUT: 60
-      TON_API_TONLIB_KEYSTORE: /ton_keystore/
-      TON_API_TONLIB_REQUEST_TIMEOUT: 20
-      TON_API_TONLIB_LITESERVER_CONFIG: /run/secrets/liteserver_config
-      TON_API_CACHE_ENABLED: 1
-      TON_API_CACHE_REDIS_ENDPOINT: cache
-      TON_API_CACHE_REDIS_TIMEOUT: 2
+      TONLIB_KEYSTORE: /ton_keystore/
+      TONLIB_REQUEST_TIMEOUT: 20
+      TONLIB_LITESERVER_CONFIG: /run/secrets/liteserver_config
+      CACHE_ENABLED: 1
+      # CACHE_REDIS_ENDPOINT: cache
+      # CACHE_REDIS_TIMEOUT: 2
       INDEXDB_ENABLED: 1
       INDEXDB_INDEXER_TIMEOUT: 30
       INDEXDB_DATABASE_HOST: db
       # HTTP_API_ROOT_PATH: ${HTTP_API_ROOT_PATH}
       HTTP_API_JWT_SECRET: file:/run/secrets/jwt_key
+      HTTP_TWA_BOT_TOKEN: file:/run/secrets/bot_token
       HTTP_TWA_DOMAINS: localhost:9000,${HTTP_TWA_DOMAINS}
       HTTP_ALLOW_ORIGINS: ${HTTP_ALLOW_ORIGINS}
       HTTP_ALLOW_NETWORKS: 127.0.0.1/32,192.168.0.0/16
@@ -95,6 +96,7 @@ services:
     secrets:
       - liteserver_config
       - jwt_key
+      - bot_token
     ports:
       - 127.0.0.1:8002:8002
     networks:
@@ -107,13 +109,15 @@ services:
     depends_on:
       - ipfs
       - db
-      - cache
+      # - cache
 
 secrets:
   liteserver_config:
     file: ./private/testnet-global-config.json
   jwt_key:
     file: ./private/jwt.key
+  bot_token:
+    file: ./private/bot_token.key
   ipfs_secret:
     environment: "IPFS_CLUSTER_SECRET"
 networks:

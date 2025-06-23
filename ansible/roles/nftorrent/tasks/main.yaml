@@ -7,6 +7,14 @@
     mode: '0755'
   tags: nftorrent
 
+- name: NFTorrent python package
+  copy:
+    src: "{{ nftorrent.package }}"
+    dest: "/home/{{ oam.user }}/nft-torrent"
+    owner: "{{ oam.user }}"
+    group: "{{ oam.group }}"
+  tags: nftorrent
+
 - name: NFTorrent Assets "~/nft-torrent/assets"
   copy:
     src: ./assets
@@ -31,7 +39,17 @@
     owner: "{{ oam.user }}"
     group: "{{ oam.group }}"
     mode: '0600'
-  register: vcompose_env
+  notify: restart nftorrent
+  tags: nftorrent
+
+- name: NFTorrent TWA Bot token
+  copy:
+    content: "{{ nftorrent.bot_token }}"
+    dest: "/home/{{ oam.user }}/nft-torrent/private/bot_token.key"
+    owner: "{{ oam.user }}"
+    group: "{{ oam.group }}"
+    mode: '0600'
+  notify: restart nftorrent
   tags: nftorrent
 
 - name: NFTorrent tonlib keystore "~/nft-torrent/ton_keystore"
@@ -52,11 +70,13 @@
     mode: '0750'
   tags: nftorrent
 
-- name: NFTorrent IPFS Cluster DB bootstrap peerstore
-  template:
-    src: ./peerstore.j2
-    dest: "/home/{{ oam.user }}/nft-torrent/cluster-db/peerstore"
-    mode: '0644'
+- name: NFTorrent IPFS storage "~/nft-torrent/cluster-db"
+  file:
+    path: "/home/{{ oam.user }}/nft-torrent/cluster-db"
+    state: directory
+    owner: "{{ oam.user }}"
+    group: "{{ oam.group }}"
+    mode: '0750'
   tags: nftorrent
 
 - name: NFTorrent docker-compose
@@ -66,7 +86,7 @@
     owner: "{{ oam.user }}"
     group: "{{ oam.group }}"
     mode: '0640'
-  register: vcompose
+  notify: restart nftorrent
   tags: nftorrent
 
 - name: NFTorrent docker-compose environment
@@ -76,7 +96,7 @@
     owner: "{{ oam.user }}"
     group: "{{ oam.group }}"
     mode: '0600'
-  register: vcompose_env
+  notify: restart nftorrent
   tags: nftorrent
 
 - name: NFTorrent Collections
@@ -86,7 +106,7 @@
     owner: "{{ oam.user }}"
     group: "{{ oam.group }}"
     mode: '0664'
-  register: vcompose_env
+  notify: restart nftorrent
   tags: nftorrent
 
 - name: Download TON Blockchain Config
@@ -100,11 +120,19 @@
 
 - name: NFTorrent docker service
   community.docker.docker_compose_v2:
-    recreate: "{{ 'always' if vcompose.changed else omit }}"
     project_name: nft-torrent
     project_src: "/home/{{ oam.user }}/nft-torrent"
-    state: "{{ 'restarted' if vcompose_env.changed else 'present' }}"
+    state: present
   tags: nftorrent
+
+- name: IPFS Setup
+  include_tasks:
+    file: ipfs.yaml
+    apply:
+      tags: nftorrent
+  tags:
+    - nftorrent
+    - ipfs
 
 - name: NFTorrent Telegraf is configured
   copy:
@@ -118,8 +146,8 @@
   tags: nftorrent
 
 - name: NFTorrent Nginx is configured
-  copy:
-    src: ./etc/nginx/conf.d/nftorrent.conf
+  template:
+    src: ./etc/nginx/conf.d/nftorrent.j2.conf
     dest: /etc/nginx/conf.d/nftorrent.conf
     owner: root
     group: root

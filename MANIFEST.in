@@ -1,7 +1,0 @@
-include README.md
-include LICENSE
-include requirements.txt
-include tox.ini
-recursive-include NFTorrent/ *
-recursive-include docker/ *
-global-exclude *.py[co]

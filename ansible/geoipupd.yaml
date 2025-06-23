@@ -1,0 +1,5 @@
+- hosts: nftorrents
+  name: GeoIP update database
+  remote_user: root
+  roles:
+    - geoipupd

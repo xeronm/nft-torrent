@@ -1,0 +1,7 @@
+- hosts: nftorrents
+  name: Push updated TLS certificates
+  remote_user: root
+  vars:
+    domain: "{{ domain }}"
+  roles:
+    - pushcert
