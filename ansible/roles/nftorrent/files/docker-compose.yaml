@@ -5,18 +5,18 @@ services:
   #   networks:
   #     - internal
 
-  db:
-    image: postgres:latest
-    restart: unless-stopped
-    environment:
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_USER: postgres
-    ports:
-      - "127.0.0.1:5434:5432"
-    volumes:
-      - ./index-db:/var/lib/postgresql/data
-    networks:
-      - internal
+  # db:
+  #   image: postgres:latest
+  #   restart: unless-stopped
+  #   environment:
+  #     POSTGRES_PASSWORD: postgres
+  #     POSTGRES_USER: postgres
+  #   ports:
+  #     - "127.0.0.1:5434:5432"
+  #   volumes:
+  #     - ./index-db:/var/lib/postgresql/data
+  #   networks:
+  #     - internal
 
   ipfs:
     image: ipfs/kubo:release
@@ -37,9 +37,11 @@ services:
     restart: unless-stopped
     depends_on:
       - ipfs
+    entrypoint: >
+      sh -c 'export CLUSTER_SECRET=$(cat /run/secrets/ipfs_secret) &&
+             exec /usr/local/bin/entrypoint.sh daemon'
     environment:
       CLUSTER_PEERNAME: ${IPFS_CLUSTER_PEERNAME}
-      CLUSTER_SECRET: ${IPFS_CLUSTER_SECRET}
       CLUSTER_IPFSHTTP_NODEMULTIADDRESS: /dns4/ipfs/tcp/5001
       CLUSTER_IPFSPROXY_NODEMULTIADDRESS: /dns4/ipfs/tcp/5001
       CLUSTER_CRDT_TRUSTEDPEERS: '*'
@@ -80,7 +82,13 @@ services:
       # CACHE_REDIS_TIMEOUT: 2
       INDEXDB_ENABLED: 1
       INDEXDB_INDEXER_TIMEOUT: 30
-      INDEXDB_DATABASE_HOST: db
+      INDEXDB_DATABASE_HOST: host.docker.internal
+      INDEXDB_DATABASE_PORT: 6432
+      INDEXDB_DATABASE_PASSWORD: file:/run/secrets/db_password
+      INDEXDB_ETCD_HOSTS: ${INDEXDB_ETCD_HOSTS}
+      INDEXDB_ETCD_CACERT: /run/secrets/ca_cert
+      INDEXDB_ETCD_CERT: /run/secrets/tls_cert
+      INDEXDB_ETCD_KEY: /run/secrets/tls_key
       # HTTP_API_ROOT_PATH: ${HTTP_API_ROOT_PATH}
       HTTP_API_JWT_SECRET: file:/run/secrets/jwt_key
       HTTP_TWA_BOT_TOKEN: file:/run/secrets/bot_token
@@ -97,10 +105,16 @@ services:
       - liteserver_config
       - jwt_key
       - bot_token
+      - db_password
+      - ca_cert
+      - tls_cert
+      - tls_key
     ports:
       - 127.0.0.1:8002:8002
     networks:
       - internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: curl -sf http://127.0.0.1:8002/healthcheck
       interval: 15s
@@ -108,7 +122,7 @@ services:
       retries: 5
     depends_on:
       - ipfs
-      - db
+      # - db
       # - cache
 
 secrets:
@@ -118,7 +132,15 @@ secrets:
     file: ./private/jwt.key
   bot_token:
     file: ./private/bot_token.key
+  db_password:
+    file: ./private/db_password
+  tls_cert:
+    file: ./private/certs/client.crt
+  tls_key:
+    file: ./private/certs/client.key
+  ca_cert:
+    file: ./private/certs/ca.crt
   ipfs_secret:
-    environment: "IPFS_CLUSTER_SECRET"
+    file: ./private/ipfs_cluster.key
 networks:
   internal:

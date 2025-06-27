@@ -32,13 +32,49 @@
     mode: '0750'
   tags: nftorrent
 
+- name: NFTorrent private "~/nft-torrent/private/certs"
+  file:
+    path: "/home/{{ oam.user }}/nft-torrent/private/certs"
+    state: directory
+    owner: "{{ oam.user }}"
+    group: "{{ oam.group }}"
+    mode: '0750'
+  tags: nftorrent
+
+- name: Copy CA public certificate for PG-Cluster
+  copy:
+    src: "{{ inventory_dir }}/certs/pgcluster/ca.crt"
+    dest: /home/{{ oam.user }}/nft-torrent/private/certs/ca.crt
+    owner: root
+    group: root
+    mode: '0644'
+  tags: nftorrent
+
+- name: Copy etcd Client public certificate for PG-Cluster
+  copy:
+    src: "{{ inventory_dir }}/certs/pgcluster/client.crt"
+    dest: /home/{{ oam.user }}/nft-torrent/private/certs/client.crt
+    owner: "{{ oam.user }}"
+    group: "{{ oam.group }}"
+    mode: '0644'
+  tags: nftorrent
+
+- name: Copy etcd Client puprivate key for PG-Cluster
+  copy:
+    src: "{{ inventory_dir }}/certs/pgcluster/client.key"
+    dest: /home/{{ oam.user }}/nft-torrent/private/certs/client.key
+    owner: "{{ oam.user }}"
+    group: "{{ oam.group }}"
+    mode: '0600'
+  tags: nftorrent
+
 - name: NFTorrent private JWT Key
   copy:
     content: "{{ nftorrent.jwt_key }}"
     dest: "/home/{{ oam.user }}/nft-torrent/private/jwt.key"
     owner: "{{ oam.user }}"
     group: "{{ oam.group }}"
-    mode: '0600'
+    mode: '0400'
   notify: restart nftorrent
   tags: nftorrent
 
@@ -48,7 +84,17 @@
     dest: "/home/{{ oam.user }}/nft-torrent/private/bot_token.key"
     owner: "{{ oam.user }}"
     group: "{{ oam.group }}"
-    mode: '0600'
+    mode: '0400'
+  notify: restart nftorrent
+  tags: nftorrent
+
+- name: NFTorrent DB Password
+  copy:
+    content: "{{ pg_users.postgres.password }}"
+    dest: "/home/{{ oam.user }}/nft-torrent/private/db_password"
+    owner: "{{ oam.user }}"
+    group: "{{ oam.group }}"
+    mode: '0400'
   notify: restart nftorrent
   tags: nftorrent
 

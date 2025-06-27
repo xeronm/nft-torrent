@@ -36,7 +36,9 @@ dependencies = [
   "pynacl",
   "sqlmodel",
   "psycopg2-binary",
-  "pillow"
+  "pillow",
+  "etcd3",
+  "protobuf>=3.20.0,<4.21.0",
 ]
 
 classifiers = [

@@ -1,0 +1,13 @@
+inventory_group: pgcluster
+postgres_version: 15
+postgres_data_dir: "/var/lib/pgsql/{{ postgres_version }}/data"
+patroni_user: postgres
+patroni_ports:
+  - 8008
+  - 5432
+etcd_version: 3.5.13
+etcd_download_url: "https://github.com/etcd-io/etcd/releases/download/v{{ etcd_version }}/etcd-v{{ etcd_version }}-linux-amd64.tar.gz"
+etcd_ports:
+  - 2379
+  - 2380
+etcd_data_dir: /var/lib/etcd

@@ -1,0 +1,29 @@
+[Unit]
+Description=Patroni PostgreSQL HA Cluster
+After=network.target etcd.service
+Wants=etcd.service
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=postgres
+Group=postgres
+ExecStart=/usr/local/bin/patroni /etc/patroni/patroni.yaml
+ExecStopPost=/etc/pgbouncer/update_config.sh systemd.ExecStopPost
+ExecReload=/bin/kill -HUP $MAINPID
+TimeoutStopSec=30
+Restart=always
+RestartSec=5
+LimitNOFILE=32768
+OOMScoreAdjust=-500
+ProtectSystem=full
+NoNewPrivileges=true
+ReadWritePaths=/var/lib/pgsql /var/run/postgresql /etc/pgbouncer/
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=patroni
+[Install]
+WantedBy=multi-user.target

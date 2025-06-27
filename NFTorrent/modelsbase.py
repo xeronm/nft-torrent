@@ -89,6 +89,7 @@ class BaseNftModel(SQLModel, table=False):
     icons: bytes | None = Field(default=None)
     error_time: datetime.datetime | None = Field(default=None, index=True)
     error_code: str | None = Field(default=None, max_length=40)
+    fee_due_time: int = Field()
 
     @classmethod
     @abc.abstractmethod

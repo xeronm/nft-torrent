@@ -62,7 +62,7 @@
               line="{{ item.param }} {{ item.value }}"
               state=present
   notify: restart ssh
-  with_items:
+  loop:
     - { param: PermitRootLogin, value: "yes" }
     - { param: PasswordAuthentication, value: "no" }
     - { param: MaxAuthTries, value: 3 }

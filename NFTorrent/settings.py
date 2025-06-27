@@ -117,8 +117,11 @@ class IndexDbSettings:
     icon_size_small: int = 100
     icon_size_medium: int = 240
     icon_format: str = "webp"
-    nftorrent_apiroot: str = None
     http_timeout: int = 30
+    etcd_hosts: list[str] = None
+    etcd_cacert: str = None
+    etcd_cert: str = None
+    etcd_key: str = None
 
     @classmethod
     def from_environment(cls):
@@ -126,7 +129,7 @@ class IndexDbSettings:
         obj.enabled = strtobool(os.environ.get("INDEXDB_ENABLED", "false"))
         database_backend = os.environ.get("INDEXDB_DATABASE_BACKEND", "postgresql+psycopg2")
         database_user = os.environ.get("INDEXDB_DATABASE_USER", "postgres")
-        database_password = os.environ.get("INDEXDB_DATABASE_PASSWORD", "postgres")
+        database_password = _value_from_file(os.environ.get("INDEXDB_DATABASE_PASSWORD", "postgres"))
         database_name = os.environ.get("INDEXDB_DATABASE_NAME", "postgres")
         database_host = os.environ.get("INDEXDB_DATABASE_HOST", "localhost")
         database_port = os.environ.get("INDEXDB_DATABASE_PORT", None)
@@ -140,8 +143,13 @@ class IndexDbSettings:
         obj.icon_size_small = int(os.environ.get("INDEXDB_ICON_SIZE_SMALL", cls.icon_size_small))
         obj.icon_size_medium = int(os.environ.get("INDEXDB_ICON_SIZE_MEDIUM", cls.icon_size_medium))
         obj.icon_format = os.environ.get("INDEXDB_ICON_FORMAT", cls.icon_format)
-        obj.nftorrent_apiroot = os.environ.get("INDEXDB_NFTORRENT_APIROOT")
         obj.http_timeout = int(os.environ.get("INDEXDB_HTTP_TIMEOUT", cls.http_timeout))
+
+        obj.etcd_hosts = [x.strip() for x in os.environ.get("INDEXDB_ETCD_HOSTS", "").split(",") if x.strip()]
+        obj.etcd_cacert = os.environ.get("INDEXDB_ETCD_CACERT", None)
+        obj.etcd_cert = os.environ.get("INDEXDB_ETCD_CERT", None)
+        obj.etcd_key = os.environ.get("INDEXDB_ETCD_KEY", None)
+
         return obj
 
 

@@ -26,10 +26,9 @@
     content: "{{ ipfs_patched_config | to_nice_json }}"
     dest: "/home/{{ oam.user }}/nft-torrent/ipfs-db/config"
     mode: '0644'
-  register: vipfs_config
+  notify: restart nftorrent
   when: ipfs_config_json != ipfs_patched_config
   tags: ipfs
-
 
 - name: IPFS Cluster - check existance bootstrap peerstore
   ansible.builtin.stat:
@@ -42,15 +41,17 @@
     src: ./peerstore.j2
     dest: "/home/{{ oam.user }}/nft-torrent/cluster-db/peerstore"
     mode: '0644'
-  register: vipfs_peerstore_config
+  notify: restart nftorrent
   when: not peerstore.stat.exists
         or (peerstore.stat.size is defined and peerstore.stat.size == 0)
   tags: ipfs
 
-- name: IPFS - restart NFTorrent docker service
-  community.docker.docker_compose_v2:
-    project_name: nft-torrent
-    project_src: "/home/{{ oam.user }}/nft-torrent"
-    state: "restarted"
-  when: vipfs_config.changed or vipfs_peerstore_config.changed
+- name: IPFS Cluster Secret
+  copy:
+    content: "{{ nftorrent.ipfs.cluster_secret }}"
+    dest: "/home/{{ oam.user }}/nft-torrent/private/ipfs_cluster.key"
+    owner: "{{ oam.user }}"
+    group: "{{ oam.group }}"
+    mode: '0600'
+  notify: restart nftorrent
   tags: ipfs

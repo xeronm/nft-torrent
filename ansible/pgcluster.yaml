@@ -1,0 +1,6 @@
+
+- hosts: pgcluster
+  serial: 1
+  remote_user: root
+  roles:
+    - pgcluster
