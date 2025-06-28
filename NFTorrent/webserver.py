@@ -3,8 +3,8 @@ import io
 import logging
 import logging.config
 import time
-from urllib.parse import urljoin
 from typing import Any
+from urllib.parse import urljoin
 
 from fastapi import Request, status
 from fastapi.encoders import jsonable_encoder
@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Stre
 
 from NFTorrent.auth import ContractAPIKeyCookie, NodeJWTBearer
 from NFTorrent.cache import DisabledCacheManager
-from NFTorrent.indexer import IndexDb
+from NFTorrent.indexer import BotChannel, IndexDb
 from NFTorrent.ipfs import IpfsRpcManager
 from NFTorrent.models import HealthCheckResult, NftContentState, torrent_digest
 from NFTorrent.modelsbase import CollectionConfig
@@ -106,6 +106,7 @@ class Server:
         if self.settings.indexdb.enabled:
             self.indexer = IndexDb(
                 self.settings.indexdb,
+                notif_channel=BotChannel(self.settings.webserver.bot_token),
                 cache_manager=cache_manager,
                 loop=loop,
                 tonlib=self.tonlib,
@@ -263,7 +264,7 @@ class Server:
                     and userdata is not None
                 ):
                     self.loop.create_task(self.ipfs.confirm_content(address, old_cid=None, cid=cid, userdata=userdata))
-            # TODO: Update IndexDB
+            await self.indexer.nft_update_nft_data(nft_data)
 
     async def get_nft_cid_info(self, address: str, digest: str = None):
         cid, _ = await self.ipfs.get_nft_cid(address, raise_error=True)
@@ -292,10 +293,10 @@ class Server:
     async def register_tg_user(self, owner: str = None, userdata: Any = None, country: str = None):
         if owner is None or userdata is None or not isinstance(userdata, dict):
             return
-        user_id = userdata.get('id')
-        is_premium = userdata.get('prem')
-        username = userdata.get('name')
-        language = userdata.get('lang', 'en')
+        user_id = userdata.get("id")
+        is_premium = userdata.get("prem")
+        username = userdata.get("name")
+        language = userdata.get("lang", "en")
         if user_id:
             await self.indexer.register_tg_user(
                 owner=owner,

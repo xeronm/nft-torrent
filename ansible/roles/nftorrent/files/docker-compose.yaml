@@ -101,6 +101,7 @@ services:
       - ./ton_keystore:/ton_keystore
       - ./nftcollections.py:/opt/nftorrent/nftcollections.py
       - ./assets:/opt/nftorrent/assets
+      - ./log:/opt/nftorrent/log
     secrets:
       - liteserver_config
       - jwt_key

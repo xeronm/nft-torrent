@@ -122,6 +122,7 @@ class IndexDbSettings:
     etcd_cacert: str = None
     etcd_cert: str = None
     etcd_key: str = None
+    task_queue_bulk_size: int = 20
 
     @classmethod
     def from_environment(cls):
@@ -149,6 +150,8 @@ class IndexDbSettings:
         obj.etcd_cacert = os.environ.get("INDEXDB_ETCD_CACERT", None)
         obj.etcd_cert = os.environ.get("INDEXDB_ETCD_CERT", None)
         obj.etcd_key = os.environ.get("INDEXDB_ETCD_KEY", None)
+
+        obj.task_queue_bulk_size = int(os.environ.get("INDEXDB_TASK_QUEUE_BULK_SIZE", cls.task_queue_bulk_size))
 
         return obj
 

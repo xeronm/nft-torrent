@@ -1,28 +1,30 @@
 import base64
 import datetime
-import pickle
 import enum
+import pickle
 
-from sqlmodel import SQLModel, Field, UniqueConstraint
+from sqlmodel import Field, SQLModel, UniqueConstraint
 
 from .blockchain.models import GeoPoint, NftMutableMetaData, PetMemoryNftContent, PetMemoryNftImmutableData
-from .modelsbase import BaseCollectionModel, BaseNftModel, NftItemData, NftItemHeader
+from .modelsbase import NftItemData, NftItemHeader
 
 
-class PetsCollection(BaseCollectionModel, table=True):
+class PetsCollection(SQLModel, table=True):
     id: int = Field(default=None, primary_key=True)
     address: str = Field(unique=True, max_length=48)
     index: int = Field()
-    last_updated: datetime.datetime = Field(default_factory=datetime.datetime.utcnow, nullable=False)
+    updated_time: datetime.datetime = Field(default_factory=datetime.datetime.utcnow, nullable=False)
     __tablename__ = "pets_collection"
 
 
-class PetMemoryNft(BaseNftModel, table=True):
+class PetMemoryNft(SQLModel, table=True):
     id: int = Field(default=None, primary_key=True)
     collection_id: int = Field(foreign_key="pets_collection.id")
     address: str = Field(unique=True, max_length=48)
     index: int = Field(index=True)
-    last_updated: datetime.datetime = Field(default_factory=datetime.datetime.utcnow, nullable=False)
+    created_time: datetime.datetime = Field(default_factory=datetime.datetime.utcnow, nullable=False)
+    updated_time: datetime.datetime = Field(default_factory=datetime.datetime.utcnow, nullable=False)
+    last_notified: datetime.datetime | None = Field(default=None)
     # Immutable Data
     lang: str = Field(index=True, max_length=2)
     name: str = Field(max_length=100)
@@ -149,17 +151,20 @@ class PetMemoryNft(BaseNftModel, table=True):
 
 class NftTaskType(enum.IntEnum):
     SYNC = 1
-    NOTIFY_WARNING = 2
-    NOTIFY_EXPIRED = 3
+    NOTIFY_DUE_DATE = 2
+    NOTIFY_MINT = 3
+    NOTIFY_UPDATED = 4
 
 
 class NftTaskQueue(SQLModel, table=True):
     id: int = Field(default=None, primary_key=True)
-    task_time: datetime.datetime = Field(index=True)
+    task_type: int
+    task_time: datetime.datetime | None = Field(index=True)
     collection_id: int = Field(foreign_key="pets_collection.id")
     pet_memory_nft_id: int | None = Field(foreign_key="pet_memory_nft.id", default=None)
     index: int | None = Field(default=None)
-    task_type: int
+    procst_time: datetime.datetime | None = Field(index=True, default=None)
+    created_time: datetime.datetime = Field(default_factory=datetime.datetime.utcnow, nullable=False)
 
     __tablename__ = "nft_task_queue"
 
@@ -172,7 +177,8 @@ class TgUser(SQLModel, table=True):
     country: str | None = Field(default=None, max_length=2)
     language: str | None = Field(default=None, max_length=2)
     is_premium: bool = Field(default=False)
-    last_updated: datetime.datetime = Field(default_factory=datetime.datetime.utcnow, nullable=False)
+    created_time: datetime.datetime = Field(default_factory=datetime.datetime.utcnow, nullable=False)
+    updated_time: datetime.datetime = Field(default_factory=datetime.datetime.utcnow, nullable=False)
 
     __tablename__ = "tg_user"
     __table_args__ = (UniqueConstraint("owner", "user_id", name="tg_user_index_uk"),)

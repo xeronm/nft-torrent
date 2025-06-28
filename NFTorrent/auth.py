@@ -234,20 +234,11 @@ class ContractAPIKeyCookie(APIKeyCookie):
     def get_auth_payload(self, init_data: dict = None) -> str:
         user = None
 
-        attrmap = {
-            "id": "id",
-            "username": "name",
-            "language_code": "lang",
-            "is_premium": "prem"
-        }
+        attrmap = {"id": "id", "username": "name", "language_code": "lang", "is_premium": "prem"}
         if init_data and self.bot_secret:
             try:
                 self.validate_init_data(init_data)
-                user = {
-                    attrmap[k]: v
-                    for k, v in json.loads(init_data.get("user", {})).items()
-                    if k in attrmap
-                }
+                user = {attrmap[k]: v for k, v in json.loads(init_data.get("user", {})).items() if k in attrmap}
             except ValueError as E:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(E)) from E
 

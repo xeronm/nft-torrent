@@ -23,13 +23,16 @@
     group: "{{ oam.group }}"
   tags: nftorrent
 
-- name: NFTorrent private "~/nft-torrent/private"
+- name: NFTorrent required paths
   file:
-    path: "/home/{{ oam.user }}/nft-torrent/private"
+    path: "/home/{{ oam.user }}/nft-torrent/{{ item }}"
     state: directory
     owner: "{{ oam.user }}"
     group: "{{ oam.group }}"
     mode: '0750'
+  loop:
+    - private
+    - log
   tags: nftorrent
 
 - name: NFTorrent private "~/nft-torrent/private/certs"

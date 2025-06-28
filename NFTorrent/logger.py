@@ -13,8 +13,25 @@ config = {
             "formatter": "default",
             "stream": "ext://sys.stdout",
         },
+        "taskQueueFile": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": "./log/nftorrent-task.log",
+            "formatter": "default",
+            "maxBytes": 10 * 1024 * 1024,
+            "backupCount": 5,
+        },
     },
     "loggers": {
+        "NFTorrent.TaskQueue": {
+            "handlers": ["taskQueueFile"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        # "NFTorrent.indexer": {
+        #     "handlers": ["console"],
+        #     "level": "INFO",
+        #     "propagate": False,
+        # },
         # 'pytonlib': {
         #     'handlers': ['console'],
         #     'level': 'INFO',
