@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Stre
 
 from NFTorrent.auth import ContractAPIKeyCookie, NodeJWTBearer
 from NFTorrent.cache import DisabledCacheManager
-from NFTorrent.indexer import IndexDb
+from NFTorrent.indexer import IndexDb, BotChannel
 from NFTorrent.ipfs import IpfsRpcManager
 from NFTorrent.models import HealthCheckResult, NftContentState, torrent_digest
 from NFTorrent.modelsbase import CollectionConfig
@@ -106,6 +106,7 @@ class Server:
         if self.settings.indexdb.enabled:
             self.indexer = IndexDb(
                 self.settings.indexdb,
+                notif_channel=BotChannel(self.settings.webserver.bot_token),
                 cache_manager=cache_manager,
                 loop=loop,
                 tonlib=self.tonlib,

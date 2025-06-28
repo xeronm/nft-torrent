@@ -6,10 +6,10 @@ import enum
 from sqlmodel import SQLModel, Field, UniqueConstraint
 
 from .blockchain.models import GeoPoint, NftMutableMetaData, PetMemoryNftContent, PetMemoryNftImmutableData
-from .modelsbase import BaseCollectionModel, BaseNftModel, NftItemData, NftItemHeader
+from .modelsbase import NftItemData, NftItemHeader
 
 
-class PetsCollection(BaseCollectionModel, table=True):
+class PetsCollection(SQLModel, table=True):
     id: int = Field(default=None, primary_key=True)
     address: str = Field(unique=True, max_length=48)
     index: int = Field()
@@ -17,7 +17,7 @@ class PetsCollection(BaseCollectionModel, table=True):
     __tablename__ = "pets_collection"
 
 
-class PetMemoryNft(BaseNftModel, table=True):
+class PetMemoryNft(SQLModel, table=True):
     id: int = Field(default=None, primary_key=True)
     collection_id: int = Field(foreign_key="pets_collection.id")
     address: str = Field(unique=True, max_length=48)
@@ -151,6 +151,7 @@ class NftTaskType(enum.IntEnum):
     SYNC = 1
     NOTIFY_WARNING = 2
     NOTIFY_EXPIRED = 3
+    NOTIFY_MINT = 4
 
 
 class NftTaskQueue(SQLModel, table=True):

@@ -213,7 +213,7 @@ class IpfsRpcManager:
     ):
         name = name or ""
         if self.settings.cluster_rpc_uri:
-            expire_at_str = datetime.datetime.fromtimestamp(expire_at).isoformat() + "Z" if expire_at else ""
+            expire_at_str = datetime.datetime.fromtimestamp(expire_at, tz=datetime.timezone.utc).isoformat() + "Z" if expire_at else ""
             query_params = {
                 "mode": "recursive",
                 "replication-min": self.settings.min_redundancy,

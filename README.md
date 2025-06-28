@@ -60,3 +60,12 @@ openssl s_client \
   -key /etc/ssl/pgcluster/client.key \
   -CAfile /etc/ssl/pgcluster/ca.crt
 ```
+
+
+### Annex A. Localization
+
+```sh
+pybabel extract -F babel.cfg -o NFTorrent/locales/messages.pot .
+pybabel update -i NFTorrent/locales/messages.pot -d NFTorrent/locales -l ru
+pybabel compile -d NFTorrent/locales
+```
