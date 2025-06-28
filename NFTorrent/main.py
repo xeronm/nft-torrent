@@ -214,7 +214,7 @@ async def get_account_auth_payload(request: Request) -> models.AuthPayload:
 
 
 @app.post("/api/v1/account/auth", tags=["account"])
-async def create_account_auth_session(body: models.AuthData) -> models.AuthSession:
+async def create_account_auth_session(rawRequest: Request, body: models.AuthData) -> models.AuthSession:
     """
     Auhtenticate account signature and create session
     """
@@ -222,6 +222,7 @@ async def create_account_auth_session(body: models.AuthData) -> models.AuthSessi
     response = JSONResponse(
         models.AuthSession(node=ws.get_healthcheck(), sess=payload).dict(), status_code=status.HTTP_200_OK
     )
+    await ws.register_tg_user(owner=payload.sub, userdata=payload.user, country=rawRequest.headers.get('x-country-code'))
     set_cookie(
         response,
         ws.jwt_session.cookie_name,
@@ -304,13 +305,14 @@ async def get_nft_address_information(request: models.NftMethod = Depends()):  #
 
 
 @app.post("/api/v1/nft/{address}/sync", response_model_exclude_none=True, tags=["nft"])
-async def sync_nft_data(
+async def sync_nft_data(rawRequest: Request,
     request: models.NftMethod = Depends(), jwt_payload: models.JWTPayload = Depends(ws.jwt_session)  # noqa: B008
 ):
     """
     Sync NFT OffChain data.
     """
     if jwt_payload is not None:
+        await ws.register_tg_user(owner=jwt_payload.sub, userdata=jwt_payload.user, country=rawRequest.headers.get('x-country-code'))
         return await ws.sync_nft_data(request.address, owner=jwt_payload.sub, userdata=jwt_payload.user)
     else:
         return await ws.sync_nft_data(request.address)
@@ -362,27 +364,36 @@ if ws.settings.ipfs.enabled:
 
     @app.post("/api/v1/nft/ipfs", response_model_exclude_none=True, tags=["nft"])
     async def create_new_nft_ipfs_content(
+        rawRequest: Request,
         request: models.NewNftTorrentCreate = Depends(),  # noqa: B008
         jwt_payload: models.JWTPayload = Depends(ws.jwt_session),  # noqa: B008
     ):
         """
         Create new NFT IPFS Content.
         """
-        return await ws.ipfs.new_nft_create_content(
+        result = await ws.ipfs.new_nft_create_content(
             request.files, owner=jwt_payload.sub if jwt_payload is not None else None
         )
+        if jwt_payload is not None:
+            await ws.register_tg_user(owner=jwt_payload.sub, userdata=jwt_payload.user, country=rawRequest.headers.get('x-country-code'))
+        return result
 
     @app.post("/api/v1/nft/{address}/ipfs", response_model_exclude_none=True, tags=["nft"])
     async def create_nft_ipfs_content(
+        rawRequest: Request,
         request: models.NftTorrentCreate = Depends(),  # noqa: B008
         jwt_payload: models.JWTPayload = Depends(ws.jwt_session),  # noqa: B008
     ):
         """
         Create NFT IPFS Content.
         """
-        return await ws.ipfs.create_content(
+        result = await ws.ipfs.create_content(
             request.address, request.files, owner=jwt_payload.sub if jwt_payload is not None else None
         )
+        if jwt_payload is not None:
+            await ws.register_tg_user(owner=jwt_payload.sub, userdata=jwt_payload.user, country=rawRequest.headers.get('x-country-code'))
+        return result
+
 
 
 if ws.settings.indexdb.enabled:

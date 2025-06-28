@@ -4,6 +4,7 @@ import logging
 import logging.config
 import time
 from urllib.parse import urljoin
+from typing import Any
 
 from fastapi import Request, status
 from fastapi.encoders import jsonable_encoder
@@ -12,7 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Stre
 
 from NFTorrent.auth import ContractAPIKeyCookie, NodeJWTBearer
 from NFTorrent.cache import DisabledCacheManager
-from NFTorrent.indexer import IndexDb
+from NFTorrent.indexer import IndexDb, BotChannel
 from NFTorrent.ipfs import IpfsRpcManager
 from NFTorrent.models import HealthCheckResult, NftContentState, torrent_digest
 from NFTorrent.modelsbase import CollectionConfig
@@ -105,6 +106,7 @@ class Server:
         if self.settings.indexdb.enabled:
             self.indexer = IndexDb(
                 self.settings.indexdb,
+                notif_channel=BotChannel(self.settings.webserver.bot_token),
                 cache_manager=cache_manager,
                 loop=loop,
                 tonlib=self.tonlib,
@@ -248,7 +250,7 @@ class Server:
                 )
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
-    async def sync_nft_data(self, address: str = None, owner: str = None, userdata: str = None):
+    async def sync_nft_data(self, address: str = None, owner: str = None, userdata: Any = None):
         nft_data = await self.tonlib.get_nft_data(address, owner=owner)
         nft_content = nft_data.individual_content
         if nft_content is not None:
@@ -287,3 +289,20 @@ class Server:
         if not pin_status:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
         return pin_status
+
+    async def register_tg_user(self, owner: str = None, userdata: Any = None, country: str = None):
+        if owner is None or userdata is None or not isinstance(userdata, dict):
+            return
+        user_id = userdata.get('id')
+        is_premium = userdata.get('prem')
+        username = userdata.get('name')
+        language = userdata.get('lang', 'en')
+        if user_id:
+            await self.indexer.register_tg_user(
+                owner=owner,
+                user_id=user_id,
+                username=username,
+                is_premium=is_premium,
+                language=language,
+                country=country,
+            )

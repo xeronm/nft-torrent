@@ -36,7 +36,11 @@ dependencies = [
   "pynacl",
   "sqlmodel",
   "psycopg2-binary",
-  "pillow"
+  "pillow",
+  "etcd3",
+  "protobuf>=3.20.0,<4.21.0",
+  "aiogram",
+  "babel",
 ]
 
 classifiers = [
@@ -55,8 +59,10 @@ classifiers = [
 include-package-data = true
 
 [tool.setuptools.packages.find]
-exclude = ["test*"]
+exclude = ["test*", "ansible*", "docker*"]
 
+[tool.setuptools.package-data]
+NFTorrent = ["locales/**/LC_MESSAGES/*.mo"]
 
 [tool.black]
 line-length = 120

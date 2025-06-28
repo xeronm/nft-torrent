@@ -1,0 +1,22 @@
+- name: Reload systemd
+  command: systemctl daemon-reload
+
+- name: Restart Patroni
+  systemd:
+    name: patroni
+    state: restarted
+
+- name: Restart etcd
+  systemd:
+    name: etcd
+    state: restarted
+
+- name: Restart PgBouncer
+  systemd:
+    name: pgbouncer
+    state: restarted
+
+- name: Reload firewalld
+  service:
+    name: firewalld
+    state: reloaded

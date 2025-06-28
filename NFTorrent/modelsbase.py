@@ -73,33 +73,6 @@ class MeasurementStore(defaultdict):
         return [f"{self.name},{dataclass_to_influx(k)} {dataclass_to_influx(v)} {timestamp}" for k, v in self.items()]
 
 
-class BaseCollectionModel(SQLModel, table=False):
-    id: int = Field(default=None, primary_key=True)
-    address: str = Field(unique=True, max_length=48)
-    index: int = Field()
-
-
-class BaseNftModel(SQLModel, table=False):
-    id: int = Field(default=None, primary_key=True)
-    collection_id: int = Field()
-    address: str = Field(unique=True, max_length=48)
-    index: int = Field(index=True)
-    image: str | None = Field(default=None, max_length=256)
-    image_data: bytes | None = Field(default=None)
-    icons: bytes | None = Field(default=None)
-    error_time: datetime.datetime | None = Field(default=None, index=True)
-    error_code: str | None = Field(default=None, max_length=40)
-
-    @classmethod
-    @abc.abstractmethod
-    def from_nftmodel(cls, collection: int, data: Any):
-        pass
-
-    @abc.abstractmethod
-    def to_nftheader(self, collection_address: str, icon_size: str = None):
-        pass
-
-
 @dataclass
 class BaseNftContent:
 
@@ -146,8 +119,6 @@ class CollectionConfig:
     collection_info_class: type[BaseCollectionInfo]
     nft_content_class: type[BaseNftContent]
     collections: list[CollectionInstance]
-    dbmodel_class: type[BaseCollectionModel] = None
-    dbmodel_nft_class: type[BaseNftModel] = None
 
     def __post_init__(self):
         self._collections_map = {x.raw_form: x for x in self.collections}
