@@ -211,12 +211,12 @@ class IndexDb:
         self.tasks = {
             "event_processor": self.loop.create_task(self.event_processor()),
         }
-        if self.settings.task_queue_bulk_size:
+        if self.settings.task_queue_bulk_size and self.notif_channel:
             self.tasks["nft_task_processor"] = self.loop.create_task(self.nft_task_processor())
         else:
             logger.warning(
-                "NFT scheduled task processor not started... task_queue_bulk_size: %d",
-                self.settings.task_queue_bulk_size,
+                "NFT scheduled task processor not started... task_queue_bulk_size: %d, channel=%s",
+                self.settings.task_queue_bulk_size, str(self.notif_channel is not None),
             )
 
         # running tasks
@@ -717,6 +717,9 @@ class IndexDb:
                 .limit(maxsize)
             ).all()
 
+            if not tasks:
+                return [], {}, {}
+
             ids = [x.id for x in tasks]
             nft_ids = [x.pet_memory_nft_id for x in tasks]
             ex_tasks = [copy.deepcopy(x) for x in tasks]
@@ -729,13 +732,12 @@ class IndexDb:
                 .execution_options(synchronize_session=False)
             )
             session.commit()
+            logger.info("NFT TaskQueue: Read %d tasks from queue", len(ex_tasks))
 
             nfts = session.exec(select(PetMemoryNft).where(PetMemoryNft.id.in_(nft_ids))).all()
             owners = {x.owner for x in nfts}
-
             tgusers = session.exec(select(TgUser).where(TgUser.owner.in_(owners))).all()
 
-        logger.info("NFT TaskQueue: Read %d tasks from queue", len(ex_tasks))
         return ex_tasks, {x.id: x for x in nfts}, {x.owner: x for x in tgusers}
 
     def sync_collection_nft_bulk_update(

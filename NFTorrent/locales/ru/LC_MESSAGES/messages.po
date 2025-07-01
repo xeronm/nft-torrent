@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2025-06-29 20:50+0300\n"
+"POT-Creation-Date: 2025-07-01 15:35+0300\n"
 "PO-Revision-Date: 2025-06-28 11:55+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ru\n"
@@ -35,33 +35,29 @@ msgstr ""
 msgid "IPFS Storage due date: <b>{due_date}</b>\n"
 msgstr "IPFS хранится до: <b>{due_date}</b>\n"
 
-#: NFTorrent/indexer/notifications.py:88
+#: NFTorrent/indexer/notifications.py:89
 msgid ""
 "🕊️ You have just minted memorial NFT\n"
 "\n"
-"<a href=\"{tonviewer}\">NFT Address</a>:\n"
-"<pre>{nft_address}</pre>\n"
-"{storage_due_time}"
 msgstr ""
 "🕊️ Ваш памятный NFT был создан\n"
 "\n"
-"<a href=\"{tonviewer}\">Адрес NFT</a>:\n"
-"<pre>{nft_address}</pre>\n"
-"{storage_due_time}"
 
-#: NFTorrent/indexer/notifications.py:120
+#: NFTorrent/indexer/notifications.py:90 NFTorrent/indexer/notifications.py:122
+msgid ""
+"<code>{nft_address}</code> - <a href=\"{tonviewer_link}\">view on "
+"Tonviewer</a>\n"
+"\n"
+"{storage_due_time}"
+msgstr ""
+
+#: NFTorrent/indexer/notifications.py:121
 msgid ""
 "🕊️ You have just updated memorial NFT\n"
 "\n"
-"<a href=\"{tonviewer}\">NFT Address</a>:\n"
-"<pre>{nft_address}</pre>\n"
-"{storage_due_time}"
 msgstr ""
 "🕊️ Ваш памятный NFT был изменен\n"
 "\n"
-"<a href=\"{tonviewer}\">Адрес NFT</a>:\n"
-"<pre>{nft_address}</pre>\n"
-"{storage_due_time}"
 
 #: NFTorrent/indexer/notifications.py:182
 msgid ""
@@ -86,4 +82,5 @@ msgstr ""
 #: NFTorrent/indexer/notifications.py:190
 msgid "Donate (Renew storage)"
 msgstr "Поддержать (Продлить хранение)"
+
 

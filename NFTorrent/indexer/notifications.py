@@ -85,13 +85,13 @@ class BotChannel:
                 )
             )
 
-        message = _(
-            "🕊️ You have just minted memorial NFT\n\n"
-            '<a href="{tonviewer}">NFT Address</a>:\n<pre>{nft_address}</pre>\n{storage_due_time}'
+        message = (
+            _("🕊️ You have just minted memorial NFT\n\n") +
+            _('<code>{nft_address}</code> - <a href="{tonviewer_link}">view on Tonviewer</a>\n\n{storage_due_time}')
         ).format(
             storage_due_time=storage_due_time,
             nft_address=nft.address,
-            tonviewer=self.get_tonviewer_link(nft.address),
+            tonviewer_link=self.get_tonviewer_link(nft.address),
         )
 
         await self.bot.send_message(
@@ -117,13 +117,13 @@ class BotChannel:
                 )
             )
 
-        message = _(
-            "🕊️ You have just updated memorial NFT\n\n"
-            '<a href="{tonviewer}">NFT Address</a>:\n<pre>{nft_address}</pre>\n{storage_due_time}'
+        message = (
+            _("🕊️ You have just updated memorial NFT\n\n") +
+            _('<code>{nft_address}</code> - <a href="{tonviewer_link}">view on Tonviewer</a>\n\n{storage_due_time}')
         ).format(
             storage_due_time=storage_due_time,
             nft_address=nft.address,
-            tonviewer=self.get_tonviewer_link(nft.address),
+            tonviewer_link=self.get_tonviewer_link(nft.address),
         )
 
         await self.bot.send_message(
