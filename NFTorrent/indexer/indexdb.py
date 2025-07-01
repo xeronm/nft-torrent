@@ -30,13 +30,22 @@ from NFTorrent.modelsbase import (
     CollectionInstance,
     MeasurementStore,
 )
+from NFTorrent.dbmodels import NftTaskQueue, NftTaskType, TgUser, PetsCollection, PetMemoryNft
 from NFTorrent.settings import IndexDbSettings
 from NFTorrent.tonlib import TonlibManager, TonlibRequestError
+from .notifications import BotChannel
 
 from .notifications import BotChannel
 
 logger = logging.getLogger(__name__)
 task_queue_logger = logging.getLogger("NFTorrent.TaskQueue")
+
+
+@dataclass
+class CollectionTaskData:
+    nft_collection: CollectionInstance
+    collection_data: CollectionData = None
+    instance: PetsCollection = None
 
 
 @dataclass(frozen=True)
@@ -496,6 +505,40 @@ class IndexDb:
                 await self.loop.run_in_executor(
                     self.threadpool_executor, self.sync_collection_nft_bulk_update, nft_updates, tasks, nft_tasks
                 )
+            except asyncio.CancelledError:
+                logger.info("NFT scheduled processor task was cancelled")
+                return
+            except (Exception, BaseException):
+                logger.exception(
+                    "NFT scheduled processor task got unhandled exception, sleep for %d", self.restart_timeout
+                )
+                await asyncio.sleep(self.restart_timeout)
+
+    async def nft_task_processor(self):
+        logger.warning("NFT scheduled task processor task entering main loop")
+        while True:
+            try:
+                await asyncio.sleep(3)
+
+                tasks, nfts, tgusers = await self.loop.run_in_executor(
+                    self.threadpool_executor, self.sync_nft_task_get, 10
+                )
+
+                for task in tasks:
+                    nft = nfts.get(task.pet_memory_nft_id)
+                    if nft is None:
+                        continue
+                    user = tgusers.get(nft.owner)
+                    if user is None:
+                        continue
+                    collection = self.collections_id.get(nft.collection_id).instance
+
+                    if task.task_type == NftTaskType.NOTIFY_MINT:
+                        await self.notif_channel.send_ntf_preview(nft, collection, user)
+                        await self.notif_channel.send_ntf_mint(nft, collection, user, keyboard=True)
+                    if task.task_type in [NftTaskType.NOTIFY_WARNING, NftTaskType.NOTIFY_EXPIRED]:
+                        # TODO Update NFT from blockchain
+                        await self.notif_channel.send_nft_storage_warning(nft, collection, user, keyboard=True)
             except asyncio.CancelledError:
                 logger.info("NFT scheduled processor task was cancelled")
                 return
