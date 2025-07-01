@@ -106,7 +106,7 @@ class Server:
         if self.settings.indexdb.enabled:
             self.indexer = IndexDb(
                 self.settings.indexdb,
-                notif_channel=BotChannel(self.settings.webserver.bot_token),
+                notif_channel=BotChannel(self.settings.webserver.bot_token) if self.settings.webserver.bot_token else None,
                 cache_manager=cache_manager,
                 loop=loop,
                 tonlib=self.tonlib,
