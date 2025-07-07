@@ -40,6 +40,7 @@ dependencies = [
   "etcd3",
   "protobuf>=3.20.0,<4.21.0",
   "aiogram",
+  "aiogram_dialog",
   "babel",
 ]
 

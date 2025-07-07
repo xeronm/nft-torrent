@@ -21,6 +21,7 @@ from pytonlib import TonlibException
 from sqlalchemy.exc import NoResultFound, SQLAlchemyError
 from sqlmodel import Session, SQLModel, create_engine, delete, select, update
 
+from NFTorrent.bot import BotApp, services
 from NFTorrent.cache import BaseCacheManager, DisabledCacheManager
 from NFTorrent.dbmodels import NftTaskQueue, NftTaskType, PetMemoryNft, PetsCollection, TgUser
 from NFTorrent.ipfs import IpfsRpcManager
@@ -32,8 +33,6 @@ from NFTorrent.modelsbase import (
 )
 from NFTorrent.settings import IndexDbSettings
 from NFTorrent.tonlib import TonlibManager, TonlibRequestError
-
-from .notifications import BotChannel
 
 logger = logging.getLogger(__name__)
 task_queue_logger = logging.getLogger("NFTorrent.TaskQueue")
@@ -158,7 +157,7 @@ class IndexDb:
     def __init__(
         self,
         settings: IndexDbSettings,
-        notif_channel: BotChannel = None,
+        channel: BotApp = None,
         num_workers: int = None,
         restart_timeout: int = None,
         cache_manager: BaseCacheManager | None = None,
@@ -177,7 +176,7 @@ class IndexDb:
         self.collection_config = collection_config
         self.cache_manager = cache_manager or DisabledCacheManager()
         self.tg_user_queue = asyncio.Queue(maxsize=10000)
-        self.notif_channel = notif_channel
+        self.channel = channel
 
         logger.warning("Initializing etcd clients... %s", str(self.settings.etcd_hosts))
         self.etcd_clients = [
@@ -211,12 +210,13 @@ class IndexDb:
         self.tasks = {
             "event_processor": self.loop.create_task(self.event_processor()),
         }
-        if self.settings.task_queue_bulk_size and self.notif_channel:
+        if self.settings.task_queue_bulk_size and self.channel:
             self.tasks["nft_task_processor"] = self.loop.create_task(self.nft_task_processor())
         else:
             logger.warning(
                 "NFT scheduled task processor not started... task_queue_bulk_size: %d, channel=%s",
-                self.settings.task_queue_bulk_size, str(self.notif_channel is not None),
+                self.settings.task_queue_bulk_size,
+                str(self.channel is not None),
             )
 
         # running tasks
@@ -473,16 +473,18 @@ class IndexDb:
                             continue
                         else:
                             coldata.meas.nft_notif_storage += 1
-                            await self.notif_channel.send_nft_storage_warning(nft, collection, user, keyboard=True)
+                            await services.nft.notify_nft_storage_warning(
+                                self.channel, nft, collection, user, keyboard=True
+                            )
                             nft.last_notified = curr_time
                     if task.task_type == NftTaskType.NOTIFY_MINT:
                         coldata.meas.nft_notif_mints += 1
-                        await self.notif_channel.send_ntf_preview(nft, collection, user)
-                        await self.notif_channel.send_ntf_minted(nft, collection, user, keyboard=True)
+                        await services.nft.nft_preview(self.channel, nft, collection, user)
+                        await services.nft.notify_nft_minted(self.channel, nft, collection, user, keyboard=True)
                     if task.task_type == NftTaskType.NOTIFY_UPDATED:
                         coldata.meas.nft_notif_updates += 1
-                        await self.notif_channel.send_ntf_preview(nft, collection, user)
-                        await self.notif_channel.send_ntf_updated(nft, collection, user, keyboard=True)
+                        await services.nft.nft_preview(self.channel, nft, collection, user)
+                        await services.nft.notify_nft_updated(self.channel, nft, collection, user, keyboard=True)
 
                     task_queue_logger.info(
                         "nft task done - task_id: %s, type: %d, collection: %s, index: %d, nft: %s",

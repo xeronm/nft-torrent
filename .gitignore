@@ -6,6 +6,7 @@ __pycache__/
 .db.*
 
 .tox
+.env
 .ruff_cache
 .coverage
 .coverage.*
