@@ -60,6 +60,7 @@
   loop:
     - /etc/patroni
     - /etc/pgbouncer
+    - /etc/etcd
     - "{{ etcd_data_dir }}"
     - "{{ postgres_data_dir }}"
     - /var/run/pgbouncer/
@@ -193,6 +194,33 @@
   notify:
     - Reload systemd
     - Restart etcd
+  tags: pgcluster
+
+- name: Deploy systemd unit for etcd-dbshrink
+  template:
+    src: ./etc/systemd/etcd-dbshrink.service
+    dest: /etc/systemd/system/etcd-dbshrink.service
+  notify:
+    - Reload systemd
+    - Restart etcd-dbshrink
+  tags: pgcluster
+
+- name: Deploy systemd timer for etcd-dbshrink
+  copy:
+    src: ./etc/systemd/etcd-dbshrink.timer
+    dest: /etc/systemd/system/etcd-dbshrink.timer
+  notify:
+    - Reload systemd
+    - Restart etcd-dbshrink
+  tags: pgcluster
+
+- name: Deploy etcd scripts (dbshrink.sh)
+  copy:
+    src: ./etc/etcd/dbshrink.sh
+    dest: /etc/etcd/dbshrink.sh
+    owner: postgres
+    group: postgres
+    mode: '0750'
   tags: pgcluster
 
 - name: Deploy systemd unit for Patroni

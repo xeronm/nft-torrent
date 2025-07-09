@@ -37,10 +37,10 @@ dependencies = [
   "sqlmodel",
   "psycopg2-binary",
   "pillow",
-  "etcd3",
+  "etcd3==0.12.0",
+  "tenacity==8.2.3",
   "protobuf>=3.20.0,<4.21.0",
   "aiogram",
-  "aiogram_dialog",
   "babel",
 ]
 

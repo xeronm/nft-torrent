@@ -5,16 +5,29 @@
   systemd:
     name: patroni
     state: restarted
+    enabled: yes
+    daemon_reload: yes
 
 - name: Restart etcd
   systemd:
     name: etcd
     state: restarted
+    enabled: yes
+    daemon_reload: yes
+
+- name: Restart etcd-dbshrink
+  systemd:
+    name: etcd
+    state: restarted
+    enabled: yes
+    daemon_reload: yes
 
 - name: Restart PgBouncer
   systemd:
     name: pgbouncer
     state: restarted
+    enabled: yes
+    daemon_reload: yes
 
 - name: Reload firewalld
   service:

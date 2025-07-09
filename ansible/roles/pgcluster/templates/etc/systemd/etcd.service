@@ -13,7 +13,7 @@ EnvironmentFile=-/etc/default/etcd
 ExecStart=/usr/local/bin/etcd \
   --name {{ inventory_hostname }} \
   --data-dir {{ etcd_data_dir }} \
-  --quota-backend-bytes=268435456 \
+  --quota-backend-bytes=1073741824 \
   --heartbeat-interval 200 \
   --election-timeout 2000 \
   --initial-advertise-peer-urls=https://{{ ansible_host }}:2380 \

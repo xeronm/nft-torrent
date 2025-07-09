@@ -1,0 +1,8 @@
+[Unit]
+Description=Run etcd compact and defrag
+Wants=network-online.target
+After=network-online.target etcd.service
+
+[Service]
+Type=oneshot
+ExecStart=/etc/etcd/dbshrink.sh https://{{ ansible_host }}:2379

@@ -112,13 +112,15 @@ class EtcdPoolLock:
         lock_name: str,
         etcd_clients: list[etcd3.Etcd3Client],
         threadpool_executor: ThreadPoolExecutor,
-        lock_ttl: int = 15,
+        lock_ttl: int = 60,
+        loop: asyncio.BaseEventLoop | None = None,
     ):
         self.lock_name = lock_name
         self.lock_ttl = lock_ttl
         self.etcd_clients = etcd_clients
         self.threadpool_executor = threadpool_executor
         self._lock: etcd3.Lock = None
+        self.loop = loop or asyncio.get_running_loop()
 
     def __enter__(self):
         if not self.etcd_clients:
@@ -130,7 +132,7 @@ class EtcdPoolLock:
                 lock = etcd.lock(name=self.lock_name, ttl=self.lock_ttl)
                 if lock.acquire():
                     self._lock = lock
-                    return
+                    return self
             except etcd3.Etcd3Exception:
                 pass
         raise EtcdLockError("Unable to acquire Lock")
@@ -141,12 +143,15 @@ class EtcdPoolLock:
             self._lock = None
 
     async def __aenter__(self):
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(self.threadpool_executor, self.__enter__)
+        await self.loop.run_in_executor(self.threadpool_executor, self.__enter__)
+        return self
 
     async def __aexit__(self, exc_type, exc, tb):
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(self.threadpool_executor, self.__exit__)
+        await self.loop.run_in_executor(self.threadpool_executor, self.__exit__)
+
+    async def refresh(self):
+        if self._lock is not None:
+            return await self.loop.run_in_executor(self.threadpool_executor, self._lock.refresh())
 
 
 class IndexDb:
@@ -282,10 +287,24 @@ class IndexDb:
         while True:
             try:
                 async with EtcdPoolLock(
-                    "bot_polling", self.etcd_clients, self.threadpool_executor, self.etcd_lock_ttl_sec
-                ):
+                    "bot_polling", self.etcd_clients, threadpool_executor=self.threadpool_executor, lock_ttl=self.etcd_lock_ttl_sec, loop=self.loop
+                ) as lock:
                     logger.warning("Bot polling task - start polling")
-                    await self.dp.start_polling(self.bot_app.bot, handle_signals=False)
+
+                    async def _bg_refresh():
+                        while True:
+                            await asyncio.sleep(self.etcd_lock_ttl_sec/2)
+                            await lock.refresh()
+
+                    pooling = asyncio.create_task(self.dp.start_polling(self.bot_app.bot, handle_signals=False))
+                    refresh = asyncio.create_task(_bg_refresh())
+                    finished, unfinished = await asyncio.wait([pooling, refresh], return_when=asyncio.FIRST_COMPLETED)
+                    logger.warning("Bot polling task - completed")
+                    await self.dp.stop_polling()
+                    refresh.cancel()
+                    await asyncio.wait([pooling, refresh], return_when=asyncio.ALL_COMPLETED)
+
+                await asyncio.sleep(self.restart_timeout)
             except EtcdLockError as E:
                 logger.info("Bot polling - lock error: %s", type(E).__name__)
                 await asyncio.sleep(self.restart_timeout)
@@ -560,7 +579,7 @@ class IndexDb:
 
                 async with EtcdPoolLock(
                     f"indexer:{address}", self.etcd_clients, self.threadpool_executor, self.etcd_lock_ttl_sec
-                ):
+                ) as lock:
                     logger.info("[%s]: Updating collection info...", address)
                     # Refresh data from DB
                     data.instance = await self.loop.run_in_executor(
