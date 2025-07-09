@@ -403,7 +403,7 @@ class IpfsRpcManager:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
             if file_info.size > self.settings.file_size_limit:
-                raise exceptions.TorrentSizeLimit(f"file limit: {self.settings.file_size_limit}")
+                raise exceptions.TorrentSizeLimit(f"file size limit: {self.settings.file_size_limit}")
 
             if not info.files:
                 data = await self.call_rpc_method("cid_cat", self.client.post, f"cat?arg={cid}")

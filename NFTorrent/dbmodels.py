@@ -47,6 +47,7 @@ class PetMemoryNft(SQLModel, table=True):
     image: str | None = Field(default=None, max_length=500)
     image_data: bytes | None = Field(default=None)
     #
+    torrent_info: bytes | None = Field(default=None)
     icons: bytes | None = Field(default=None)
     error_time: datetime.datetime | None = Field(default=None, index=True)
     error_code: str | None = Field(default=None, max_length=40)
@@ -139,12 +140,12 @@ class PetMemoryNft(SQLModel, table=True):
                 if not icon_size or icon_size == "all" or k == icon_size
             }
         return NftItemHeader(
+            name=self.name,
             address=self.address,
             index=self.index,
             owner_address=self.owner,
             collection_address=collection_address,
             image=self.image,
-            image_data=None,
             icons=icons,
         )
 

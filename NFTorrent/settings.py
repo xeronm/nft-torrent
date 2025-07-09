@@ -69,6 +69,7 @@ class WebServerSettings:
     public_addr: str = None
     twa_domains: list[str] = None
     bot_token: str = None
+    bot_admin_group_id: int = None
     allow_origins: list[str] = None
     enable_ssl: bool = True
     verify_ssl: bool = True
@@ -88,6 +89,9 @@ class WebServerSettings:
         obj.jwt_secret = _value_from_file(os.environ.get("HTTP_API_JWT_SECRET", None))
         obj.jwt_algorithm = os.environ.get("HTTP_API_JWT_ALGORITHM", "HS256")
         obj.bot_token = _value_from_file(os.environ.get("HTTP_TWA_BOT_TOKEN", None))
+        obj.bot_admin_group_id = os.environ.get("HTTP_TWA_BOT_ADMIN_GROUP_ID")
+        if obj.bot_admin_group_id:
+            obj.bot_admin_group_id = int(obj.bot_admin_group_id)
 
         obj.port = os.environ.get("HTTP_PORT", None)
         if obj.port is not None:
