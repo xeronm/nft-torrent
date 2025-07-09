@@ -15,14 +15,13 @@ from dataclasses import (
 
 import aiohttp
 import etcd3
+from aiogram import Dispatcher
+from aiogram.fsm.storage.memory import MemoryStorage
 from fastapi import status
 from PIL import Image
 from pytonlib import TonlibException
 from sqlalchemy.exc import NoResultFound, SQLAlchemyError
 from sqlmodel import Session, SQLModel, create_engine, delete, select, update
-
-from aiogram import Dispatcher
-from aiogram.fsm.storage.memory import MemoryStorage
 
 from NFTorrent.bot import BotApp, services
 from NFTorrent.bot.handlers import routers
@@ -37,7 +36,7 @@ from NFTorrent.modelsbase import (
 )
 from NFTorrent.settings import IndexDbSettings
 from NFTorrent.tonlib import TonlibManager, TonlibRequestError
-from NFTorrent.utils import uri_ipfs, parse_ipfs_uri
+from NFTorrent.utils import parse_ipfs_uri, uri_ipfs
 
 logger = logging.getLogger(__name__)
 task_queue_logger = logging.getLogger("NFTorrent.TaskQueue")
@@ -217,13 +216,18 @@ class IndexDb:
         }
         if self.settings.task_queue_bulk_size and self.bot_app:
             self.tasks["nft_task_processor"] = self.loop.create_task(self.nft_task_processor())
-            self.tasks["bot_polling"] = self.loop.create_task(self.bot_polling())
         else:
             logger.warning(
                 "NFT scheduled task processor not started... task_queue_bulk_size: %d, bot_app=%s",
                 self.settings.task_queue_bulk_size,
                 str(self.bot_app is not None),
             )
+        if self.bot_app:
+            self.tasks["bot_polling"] = self.loop.create_task(self.bot_polling())
+            self.dp = Dispatcher(storage=MemoryStorage())
+            self.dp.include_routers(*routers)
+        else:
+            self.dp = None
 
         # running tasks
         for c in self.collection_config.collections:
@@ -235,6 +239,8 @@ class IndexDb:
             self.collections_id[data.instance.id] = data
 
     async def shutdown(self):
+        if self.dp:
+            await self.dp.stop_polling()
         await self.tg_user_queue.join()
         for task in self.indexer_tasks.values():
             task.cancel()
@@ -273,16 +279,13 @@ class IndexDb:
     async def bot_polling(self):
         logger.warning("Bot polling task entering main loop")
 
-        dp = Dispatcher(storage=MemoryStorage())
-        dp.include_routers(*routers)
-
         while True:
             try:
                 async with EtcdPoolLock(
-                    f"bot_polling", self.etcd_clients, self.threadpool_executor, self.etcd_lock_ttl_sec
+                    "bot_polling", self.etcd_clients, self.threadpool_executor, self.etcd_lock_ttl_sec
                 ):
                     logger.warning("Bot polling task - start polling")
-                    await dp.start_polling(self.bot_app.bot)
+                    await self.dp.start_polling(self.bot_app.bot, handle_signals=False)
             except EtcdLockError as E:
                 logger.info("Bot polling - lock error: %s", type(E).__name__)
                 await asyncio.sleep(self.restart_timeout)
@@ -292,7 +295,6 @@ class IndexDb:
             except (Exception, BaseException):
                 logger.exception("Bot polling task got unhandled exception, sleep for %d", self.restart_timeout)
                 await asyncio.sleep(self.restart_timeout)
-
 
     async def event_processor(self):
         logger.warning("Event Processor task entering main loop")

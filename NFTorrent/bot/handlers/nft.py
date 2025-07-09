@@ -1,14 +1,13 @@
 import logging
 from functools import partial
 
-from sqlalchemy.exc import NoResultFound
-
 from aiogram import F, Router
 from aiogram.filters import Command, CommandObject
-from aiogram.fsm.context import FSMContext
-from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardButton
-from aiogram.types import Message, CallbackQuery, User, WebAppInfo
 from aiogram.filters.callback_data import CallbackData
+from aiogram.fsm.context import FSMContext
+from aiogram.types import CallbackQuery, Message, User, WebAppInfo
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from sqlalchemy.exc import NoResultFound
 
 from NFTorrent.modelsbase import TonAddress
 from NFTorrent.translations import gettext
@@ -21,8 +20,9 @@ logger = logging.getLogger(__name__)
 
 router = Router()
 
-def compress_address(addr: str, n: int=4) -> str:
-    if len(addr) <= 2*n+3:
+
+def compress_address(addr: str, n: int = 4) -> str:
+    if len(addr) <= 2 * n + 3:
         return addr
     return f"{addr[:n]}...{addr[-n:]}"
 
@@ -39,14 +39,11 @@ async def start(message: Message, command: CommandObject, state: FSMContext):
 
     if not owners:
         builder = InlineKeyboardBuilder()
-        builder.button(
-            text=_("Connect wallet"),
-            web_app=WebAppInfo(url=bot.app.get_petsmem_link(action="reconnect"))
-        )
+        builder.button(text=_("Connect wallet"), web_app=WebAppInfo(url=bot.app.get_petsmem_link(action="reconnect")))
 
         await message.answer(
             _("To view your NFTs using this command, you must first authorize through the Mini App."),
-           reply_markup=builder.as_markup()
+            reply_markup=builder.as_markup(),
         )
         return
 
@@ -54,19 +51,18 @@ async def start(message: Message, command: CommandObject, state: FSMContext):
     for nft in nfts:
         short_addr = compress_address(nft.address)
         label = f"{nft.name} {short_addr}"
-        builder.button(
-            text=label,
-            callback_data=NftViewCallback(address=nft.address).pack()
-        )
-    builder.button(
-        text=_("Mint"),
-        web_app=WebAppInfo(url=bot.app.get_petsmem_link(action="mint"))
-    )
+        builder.button(text=label, callback_data=NftViewCallback(address=nft.address).pack())
+    builder.button(text=_("Mint"), web_app=WebAppInfo(url=bot.app.get_petsmem_link(action="mint")))
 
     builder.adjust(2)
     await message.answer(
-        _("Please select an NFT from the list to view details, or mint a new one.") if len(nfts) else _("You don't have any memorial NFTs yet. Consider minting your first one!")
-        , reply_markup=builder.as_markup())
+        (
+            _("Please select an NFT from the list to view details, or mint a new one.")
+            if len(nfts)
+            else _("You don't have any memorial NFTs yet. Consider minting your first one!")
+        ),
+        reply_markup=builder.as_markup(),
+    )
 
 
 @router.message(Command("nftview"))
@@ -129,6 +125,7 @@ async def _nvt_view(user: User, message: Message, address: str):
         )
     except Exception as E:
         await message.answer(
-            text=_("Failed to view NFT <code>{address}</code>, error - {errorname}").format(address=address, errorname=type(E).__name__),
+            text=_("Failed to view NFT <code>{address}</code>, error - {errorname}").format(
+                address=address, errorname=type(E).__name__
+            ),
         )
-

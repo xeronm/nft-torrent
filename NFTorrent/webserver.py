@@ -12,7 +12,7 @@ from fastapi.exceptions import HTTPException
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 
 from NFTorrent.auth import ContractAPIKeyCookie, NodeJWTBearer
-from NFTorrent.bot import BotApp, Backend
+from NFTorrent.bot import Backend, BotApp
 from NFTorrent.cache import DisabledCacheManager
 from NFTorrent.indexer import IndexDb
 from NFTorrent.ipfs import IpfsRpcManager
@@ -273,7 +273,9 @@ class Server:
                         or pin_status.userdata is None
                         and userdata is not None
                     ):
-                        self.loop.create_task(self.ipfs.confirm_content(address, old_cid=None, cid=cid, userdata=userdata))
+                        self.loop.create_task(
+                            self.ipfs.confirm_content(address, old_cid=None, cid=cid, userdata=userdata)
+                        )
             await self.indexer.nft_update_nft_data(nft_data)
 
     async def get_nft_cid_info(self, address: str, digest: str = None):

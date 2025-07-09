@@ -1,5 +1,5 @@
 from aiogram.types import InlineKeyboardButton, User
-from aiogram.utils.keyboard import InlineKeyboardMarkup, ReplyKeyboardMarkup
+from aiogram.utils.keyboard import InlineKeyboardMarkup
 
 from ..states.inquiry import InquiryAction, InquiryCallback, InquiryReplyCallback
 

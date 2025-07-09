@@ -51,8 +51,10 @@ def dict_to_influx(instance: dict):
 
 SCHEME_IPFS = "ipfs"
 
+
 def uri_ipfs(uri: str) -> bool:
     return uri and uri.startswith(f"{SCHEME_IPFS}://")
+
 
 def parse_ipfs_uri(uri: str) -> tuple[str, str, str]:
     comp = urlparse(uri)

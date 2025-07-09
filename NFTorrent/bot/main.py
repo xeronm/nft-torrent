@@ -1,23 +1,21 @@
-import base64
-import logging
-import secrets
-import datetime
 import copy
+import datetime
+import logging
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Dict
+from dataclasses import dataclass
+from typing import Any
 from urllib.parse import urlencode, urljoin
 
-from aiogram import BaseMiddleware, Bot
+from aiogram import Bot
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message, ReplyMarkupUnion, TelegramObject, User
+from aiogram.types import ReplyMarkupUnion, User
 from pydantic import BaseModel
 
 from NFTorrent.utils import parse_ipfs_uri, uri_ipfs
 
 logger = logging.getLogger(__name__)
+
 
 class NftListItem(BaseModel):
     address: str
@@ -33,6 +31,7 @@ class BaseInquiry(BaseModel):
     user_id: int
     username: str
     disabled_to: datetime.datetime | None
+
 
 class BackendError(Exception):
     pass
@@ -76,6 +75,7 @@ class BackendInterface(ABC):
     async def nft_get(self, address: str = None):
         pass
 
+
 class BotApp:
 
     def __init__(
@@ -89,7 +89,7 @@ class BotApp:
         bot_miniapp_authority: str = "https://t.me/pets_memorial_bot/petsmem",
         admin_group_id: int = None,
         backend: BackendInterface = None,
-        torrent_file_size_limit = None
+        torrent_file_size_limit=None,
     ):
         self.bot = _Bot(token=token, app=self, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
         self.getgems_authority = getgems_authority
@@ -158,80 +158,4 @@ class MessageDesc:
     reply_markup: ReplyMarkupUnion = None
 
 
-def random_dialog_id():
-    return base64.urlsafe_b64encode(secrets.token_bytes(15)).decode()
-
-
-@dataclass
-class MessageDialog:
-    dialog_id: str = field(default_factory=random_dialog_id)
-    changed: bool = False
-    msgs: list[MessageDesc] = field(default_factory=list)
-
-    def append(self, msg: MessageDesc):
-        self.changed = True
-        self.msgs.append(msg)
-
-    async def delete_reply_markup(self, bot: Bot):
-        for message in self.msgs:
-            if message.reply_markup is None:
-                continue
-            try:
-                await bot.edit_message_reply_markup(
-                    chat_id=message.chat_id, message_id=message.message_id, reply_markup=None
-                )
-                message.reply_markup = None
-            except Exception as E:
-                logger.warning(
-                    "MessageDialog delete reply markup error, chat_id: %s, msg_id: %s - %s: %s",
-                    message.chat_id,
-                    message.message_id,
-                    type(E).__name__,
-                    E,
-                )
-
-
-class DialogMiddleware(BaseMiddleware):
-
-    async def __call__(
-        self,
-        handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
-        event: TelegramObject,
-        data: Dict[str, Any],
-    ) -> Any:
-        state: FSMContext = data["state"]
-        state_data = await state.get_data()
-        dialog: MessageDialog = state_data.get("_dialog", MessageDialog())
-        data["dialog"] = dialog
-
-        message = None
-        if isinstance(event, Message):
-            message = event
-        if isinstance(event, CallbackQuery):
-            message = event.message
-
-        if message is not None:
-            __answer = message.answer
-
-            async def _answer(*args, message_key: str = None, **kwargs):
-                msg: Message = await __answer(*args, **kwargs)
-
-                dialog.append(
-                    MessageDesc(
-                        key=message_key, chat_id=msg.chat.id, message_id=msg.message_id, reply_markup=msg.reply_markup
-                    )
-                )
-                return msg
-
-            object.__setattr__(message, "answer", _answer)
-            object.__setattr__(message, "raw_answer", __answer)
-
-        try:
-            return await handler(event, data)
-        finally:
-            if dialog.changed:
-                dialog.changed = False
-                await state.update_data(_dialog=dialog)
-
-
-__all__ = ["BotApp", "DialogMiddleware", "BackendInterface", "BaseInquiry"]
+__all__ = ["BotApp", "BackendInterface", "BaseInquiry"]

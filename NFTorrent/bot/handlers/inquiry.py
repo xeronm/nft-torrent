@@ -1,19 +1,19 @@
 import base64
+import datetime
 import logging
 import secrets
-import datetime
 from functools import partial
-from babel.dates import format_datetime
 
 from aiogram import F, Router
 from aiogram.filters import Command, CommandObject
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, LinkPreviewOptions, Message, MessageEntity
+from aiogram.types import CallbackQuery, LinkPreviewOptions, Message
+from babel.dates import format_datetime
 
 from NFTorrent.modelsbase import TonAddress
 from NFTorrent.translations import gettext
 
-from ..keyboards.inquiry import inquiry_admin_kb, new_inquiry_kb, inquiry_user_kb
+from ..keyboards.inquiry import inquiry_admin_kb, inquiry_user_kb, new_inquiry_kb
 from ..main import BaseInquiry, _Bot
 from ..states.inquiry import InquiryAction, InquiryCallback, InquiryForm, InquiryReplyCallback, InquiryReplyForm
 
@@ -35,7 +35,6 @@ async def get_chat_id(message: Message):
 async def start(message: Message, command: CommandObject, state: FSMContext):
     if command.args == "inquiry":
         await start_inquiry(message, state)
-
 
 
 #
@@ -62,18 +61,24 @@ async def callback_validate_inquiry(inquiry: BaseInquiry, callback: CallbackQuer
         #     _("⚠️ This inquiry has already been <b>closed</b> and cannot be updated."),
         # )
         await callback.answer(
-            _("⚠️ This inquiry has already been <b>closed</b> and cannot be updated."),
-            show_alert=False
+            _("⚠️ This inquiry has already been <b>closed</b> and cannot be updated."), show_alert=False
         )
         return False
 
     curr_time = datetime.datetime.now(datetime.timezone.utc)
-    if verify_blocked and inquiry.disabled_to and inquiry.disabled_to.replace(tzinfo=datetime.timezone.utc) >= curr_time:
+    if (
+        verify_blocked
+        and inquiry.disabled_to
+        and inquiry.disabled_to.replace(tzinfo=datetime.timezone.utc) >= curr_time
+    ):
         await callback.message.answer(
-            _("🚫 User Inquiry #R{inquiry_num:06d} has been <b>blocked</b> up to {block_date} UTC.").format(inquiry_num=inquiry.id, block_date=format_datetime(
-                inquiry.disabled_to,
-                locale=callback.from_user.language_code,
-            )),
+            _("🚫 User Inquiry #R{inquiry_num:06d} has been <b>blocked</b> up to {block_date} UTC.").format(
+                inquiry_num=inquiry.id,
+                block_date=format_datetime(
+                    inquiry.disabled_to,
+                    locale=callback.from_user.language_code,
+                ),
+            ),
         )
         await callback.answer()
         return False
@@ -141,9 +146,11 @@ async def user_reply_inquiry(callback: CallbackQuery, callback_data: InquiryRepl
     )
     await callback.answer()
 
+
 @router.message(InquiryReplyForm.user_reply, Command("cancel"))
-async def skip_screenshot(message: Message, state: FSMContext):
+async def user_cancel_reply(message: Message, state: FSMContext):
     await state.clear()
+
 
 @router.message(InquiryReplyForm.user_reply)
 async def user_get_reply(message: Message, state: FSMContext):
@@ -179,9 +186,9 @@ async def user_get_reply(message: Message, state: FSMContext):
             # Send to admin channel
             await bot.send_message(
                 bot.app.admin_group_id,
-                _("📩 Inquiry #R{inquiry_num:06d} from user @{username} has received a <b>Reply</b> from the user with the following message\n").format(
-                    inquiry_num=inquiry.id, username=inquiry.username, message=message.text
-                ),
+                _(
+                    "📩 Inquiry #R{inquiry_num:06d} from user @{username} has received a <b>Reply</b> from the user with the following message\n"
+                ).format(inquiry_num=inquiry.id, username=inquiry.username, message=message.text),
                 reply_markup=inquiry_admin_kb(
                     inquiry_id=inquiry_id, message_id=message.message_id, user=message.from_user, gettext=_
                 ),
@@ -195,9 +202,9 @@ async def user_get_reply(message: Message, state: FSMContext):
             # Send to admin channel
             await bot.send_message(
                 bot.app.admin_group_id,
-                _("✅ Inquiry #R{inquiry_num:06d} from user @{username} has been <b>Closed</b> by user with the following message\n\n{message}").format(
-                    inquiry_num=inquiry.id, username=inquiry.username, message=message.text
-                ),
+                _(
+                    "✅ Inquiry #R{inquiry_num:06d} from user @{username} has been <b>Closed</b> by user with the following message\n\n{message}"
+                ).format(inquiry_num=inquiry.id, username=inquiry.username, message=message.text),
                 reply_to_message_id=message_id if message_id else None,
                 link_preview_options=LinkPreviewOptions(is_disabled=True),
             )
@@ -275,9 +282,11 @@ async def admin_reply_inquiry(callback: CallbackQuery, callback_data: InquiryRep
     )
     await callback.answer()
 
+
 @router.message(InquiryReplyForm.admin_reply, Command("cancel"))
-async def skip_screenshot(message: Message, state: FSMContext):
+async def admin_cancel_reply(message: Message, state: FSMContext):
     await state.clear()
+
 
 @router.message(InquiryReplyForm.admin_reply)
 async def admin_get_reply(message: Message, state: FSMContext):
@@ -344,17 +353,26 @@ async def admin_get_reply(message: Message, state: FSMContext):
         # reply to user
         await message.bot.send_message(
             chat_id=user_id,
-            text=_("{action_icon} Your Inquiry #R{inquiry_num:06d} has been <b>{action_message}</b> with the following message\n\n{message}").format(
+            text=_(
+                "{action_icon} Your Inquiry #R{inquiry_num:06d} has been <b>{action_message}</b> with the following message\n\n{message}"
+            ).format(
                 inquiry_num=inquiry.id, message=message.text, action_message=action_message, action_icon=action_icon
             ),
             reply_to_message_id=message_id,
-            reply_markup=inquiry_user_kb(inquiry_id=inquiry_id, message_id=message.message_id, gettext=_) if user_kb else None,
+            reply_markup=(
+                inquiry_user_kb(inquiry_id=inquiry_id, message_id=message.message_id, gettext=_) if user_kb else None
+            ),
             link_preview_options=LinkPreviewOptions(is_disabled=True),
         )
 
         await message.reply(
-            _("{action_icon} Inquiry #R{inquiry_num:06d} from user @{username} has been <b>{action_message}</b>.").format(
-                username=inquiry.username, inquiry_num=inquiry.id, action_message=action_message, action_icon=action_icon
+            _(
+                "{action_icon} Inquiry #R{inquiry_num:06d} from user @{username} has been <b>{action_message}</b>."
+            ).format(
+                username=inquiry.username,
+                inquiry_num=inquiry.id,
+                action_message=action_message,
+                action_icon=action_icon,
             )
         )
     except Exception as e:
@@ -433,7 +451,9 @@ async def submit_inquiry(callback: CallbackQuery, callback_data: InquiryCallback
     address = data.get("nft_address")
     nft_info = ""
     if address:
-        nft_info = f'NFT: <code>{address}</code> - <a href="{bot.app.get_tonviewer_link(address)}">view on Tonviewer</a>\n\n'
+        nft_info = (
+            f'NFT: <code>{address}</code> - <a href="{bot.app.get_tonviewer_link(address)}">view on Tonviewer</a>\n\n'
+        )
     inquiry_body = _(
         "🆕 Inquiry #R{inquiry_num:06d} from user @{username}:\n\n<b>{subject}</b>\n\n{nft_info}{message}"
     ).format(inquiry_num=inquiry_num, username=callback.from_user.username, nft_info=nft_info, **data)

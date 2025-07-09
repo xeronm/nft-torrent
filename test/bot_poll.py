@@ -4,8 +4,7 @@ import os
 from aiogram import Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 
-
-from NFTorrent.bot import BotApp, Backend
+from NFTorrent.bot import Backend, BotApp
 from NFTorrent.bot.handlers import routers
 
 token = os.environ["CI_BOT_TOKEN"]
@@ -19,7 +18,7 @@ def main():
             token,
             admin_group_id=-1002890915463,
             backend=Backend(f"postgresql+psycopg2://postgres:{dbpassword}@172.16.1.1:6432/postgres"),
-            torrent_file_size_limit=768*1024
+            torrent_file_size_limit=768 * 1024,
         )
 
         dp = Dispatcher(storage=MemoryStorage())
@@ -30,5 +29,6 @@ def main():
 
     print("Starting test Bot...")
     asyncio.run(__poll())
+
 
 main()

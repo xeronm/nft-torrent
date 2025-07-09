@@ -1,14 +1,14 @@
 import datetime
-import pickle
 import logging
+import pickle
 from functools import partial
 
-from aiogram.types import BufferedInputFile, LinkPreviewOptions, InputMediaPhoto, User
+from aiogram.types import BufferedInputFile, InputMediaPhoto, LinkPreviewOptions, User
 from babel.dates import format_date
 
 from NFTorrent.dbmodels import PetMemoryNft, PetsCollection, TgUser
-from NFTorrent.translations import gettext
 from NFTorrent.models import NftContentInfo
+from NFTorrent.translations import gettext
 
 from ..keyboards.nft import main_nft_kb
 from ..main import BotApp
@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 def get_nft_icon(nft: PetMemoryNft):
     icons = pickle.loads(nft.icons)
     return BufferedInputFile(icons["medium"][0], filename=f"{nft.address}.webp")
+
 
 async def notify_nft_minted(
     ch: BotApp, nft: PetMemoryNft, collection: PetsCollection, user: TgUser, keyboard: bool = False
@@ -86,7 +87,9 @@ async def notify_nft_updated(
     )
 
 
-async def nft_preview(app: BotApp, nft: PetMemoryNft, collection: PetsCollection, user: TgUser | User, keyboard: bool = False):
+async def nft_preview(
+    app: BotApp, nft: PetMemoryNft, collection: PetsCollection, user: TgUser | User, keyboard: bool = False
+):
     if isinstance(user, TgUser):
         _ = partial(gettext, user.language)
         user_id = user.user_id
@@ -118,7 +121,7 @@ async def nft_preview(app: BotApp, nft: PetMemoryNft, collection: PetsCollection
             media_urls = [
                 app.get_petsmem_content_link(nft.address, digest=file.digest)
                 for file in torrent_info.files
-                if not file.name.startswith('.') and file.size <= app.torrent_file_size_limit
+                if not file.name.startswith(".") and file.size <= app.torrent_file_size_limit
             ]
         else:
             media_urls = [app.get_petsmem_content_link(nft.address, digest=torrent_info.digest)]
@@ -130,9 +133,13 @@ async def nft_preview(app: BotApp, nft: PetMemoryNft, collection: PetsCollection
             await app.bot.send_media_group(
                 chat_id=user_id,
                 media=[
-                    InputMediaPhoto(media=media, caption=message, parse_mode="HTML") if i == 0 else InputMediaPhoto(media=media)
+                    (
+                        InputMediaPhoto(media=media, caption=message, parse_mode="HTML")
+                        if i == 0
+                        else InputMediaPhoto(media=media)
+                    )
                     for i, media in enumerate(media_urls)
-                ]
+                ],
             )
         elif len(media_urls) == 1:
             await app.bot.send_photo(
