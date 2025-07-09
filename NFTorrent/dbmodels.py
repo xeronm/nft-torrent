@@ -47,6 +47,7 @@ class PetMemoryNft(SQLModel, table=True):
     image: str | None = Field(default=None, max_length=500)
     image_data: bytes | None = Field(default=None)
     #
+    torrent_info: bytes | None = Field(default=None)
     icons: bytes | None = Field(default=None)
     error_time: datetime.datetime | None = Field(default=None, index=True)
     error_code: str | None = Field(default=None, max_length=40)
@@ -139,12 +140,12 @@ class PetMemoryNft(SQLModel, table=True):
                 if not icon_size or icon_size == "all" or k == icon_size
             }
         return NftItemHeader(
+            name=self.name,
             address=self.address,
             index=self.index,
             owner_address=self.owner,
             collection_address=collection_address,
             image=self.image,
-            image_data=None,
             icons=icons,
         )
 
@@ -182,3 +183,30 @@ class TgUser(SQLModel, table=True):
 
     __tablename__ = "tg_user"
     __table_args__ = (UniqueConstraint("owner", "user_id", name="tg_user_index_uk"),)
+
+
+class UserInquiryState(enum.IntEnum):
+    ACTIVE = 1
+
+
+class UserInquiry(SQLModel, table=True):
+    id: int = Field(default=None, primary_key=True)
+    inquiry_id: str = Field(unique=True, max_length=24)
+    user_id: int = Field(index=True)
+    state: int | None = Field(default=UserInquiryState.ACTIVE)
+    username: str | None = Field(default=None, max_length=100)
+    language: str | None = Field(default=None, max_length=2)
+    is_premium: bool = Field(default=False)
+    subject: str | None = Field(default=None, max_length=100)
+    message: str | None = Field(default=None, max_length=2000)
+    message_id: int | None = Field(default=None)
+    nft_address: str | None = Field(default=None, max_length=48)
+    created_time: datetime.datetime = Field(default_factory=datetime.datetime.utcnow, nullable=False)
+    updated_time: datetime.datetime = Field(default_factory=datetime.datetime.utcnow, nullable=False)
+    disabled_to: datetime.datetime | None = Field(default=None)
+    closed_time: datetime.datetime | None = Field(default=None)
+    admin_user_id: int | None = Field(default=None)
+    admin_message: str | None = Field(default=None, max_length=2000)
+
+    __tablename__ = "user_inquiry"
+    __table_args__ = (UniqueConstraint("user_id", "state", name="user_inquiry_uk"),)

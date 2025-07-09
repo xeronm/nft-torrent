@@ -25,7 +25,7 @@ from NFTorrent.modelsbase import (
     dataclass_to_influx,
 )
 from NFTorrent.settings import BaseCacheManager, TonlibSettings
-from NFTorrent.utils import parse_ipfs_uri
+from NFTorrent.utils import parse_ipfs_uri, uri_ipfs
 
 from .models import TonlibClientResult, TonlibWorkerMsgType
 from .worker import TonlibWorker
@@ -579,7 +579,7 @@ class TonlibManager:
         )
         nft_data["address"] = addr.b64url
         image = nft_data["individual_content"].image()
-        if image and image.startswith("ipfs://"):
+        if uri_ipfs(image):
             cid, _, _ = parse_ipfs_uri(image)
             nft_data["torrent_digest"] = torrent_digest(cid)
 

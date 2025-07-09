@@ -12,14 +12,15 @@ from fastapi.exceptions import HTTPException
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 
 from NFTorrent.auth import ContractAPIKeyCookie, NodeJWTBearer
+from NFTorrent.bot import Backend, BotApp
 from NFTorrent.cache import DisabledCacheManager
-from NFTorrent.indexer import BotChannel, IndexDb
+from NFTorrent.indexer import IndexDb
 from NFTorrent.ipfs import IpfsRpcManager
 from NFTorrent.models import HealthCheckResult, NftContentState, torrent_digest
 from NFTorrent.modelsbase import CollectionConfig
 from NFTorrent.settings import Settings
 from NFTorrent.tonlib import TonlibManager
-from NFTorrent.utils import dict_to_influx, guess_type, parse_ipfs_uri
+from NFTorrent.utils import dict_to_influx, guess_type, parse_ipfs_uri, uri_ipfs
 
 logger = logging.getLogger(__name__)
 
@@ -104,9 +105,17 @@ class Server:
             self.ipfs = IpfsRpcManager(self.settings.ipfs, cache_manager=cache_manager, tonlib=self.tonlib, loop=loop)
 
         if self.settings.indexdb.enabled:
+            bot_app = None
+            if self.settings.webserver.bot_token:
+                bot_app = BotApp(
+                    self.settings.webserver.bot_token,
+                    backend=Backend(loop=loop, url=self.settings.indexdb.database_url),
+                    admin_group_id=self.settings.webserver.bot_admin_group_id,
+                    torrent_file_size_limit=self.settings.ipfs.file_size_limit,
+                )
             self.indexer = IndexDb(
                 self.settings.indexdb,
-                notif_channel=BotChannel(self.settings.webserver.bot_token) if self.settings.webserver.bot_token else None,
+                bot_app=bot_app,
                 cache_manager=cache_manager,
                 loop=loop,
                 tonlib=self.tonlib,
@@ -198,7 +207,7 @@ class Server:
 
         uri = nft_content.uri() if query == "uri" else nft_content.image()
         if uri:
-            if uri.startswith("ipfs://"):
+            if uri_ipfs(uri):
                 cid, file_path, digest = parse_ipfs_uri(uri)
                 cid_info = await self.ipfs.get_cid_info(cid=cid)
                 if not cid_info.files:
@@ -237,7 +246,7 @@ class Server:
         nft_content = nft_data.individual_content
         if nft_content is not None:
             image = nft_content.image()
-            if image.startswith("ipfs://"):
+            if uri_ipfs(image):
                 cid, _, _ = parse_ipfs_uri(image)
                 data, info = await self.ipfs.get_cid_file(cid=cid, file_path=file_path, digest=digest)
                 return StreamingResponse(
@@ -255,15 +264,18 @@ class Server:
         nft_content = nft_data.individual_content
         if nft_content is not None:
             image = nft_content.image()
-            if image and image.startswith("ipfs://"):
+            if uri_ipfs(image):
                 cid, _, _ = parse_ipfs_uri(image)
-                pin_status = await self.ipfs.cid_pin_status(cid=cid)
-                if (
-                    nft_content.storage_due_time() > (pin_status.expires if pin_status else time.time())
-                    or pin_status.userdata is None
-                    and userdata is not None
-                ):
-                    self.loop.create_task(self.ipfs.confirm_content(address, old_cid=None, cid=cid, userdata=userdata))
+                if cid:
+                    pin_status = await self.ipfs.cid_pin_status(cid=cid)
+                    if (
+                        nft_content.storage_due_time() > (pin_status.expires if pin_status else time.time())
+                        or pin_status.userdata is None
+                        and userdata is not None
+                    ):
+                        self.loop.create_task(
+                            self.ipfs.confirm_content(address, old_cid=None, cid=cid, userdata=userdata)
+                        )
             await self.indexer.nft_update_nft_data(nft_data)
 
     async def get_nft_cid_info(self, address: str, digest: str = None):

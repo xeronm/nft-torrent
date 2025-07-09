@@ -22,5 +22,10 @@ def preload_translations(locales):
 TRANSLATIONS: dict[str, Translations] = preload_translations(SUPPORTED_LOCALES)
 
 
-def gettext_fn(locale: str) -> Callable[[str], str]:
-    return TRANSLATIONS.get(locale, TRANSLATIONS["en"]).gettext
+def gettext(locale: str, message: str):
+    return TRANSLATIONS.get(locale, TRANSLATIONS["en"]).gettext(message)
+
+
+GetTextFunction = Callable[[str], str]
+
+__all__ = ["GetTextFunction", "gettext"]

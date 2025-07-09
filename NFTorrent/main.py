@@ -411,7 +411,7 @@ if ws.settings.indexdb.enabled:
         "/api/v1/collection",
         response_model_exclude_none=True,
         tags=["collection"],
-        dependencies=[Depends(ws.jwt_session)],  # noqa: B008
+        # dependencies=[Depends(ws.jwt_session)],  # noqa: B008
     )
     async def list_collections() -> list[models.CollectionData]:
         """

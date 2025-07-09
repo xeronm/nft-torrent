@@ -15,12 +15,16 @@ from dataclasses import (
 
 import aiohttp
 import etcd3
+from aiogram import Dispatcher
+from aiogram.fsm.storage.memory import MemoryStorage
 from fastapi import status
 from PIL import Image
 from pytonlib import TonlibException
 from sqlalchemy.exc import NoResultFound, SQLAlchemyError
 from sqlmodel import Session, SQLModel, create_engine, delete, select, update
 
+from NFTorrent.bot import BotApp, services
+from NFTorrent.bot.handlers import routers
 from NFTorrent.cache import BaseCacheManager, DisabledCacheManager
 from NFTorrent.dbmodels import NftTaskQueue, NftTaskType, PetMemoryNft, PetsCollection, TgUser
 from NFTorrent.ipfs import IpfsRpcManager
@@ -32,8 +36,7 @@ from NFTorrent.modelsbase import (
 )
 from NFTorrent.settings import IndexDbSettings
 from NFTorrent.tonlib import TonlibManager, TonlibRequestError
-
-from .notifications import BotChannel
+from NFTorrent.utils import parse_ipfs_uri, uri_ipfs
 
 logger = logging.getLogger(__name__)
 task_queue_logger = logging.getLogger("NFTorrent.TaskQueue")
@@ -158,7 +161,7 @@ class IndexDb:
     def __init__(
         self,
         settings: IndexDbSettings,
-        notif_channel: BotChannel = None,
+        bot_app: BotApp = None,
         num_workers: int = None,
         restart_timeout: int = None,
         cache_manager: BaseCacheManager | None = None,
@@ -177,7 +180,7 @@ class IndexDb:
         self.collection_config = collection_config
         self.cache_manager = cache_manager or DisabledCacheManager()
         self.tg_user_queue = asyncio.Queue(maxsize=10000)
-        self.notif_channel = notif_channel
+        self.bot_app = bot_app
 
         logger.warning("Initializing etcd clients... %s", str(self.settings.etcd_hosts))
         self.etcd_clients = [
@@ -211,13 +214,20 @@ class IndexDb:
         self.tasks = {
             "event_processor": self.loop.create_task(self.event_processor()),
         }
-        if self.settings.task_queue_bulk_size and self.notif_channel:
+        if self.settings.task_queue_bulk_size and self.bot_app:
             self.tasks["nft_task_processor"] = self.loop.create_task(self.nft_task_processor())
         else:
             logger.warning(
-                "NFT scheduled task processor not started... task_queue_bulk_size: %d, channel=%s",
-                self.settings.task_queue_bulk_size, str(self.notif_channel is not None),
+                "NFT scheduled task processor not started... task_queue_bulk_size: %d, bot_app=%s",
+                self.settings.task_queue_bulk_size,
+                str(self.bot_app is not None),
             )
+        if self.bot_app:
+            self.tasks["bot_polling"] = self.loop.create_task(self.bot_polling())
+            self.dp = Dispatcher(storage=MemoryStorage())
+            self.dp.include_routers(*routers)
+        else:
+            self.dp = None
 
         # running tasks
         for c in self.collection_config.collections:
@@ -229,6 +239,8 @@ class IndexDb:
             self.collections_id[data.instance.id] = data
 
     async def shutdown(self):
+        if self.dp:
+            await self.dp.stop_polling()
         await self.tg_user_queue.join()
         for task in self.indexer_tasks.values():
             task.cancel()
@@ -263,6 +275,26 @@ class IndexDb:
                 language=(language or "")[:2].lower(),
             )
         )
+
+    async def bot_polling(self):
+        logger.warning("Bot polling task entering main loop")
+
+        while True:
+            try:
+                async with EtcdPoolLock(
+                    "bot_polling", self.etcd_clients, self.threadpool_executor, self.etcd_lock_ttl_sec
+                ):
+                    logger.warning("Bot polling task - start polling")
+                    await self.dp.start_polling(self.bot_app.bot, handle_signals=False)
+            except EtcdLockError as E:
+                logger.info("Bot polling - lock error: %s", type(E).__name__)
+                await asyncio.sleep(self.restart_timeout)
+            except asyncio.CancelledError:
+                logger.info("Bot polling task was cancelled")
+                return
+            except (Exception, BaseException):
+                logger.exception("Bot polling task got unhandled exception, sleep for %d", self.restart_timeout)
+                await asyncio.sleep(self.restart_timeout)
 
     async def event_processor(self):
         logger.warning("Event Processor task entering main loop")
@@ -341,6 +373,13 @@ class IndexDb:
         nft_notifs = []
         self._nft_update(nft, new_nft, nft_notifs)
         if nft._nft_image_updated:
+            if uri_ipfs(nft.image):
+                cid, _, _ = parse_ipfs_uri(nft.image)
+            if cid:
+                torrent_info = await self.ipfs.get_cid_info(cid)
+                nft.torrent_info = pickle.dumps(torrent_info)
+            else:
+                nft.torrent_info = None
             await self.collection_nft_make_icons([nft])
 
         if nft._nft_updated:
@@ -473,16 +512,18 @@ class IndexDb:
                             continue
                         else:
                             coldata.meas.nft_notif_storage += 1
-                            await self.notif_channel.send_nft_storage_warning(nft, collection, user, keyboard=True)
+                            await services.nft.notify_nft_storage_warning(
+                                self.bot_app, nft, collection, user, keyboard=True
+                            )
                             nft.last_notified = curr_time
                     if task.task_type == NftTaskType.NOTIFY_MINT:
                         coldata.meas.nft_notif_mints += 1
-                        await self.notif_channel.send_ntf_preview(nft, collection, user)
-                        await self.notif_channel.send_ntf_minted(nft, collection, user, keyboard=True)
+                        await services.nft.nft_preview(self.bot_app, nft, collection, user)
+                        await services.nft.notify_nft_minted(self.bot_app, nft, collection, user, keyboard=True)
                     if task.task_type == NftTaskType.NOTIFY_UPDATED:
                         coldata.meas.nft_notif_updates += 1
-                        await self.notif_channel.send_ntf_preview(nft, collection, user)
-                        await self.notif_channel.send_ntf_updated(nft, collection, user, keyboard=True)
+                        await services.nft.nft_preview(self.bot_app, nft, collection, user)
+                        await services.nft.notify_nft_updated(self.bot_app, nft, collection, user, keyboard=True)
 
                     task_queue_logger.info(
                         "nft task done - task_id: %s, type: %d, collection: %s, index: %d, nft: %s",
@@ -557,7 +598,14 @@ class IndexDb:
                                 nft_data = await self.tonlib.get_nft_data(nft_address, skip_verification=True)
                                 if nft_data.index != data.instance.index:
                                     raise TonlibRequestError("NFT index mistmath")
-                                bulk.append(PetMemoryNft.from_nftmodel(collection_id=data.instance.id, data=nft_data))
+                                instance = PetMemoryNft.from_nftmodel(collection_id=data.instance.id, data=nft_data)
+                                if uri_ipfs(instance.image):
+                                    cid, _, _ = parse_ipfs_uri(instance.image)
+                                    if cid:
+                                        torrent_info = await self.ipfs.get_cid_info(cid)
+                                        instance.torrent_info = pickle.dumps(torrent_info)
+
+                                bulk.append(instance)
                             except TonlibRequestError as E:
                                 data.meas.nft_index_errors += 1
                                 logger.warning(
@@ -606,7 +654,7 @@ class IndexDb:
                 instance.image,
             )
             try:
-                if instance.image.startswith("ipfs://"):
+                if uri_ipfs(instance.image):
                     buffer, _ = await self.ipfs.get_cid_file(uri=instance.image)
                 else:
                     timeout = aiohttp.ClientTimeout(total=self.settings.http_timeout)

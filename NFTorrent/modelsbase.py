@@ -143,10 +143,10 @@ class NftItemData:
 
 @dataclass(frozen=True)
 class NftItemHeader:
+    name: str
     address: str
     index: int
     owner_address: str
     collection_address: str = None
     image: str = None
-    image_data: str = None
     icons: dict[str, list[str]] = None
