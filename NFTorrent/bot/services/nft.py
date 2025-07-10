@@ -11,7 +11,7 @@ from NFTorrent.models import NftContentInfo
 from NFTorrent.translations import gettext
 
 from ..keyboards.nft import main_nft_kb
-from ..main import BotApp
+from ..main import BotApp, MAX_CAPTION_LENGTH
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +111,7 @@ async def nft_preview(
         f' • <a href="{app.get_petsmem_link(nft.address)}">Web App</a>'
         f' • <a href="{app.get_getgems_link(collection.address, nft.address)}">Getgems</a>'
         f' • <a href="{app.get_tonviewer_link(nft.address)}">Tonviewer</a>'
-        f"{ipfslink}\n"
+        f"{ipfslink} • <code>{nft.address}</code>\n"
     )
     torrent_info = None
     media_urls = []
@@ -129,12 +129,19 @@ async def nft_preview(
         media_urls = [app.get_petsmem_content_link(nft.address)]
 
     try:
+        media_caption = None
+        if media_urls and len(message) < MAX_CAPTION_LENGTH:
+            media_caption = message
+            message = None
+        # else:
+        #     media_caption = f"<b>{nft.name}</b> <i>({nft.birth_date} ~ {nft.death_date})</i>"
+
         if len(media_urls) > 1:
             await app.bot.send_media_group(
                 chat_id=user_id,
                 media=[
                     (
-                        InputMediaPhoto(media=media, caption=message, parse_mode="HTML")
+                        InputMediaPhoto(media=media, caption=media_caption, parse_mode="HTML")
                         if i == 0
                         else InputMediaPhoto(media=media)
                     )
@@ -145,11 +152,12 @@ async def nft_preview(
             await app.bot.send_photo(
                 chat_id=user_id,
                 photo=media_urls[0],
-                caption=message,
+                caption=media_caption,
                 parse_mode="HTML",
                 reply_markup=main_nft_kb(app, nft, collection, gettext=_) if keyboard else None,
             )
-        else:
+
+        if message:
             await app.bot.send_message(
                 chat_id=user_id,
                 text=message,

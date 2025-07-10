@@ -143,6 +143,7 @@ class HealthCheckResult(BaseModel):
     tonlib: bool | None
     storage: bool | None
     indexdb: bool | None
+    bot: bool | None
 
 
 class TonProof(BaseModel):

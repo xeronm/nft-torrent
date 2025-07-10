@@ -13,8 +13,13 @@ from aiogram.types import ReplyMarkupUnion, User
 from pydantic import BaseModel
 
 from NFTorrent.utils import parse_ipfs_uri, uri_ipfs
+from NFTorrent.dbmodels import PetMemoryNft, PetsCollection
+
 
 logger = logging.getLogger(__name__)
+
+
+MAX_CAPTION_LENGTH = 1400
 
 
 class NftListItem(BaseModel):
@@ -60,7 +65,7 @@ class BackendInterface(ABC):
         pass
 
     @abstractmethod
-    async def inquiry_list(self, user: User) -> list[BaseInquiry]:
+    async def inquiry_list(self, user_id: int) -> list[BaseInquiry]:
         pass
 
     @abstractmethod
@@ -68,12 +73,13 @@ class BackendInterface(ABC):
         pass
 
     @abstractmethod
-    async def nft_list(self, user_id: int = None):
+    async def nft_list(self, user_id: int = None, offset: int = 0, limit: int = 20) -> tuple[list[str], list[NftListItem]]:
         pass
 
     @abstractmethod
-    async def nft_get(self, address: str = None):
+    async def nft_get(self, address: str = None) -> tuple[PetMemoryNft, PetsCollection]:
         pass
+
 
 
 class BotApp:
@@ -159,4 +165,4 @@ class MessageDesc:
     reply_markup: ReplyMarkupUnion = None
 
 
-__all__ = ["BotApp", "BackendInterface", "BaseInquiry"]
+__all__ = ["BotApp", "BackendInterface", "BaseInquiry", "MAX_CAPTION_LENGTH", "bot_stats"]

@@ -104,18 +104,18 @@ class Server:
         if self.settings.ipfs.enabled:
             self.ipfs = IpfsRpcManager(self.settings.ipfs, cache_manager=cache_manager, tonlib=self.tonlib, loop=loop)
 
+        self.bot_app = None
         if self.settings.indexdb.enabled:
-            bot_app = None
             if self.settings.webserver.bot_token:
-                bot_app = BotApp(
+                self.bot_app = BotApp(
                     self.settings.webserver.bot_token,
-                    backend=Backend(loop=loop, url=self.settings.indexdb.database_url),
+                    backend=Backend(loop=loop, url=self.settings.indexdb.database_url, cache_manager=cache_manager),
                     admin_group_id=self.settings.webserver.bot_admin_group_id,
                     torrent_file_size_limit=self.settings.ipfs.file_size_limit,
                 )
             self.indexer = IndexDb(
                 self.settings.indexdb,
-                bot_app=bot_app,
+                bot_app=self.bot_app,
                 cache_manager=cache_manager,
                 loop=loop,
                 tonlib=self.tonlib,
@@ -163,12 +163,16 @@ class Server:
             indexer_state = len(last_checked) == len(
                 [x for x in last_checked if x >= time.time() - self.indexer.settings.indexer_timeout * 2]
             )
+        bot = False
+        if self.bot_app is not None:
+            bot = self.indexer.dp_active
 
         return HealthCheckResult(
             tonlib=bool(tonlib_state),
             storage=bool(stotage_state),
             indexdb=bool(indexer_state),
             redundancy=bool(redundancy),
+            bot=bot,
             load=round(load, 2),
         )
 
@@ -183,6 +187,9 @@ class Server:
             measurements += self.ipfs.get_measurements(timestamp)
         if self.indexer is not None:
             measurements += self.indexer.get_measurements(timestamp)
+        if self.bot_app is not None:
+            measurements += self.indexer.dp_stats.as_influx(timestamp)
+            measurements += self.bot_app.backend.stats.as_influx(timestamp)
         return measurements
 
     async def get_nft_content(self, request: Request, address: str, query: str = None):

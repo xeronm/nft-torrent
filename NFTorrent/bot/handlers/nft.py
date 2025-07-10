@@ -12,13 +12,15 @@ from sqlalchemy.exc import NoResultFound
 from NFTorrent.modelsbase import TonAddress
 from NFTorrent.translations import gettext
 
-from ..main import _Bot
+from ..main import _Bot, NftListItem
 from ..services.nft import nft_preview
 from ..states.nft import NftForm
 
 logger = logging.getLogger(__name__)
 
 router = Router()
+
+NFT_LIST_PAGE_SIZE = 20
 
 
 def compress_address(addr: str, n: int = 4) -> str:
@@ -31,11 +33,28 @@ class NftViewCallback(CallbackData, prefix="nftview"):
     address: str
 
 
-@router.message(Command("nftlist"), F.chat.type == "private")
-async def start(message: Message, command: CommandObject, state: FSMContext):
-    _ = partial(gettext, message.from_user.language_code)
+class NftListCallback(CallbackData, prefix="nftlist"):
+    offset: int | None = 0
+
+
+async def _nft_list(user: User, message: Message, offset: int = 0, edit: bool = False):
+    _ = partial(gettext, user.language_code)
+    offset = max(offset, 0)
+
     bot: _Bot = message.bot
-    owners, nfts = await bot.app.backend.nft_list(message.from_user.id)
+    owners, nfts = await bot.app.backend.nft_list(user.id, offset=offset, limit=NFT_LIST_PAGE_SIZE)
+    next_page = None
+    if len(nfts) == NFT_LIST_PAGE_SIZE:
+        # lookup next page
+        try:
+            __, next_page = await bot.app.backend.nft_list(user.id, offset=offset+NFT_LIST_PAGE_SIZE, limit=NFT_LIST_PAGE_SIZE)
+        except:
+            pass
+        # remove items to align keybard size
+        if offset and len(nfts) == NFT_LIST_PAGE_SIZE:
+            nfts.pop()
+        if next_page:
+            nfts.pop()
 
     if not owners:
         builder = InlineKeyboardBuilder()
@@ -48,21 +67,48 @@ async def start(message: Message, command: CommandObject, state: FSMContext):
         return
 
     builder = InlineKeyboardBuilder()
+    if offset:
+        prev_offset = offset-NFT_LIST_PAGE_SIZE+1
+        if prev_offset == 1:
+            prev_offset = 0
+        builder.button(text=_("◀️ Prev"), callback_data=NftListCallback(offset=prev_offset).pack())
     for nft in nfts:
         short_addr = compress_address(nft.address)
         label = f"{nft.name} {short_addr}"
         builder.button(text=label, callback_data=NftViewCallback(address=nft.address).pack())
-    builder.button(text=_("Mint"), web_app=WebAppInfo(url=bot.app.get_petsmem_link(action="mint")))
+    if next_page:
+        builder.button(text=_("Next ▶️"), callback_data=NftListCallback(offset=offset+len(nfts)).pack())
+    builder.button(text=_("✨ Mint"), web_app=WebAppInfo(url=bot.app.get_petsmem_link(action="mint")))
 
     builder.adjust(2)
-    await message.answer(
-        (
-            _("Please select an NFT from the list to view details, or mint a new one.")
+    text = _("Please select an NFT from the list to <b>view</b> details, or <b>mint</b> a new one.\n\nList of NFTs from {from_index} to {to_index}:").format(from_index=offset+1, to_index=offset+len(nfts))
+    if edit:
+        await message.edit_text(
+            text
             if len(nfts)
-            else _("You don't have any memorial NFTs yet. Consider minting your first one!")
-        ),
-        reply_markup=builder.as_markup(),
-    )
+            else _("You don’t have any NFTs starting from position {from_index}").format(from_index=offset+1),
+            reply_markup=builder.as_markup()
+        )
+    else:
+        await message.answer(
+            (
+                text
+                if len(nfts)
+                else _("You don't have any memorial NFTs yet. Consider minting your first one!")
+            ),
+            reply_markup=builder.as_markup(),
+        )
+
+
+@router.message(Command("nftlist"), F.chat.type == "private")
+async def nft_list(message: Message, command: CommandObject, state: FSMContext):
+    await _nft_list(message.from_user, message, 0)
+
+
+@router.callback_query(NftListCallback.filter())
+async def nft_view_callback(callback: CallbackQuery, callback_data: NftListCallback, state: FSMContext):
+    await _nft_list(callback.from_user, callback.message, offset=callback_data.offset, edit=True)
+
 
 
 @router.message(Command("nftview"))
