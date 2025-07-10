@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2025-07-09 17:26+0300\n"
+"POT-Creation-Date: 2025-07-10 13:49+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -17,55 +17,55 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Generated-By: Babel 2.8.0\n"
 
-#: NFTorrent/bot/handlers/inquiry.py:50
+#: NFTorrent/bot/handlers/inquiry.py:49
 msgid ""
 "⚠️ Your Inquiry session has timed out. Please start a new one with "
 "/inquiry."
 msgstr ""
 
-#: NFTorrent/bot/handlers/inquiry.py:65
+#: NFTorrent/bot/handlers/inquiry.py:64
 msgid "⚠️ This inquiry has already been <b>closed</b> and cannot be updated."
 msgstr ""
 
-#: NFTorrent/bot/handlers/inquiry.py:73
+#: NFTorrent/bot/handlers/inquiry.py:75
 msgid ""
 "🚫 User Inquiry #R{inquiry_num:06d} has been <b>blocked</b> up to "
 "{block_date} UTC."
 msgstr ""
 
-#: NFTorrent/bot/handlers/inquiry.py:101 NFTorrent/bot/handlers/inquiry.py:240
+#: NFTorrent/bot/handlers/inquiry.py:106 NFTorrent/bot/handlers/inquiry.py:247
 msgid "Failed to get Inquiry: {errorname}"
 msgstr ""
 
-#: NFTorrent/bot/handlers/inquiry.py:121 NFTorrent/bot/handlers/inquiry.py:249
+#: NFTorrent/bot/handlers/inquiry.py:126 NFTorrent/bot/handlers/inquiry.py:256
 msgid "Reply message"
 msgstr ""
 
-#: NFTorrent/bot/handlers/inquiry.py:123 NFTorrent/bot/handlers/inquiry.py:253
+#: NFTorrent/bot/handlers/inquiry.py:128 NFTorrent/bot/handlers/inquiry.py:260
 msgid "Close message"
 msgstr ""
 
-#: NFTorrent/bot/handlers/inquiry.py:134
+#: NFTorrent/bot/handlers/inquiry.py:139
 msgid ""
 "Type your <b>{action_message}</b> or /cancel.\n"
 "It will be added to your Inquiry #R{inquiry_num:06d}."
 msgstr ""
 
-#: NFTorrent/bot/handlers/inquiry.py:174 NFTorrent/bot/handlers/inquiry.py:327
+#: NFTorrent/bot/handlers/inquiry.py:181 NFTorrent/bot/handlers/inquiry.py:336
 msgid "Failed to update Inquiry: {errorname}"
 msgstr ""
 
-#: NFTorrent/bot/handlers/inquiry.py:182
+#: NFTorrent/bot/handlers/inquiry.py:189
 msgid ""
 "📩 Inquiry #R{inquiry_num:06d} from user @{username} has received a "
 "<b>Reply</b> from the user with the following message\n"
 msgstr ""
 
-#: NFTorrent/bot/handlers/inquiry.py:192
+#: NFTorrent/bot/handlers/inquiry.py:199
 msgid "📩 You’ve sent a reply to your inquiry #R{inquiry_num:06d}."
 msgstr ""
 
-#: NFTorrent/bot/handlers/inquiry.py:198
+#: NFTorrent/bot/handlers/inquiry.py:205
 msgid ""
 "✅ Inquiry #R{inquiry_num:06d} from user @{username} has been "
 "<b>Closed</b> by user with the following message\n"
@@ -73,34 +73,34 @@ msgid ""
 "{message}"
 msgstr ""
 
-#: NFTorrent/bot/handlers/inquiry.py:205
+#: NFTorrent/bot/handlers/inquiry.py:212
 msgid "✅ Your Inquiry #R{inquiry_num:06d} has been closed."
 msgstr ""
 
-#: NFTorrent/bot/handlers/inquiry.py:251
+#: NFTorrent/bot/handlers/inquiry.py:258
 msgid "Block user message"
 msgstr ""
 
-#: NFTorrent/bot/handlers/inquiry.py:266
+#: NFTorrent/bot/handlers/inquiry.py:273
 msgid ""
 "Type your <b>{action_message}</b> to Inquiry #R{inquiry_num:06d} or "
 "/cancel, language - <b>{lang}</b>.\n"
 "It will be delivered to the user @{username}."
 msgstr ""
 
-#: NFTorrent/bot/handlers/inquiry.py:335
+#: NFTorrent/bot/handlers/inquiry.py:344
 msgid "Replied"
 msgstr ""
 
-#: NFTorrent/bot/handlers/inquiry.py:339
+#: NFTorrent/bot/handlers/inquiry.py:348
 msgid "Blocked"
 msgstr ""
 
-#: NFTorrent/bot/handlers/inquiry.py:342
+#: NFTorrent/bot/handlers/inquiry.py:351
 msgid "Closed"
 msgstr ""
 
-#: NFTorrent/bot/handlers/inquiry.py:347
+#: NFTorrent/bot/handlers/inquiry.py:356
 msgid ""
 "{action_icon} Your Inquiry #R{inquiry_num:06d} has been "
 "<b>{action_message}</b> with the following message\n"
@@ -108,28 +108,28 @@ msgid ""
 "{message}"
 msgstr ""
 
-#: NFTorrent/bot/handlers/inquiry.py:356
+#: NFTorrent/bot/handlers/inquiry.py:369
 msgid ""
 "{action_icon} Inquiry #R{inquiry_num:06d} from user @{username} has been "
 "<b>{action_message}</b>."
 msgstr ""
 
-#: NFTorrent/bot/handlers/inquiry.py:377
+#: NFTorrent/bot/handlers/inquiry.py:395
 msgid "Your Inquiry has been cancelled."
 msgstr ""
 
-#: NFTorrent/bot/handlers/inquiry.py:404
+#: NFTorrent/bot/handlers/inquiry.py:422
 msgid ""
 "⚠️ You already have an open inquiry #R{inquiry_num:06d}.\n"
 "You must either <b>respond</b> to it or <b>close</b> it before submitting"
 " a new one."
 msgstr ""
 
-#: NFTorrent/bot/handlers/inquiry.py:427
+#: NFTorrent/bot/handlers/inquiry.py:445
 msgid "Submit Inquiry error: {errorname}"
 msgstr ""
 
-#: NFTorrent/bot/handlers/inquiry.py:437
+#: NFTorrent/bot/handlers/inquiry.py:457
 msgid ""
 "🆕 Inquiry #R{inquiry_num:06d} from user @{username}:\n"
 "\n"
@@ -138,13 +138,13 @@ msgid ""
 "{nft_info}{message}"
 msgstr ""
 
-#: NFTorrent/bot/handlers/inquiry.py:467
+#: NFTorrent/bot/handlers/inquiry.py:487
 msgid ""
 "⚠️ You have already started filling out an inquiry. If you want to start "
 "over press \"Cancel\"."
 msgstr ""
 
-#: NFTorrent/bot/handlers/inquiry.py:476
+#: NFTorrent/bot/handlers/inquiry.py:496
 msgid ""
 "<b>You starting to fill new Inquiry.</b>\n"
 "\n"
@@ -156,69 +156,85 @@ msgid ""
 "\n"
 msgstr ""
 
-#: NFTorrent/bot/handlers/inquiry.py:487
+#: NFTorrent/bot/handlers/inquiry.py:507
 msgid "Enter your inquiry <b>Subject</b>:"
 msgstr ""
 
-#: NFTorrent/bot/handlers/inquiry.py:497
+#: NFTorrent/bot/handlers/inquiry.py:517
 msgid "Enter your inquiry <b>Message</b>:"
 msgstr ""
 
-#: NFTorrent/bot/handlers/inquiry.py:507
+#: NFTorrent/bot/handlers/inquiry.py:527
 msgid "Optionally you can send the <b>NFT address</b> or just /skip"
 msgstr ""
 
-#: NFTorrent/bot/handlers/inquiry.py:516
+#: NFTorrent/bot/handlers/inquiry.py:536
 msgid "Optionally you can send the <b>Screenshot</b> or just /skip"
 msgstr ""
 
-#: NFTorrent/bot/handlers/inquiry.py:528
+#: NFTorrent/bot/handlers/inquiry.py:548
 msgid ""
 "Provided input is not a valid TON Address. Please send the valid <b>NFT "
 "address</b> or just /skip"
 msgstr ""
 
-#: NFTorrent/bot/handlers/inquiry.py:551
+#: NFTorrent/bot/handlers/inquiry.py:571
 msgid "Do you want to submit your Inquiry <b>{subject}</b>?"
 msgstr ""
 
-#: NFTorrent/bot/handlers/nft.py:43
+#: NFTorrent/bot/handlers/nft.py:61
 msgid "Connect wallet"
 msgstr ""
 
-#: NFTorrent/bot/handlers/nft.py:48
+#: NFTorrent/bot/handlers/nft.py:64
 msgid ""
 "To view your NFTs using this command, you must first authorize through "
 "the Mini App."
 msgstr ""
 
-#: NFTorrent/bot/handlers/nft.py:62
-msgid "Mint"
+#: NFTorrent/bot/handlers/nft.py:74
+msgid "◀️ Prev"
 msgstr ""
 
-#: NFTorrent/bot/handlers/nft.py:68
-msgid "Please select an NFT from the list to view details, or mint a new one."
+#: NFTorrent/bot/handlers/nft.py:80
+msgid "Next ▶️"
 msgstr ""
 
-#: NFTorrent/bot/handlers/nft.py:68
+#: NFTorrent/bot/handlers/nft.py:81
+msgid "✨ Mint"
+msgstr ""
+
+#: NFTorrent/bot/handlers/nft.py:84
+msgid ""
+"Please select an NFT from the list to <b>view</b> details, or <b>mint</b>"
+" a new one.\n"
+"\n"
+"List of NFTs from {from_index} to {to_index}:"
+msgstr ""
+
+#: NFTorrent/bot/handlers/nft.py:89
+msgid "You don’t have any NFTs starting from position {from_index}"
+msgstr ""
+
+#: NFTorrent/bot/handlers/nft.py:97
 msgid "You don't have any memorial NFTs yet. Consider minting your first one!"
 msgstr ""
 
-#: NFTorrent/bot/handlers/nft.py:77
+#: NFTorrent/bot/handlers/nft.py:119
 msgid "Send <b>NFT address</b> to view or /cancel"
 msgstr ""
 
-#: NFTorrent/bot/handlers/nft.py:85 NFTorrent/bot/handlers/nft.py:105
+#: NFTorrent/bot/handlers/nft.py:127 NFTorrent/bot/handlers/nft.py:147
 msgid ""
 "Provided input is not a valid TON Address. Please send the valid <b>NFT "
 "address</b> or just /cancel"
 msgstr ""
 
-#: NFTorrent/bot/handlers/nft.py:128
+#: NFTorrent/bot/handlers/nft.py:170
 msgid "NFT <code>{address}</code> not found or not indexed yet."
 msgstr ""
 
-#: NFTorrent/bot/handlers/nft.py:132
+#: NFTorrent/bot/handlers/nft.py:174
 msgid "Failed to view NFT <code>{address}</code>, error - {errorname}"
 msgstr ""
 
@@ -258,30 +274,30 @@ msgstr ""
 msgid "Donate (Renew storage)"
 msgstr ""
 
-#: NFTorrent/bot/services/nft.py:31 NFTorrent/bot/services/nft.py:64
+#: NFTorrent/bot/services/nft.py:32 NFTorrent/bot/services/nft.py:65
 msgid "IPFS Storage due date: <b>{due_date}</b>\n"
 msgstr ""
 
-#: NFTorrent/bot/services/nft.py:39
+#: NFTorrent/bot/services/nft.py:40
 msgid ""
 "✨ You have just minted memorial NFT\n"
 "\n"
 msgstr ""
 
-#: NFTorrent/bot/services/nft.py:40 NFTorrent/bot/services/nft.py:73
+#: NFTorrent/bot/services/nft.py:41 NFTorrent/bot/services/nft.py:74
 msgid ""
 "<code>{nft_address}</code> - <a href=\"{tonviewer_link}\">Tonviewer</a>\n"
 "\n"
 "{storage_due_time}"
 msgstr ""
 
-#: NFTorrent/bot/services/nft.py:72
+#: NFTorrent/bot/services/nft.py:73
 msgid ""
 "✨ You have just updated memorial NFT\n"
 "\n"
 msgstr ""
 
-#: NFTorrent/bot/services/nft.py:175
+#: NFTorrent/bot/services/nft.py:190
 msgid ""
 "⚠️ The guaranteed storage period for your NFT IPFS content ends on "
 "<b>{due_date}</b>.\n"

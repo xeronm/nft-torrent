@@ -415,7 +415,7 @@ async def submit_inquiry(callback: CallbackQuery, callback_data: InquiryCallback
     inquiry_num = inquiry_id
     if bot.app.backend:
         try:
-            inquiry_list = await bot.app.backend.inquiry_list(user=callback.from_user)
+            inquiry_list = await bot.app.backend.inquiry_list(user_id=callback.from_user.id)
             if inquiry_list:
                 inquiry = inquiry_list[0]
                 await callback.message.answer(

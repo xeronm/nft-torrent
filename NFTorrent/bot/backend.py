@@ -5,7 +5,9 @@ from concurrent.futures import ThreadPoolExecutor
 from aiogram.types import User
 from sqlmodel import Session, SQLModel, create_engine, select
 
+from NFTorrent.cache import BaseCacheManager
 from NFTorrent.dbmodels import PetMemoryNft, PetsCollection, TgUser, UserInquiry
+from NFTorrent.modelsbase import MeasurementStore, StatisticMeasurement, with_stats
 
 from .main import BackendForbidden, BackendInterface, BaseInquiry, NftListItem
 
@@ -13,13 +15,27 @@ from .main import BackendForbidden, BackendInterface, BaseInquiry, NftListItem
 class Backend(BackendInterface):
 
     def __init__(
-        self, url: str, loop: asyncio.BaseEventLoop | None = None, threadpool_executor: ThreadPoolExecutor | None = None
+        self,
+        url: str,
+        loop: asyncio.BaseEventLoop | None = None,
+        threadpool_executor: ThreadPoolExecutor | None = None,
+        cache_manager: BaseCacheManager | None = None,
+        max_workers: int = 4,
     ):
         self.dbengine = create_engine(url)
         SQLModel.metadata.create_all(self.dbengine)
         self.loop = loop or asyncio.get_running_loop()
-        self.threadpool_executor = threadpool_executor or ThreadPoolExecutor(max_workers=4)
+        self.threadpool_executor = threadpool_executor or ThreadPoolExecutor(max_workers=max_workers)
+        self.cache_manager = cache_manager
         self._collection = {}
+        self.stats = MeasurementStore("NFTorrentBotBackend", StatisticMeasurement)
+        if cache_manager is not None:
+            self.setup_cache()
+
+    def setup_cache(self):
+        self.nft_list = with_stats(key="cached_nft_list", stats=self.stats)(self.cache_manager.cached(expire=30)(self.nft_list))
+        self.nft_get = with_stats(key="cached_nft_get", stats=self.stats)(self.cache_manager.cached(expire=30)(self.nft_get))
+        self.inquiry_get = with_stats(key="cached_inquiry_get", stats=self.stats)(self.cache_manager.cached(expire=15)(self.inquiry_get))
 
     def sync_get_collection(self, collection_id: int):
         collection = self._collection.get(collection_id)
@@ -30,21 +46,22 @@ class Backend(BackendInterface):
                 self._collection[collection_id] = collection
         return collection
 
-    def sync_inquiry_list(self, user) -> list[BaseInquiry]:
+    def sync_inquiry_list(self, user_id: int) -> list[BaseInquiry]:
         with Session(self.dbengine) as session:
             items = [
                 BaseInquiry(**x.model_dump())
                 for x in session.exec(
-                    select(UserInquiry).where((UserInquiry.user_id == user.id) & (UserInquiry.state.is_not(None)))
+                    select(UserInquiry).where((UserInquiry.user_id == user_id) & (UserInquiry.state.is_not(None)))
                 ).all()
             ]
         return items
 
-    async def inquiry_list(self, user) -> list[BaseInquiry]:
+    @with_stats()
+    async def inquiry_list(self, user_id: int) -> list[BaseInquiry]:
         if self.threadpool_executor:
-            return await self.loop.run_in_executor(self.threadpool_executor, self.sync_inquiry_list, user)
+            return await self.loop.run_in_executor(self.threadpool_executor, self.sync_inquiry_list, user_id)
         else:
-            return self.sync_inquiry_list(user)
+            return self.sync_inquiry_list(user_id)
 
     def sync_inquiry_create(self, user: User, data) -> BaseInquiry:
         with Session(self.dbengine) as session:
@@ -64,6 +81,7 @@ class Backend(BackendInterface):
             session.refresh(inquiry)
             return BaseInquiry(**inquiry.model_dump())
 
+    @with_stats()
     async def inquiry_create(self, user, data) -> BaseInquiry:
         if self.threadpool_executor:
             return await self.loop.run_in_executor(self.threadpool_executor, self.sync_inquiry_create, user, data)
@@ -93,6 +111,7 @@ class Backend(BackendInterface):
             session.commit()
             return base_inquiry
 
+    @with_stats()
     async def inquiry_close(
         self, inquiry_id: str, user_id: int = None, admin_user_id: int = None, admin_message: str = None
     ) -> BaseInquiry:
@@ -122,6 +141,7 @@ class Backend(BackendInterface):
             session.commit()
             return base_inquiry
 
+    @with_stats()
     async def inquiry_block(
         self, inquiry_id: str, admin_user_id: int = None, admin_message: str = None, disable_to_hours: int = None
     ) -> BaseInquiry:
@@ -143,6 +163,7 @@ class Backend(BackendInterface):
 
             return BaseInquiry(**inquiry.model_dump())
 
+    @with_stats()
     async def inquiry_get(
         self, inquiry_id: str, admin_user_id: int = None, admin_message: str = None, disable_to_hours: int = None
     ) -> BaseInquiry:
@@ -151,21 +172,26 @@ class Backend(BackendInterface):
         else:
             return self.sync_inquiry_get(inquiry_id)
 
-    def sync_nft_list(self, user_id: int = None):
+    def sync_nft_list(self, user_id: int = None, offset: int = 0, limit: int = 20):
         with Session(self.dbengine) as session:
             owners = [x.owner for x in session.exec(select(TgUser).where(TgUser.user_id == user_id)).all()]
 
             nfts = [
                 NftListItem(address=x.address, name=x.name, species=x.species, species_name=x.species_name)
                 for x in session.exec(
-                    select(PetMemoryNft).where(PetMemoryNft.owner.in_(owners)).order_by(PetMemoryNft.id).limit(20)
+                    select(PetMemoryNft)
+                    .where(PetMemoryNft.owner.in_(owners))
+                    .order_by(PetMemoryNft.id)
+                    .offset(offset)
+                    .limit(limit)
                 ).all()
             ]
             return owners, nfts
 
-    async def nft_list(self, user_id: int = None):
+    @with_stats()
+    async def nft_list(self, user_id: int = None, offset: int = 0, limit: int = 20):
         if self.threadpool_executor:
-            return await self.loop.run_in_executor(self.threadpool_executor, self.sync_nft_list, user_id)
+            return await self.loop.run_in_executor(self.threadpool_executor, self.sync_nft_list, user_id, offset, limit)
         else:
             return self.sync_nft_list(user_id)
 
@@ -175,6 +201,7 @@ class Backend(BackendInterface):
             session.expunge(nft)
             return nft, self.sync_get_collection(nft.collection_id)
 
+    @with_stats()
     async def nft_get(self, address: str = None):
         if self.threadpool_executor:
             return await self.loop.run_in_executor(self.threadpool_executor, self.sync_nft_get, address)

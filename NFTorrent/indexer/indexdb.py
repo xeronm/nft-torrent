@@ -23,7 +23,7 @@ from pytonlib import TonlibException
 from sqlalchemy.exc import NoResultFound, SQLAlchemyError
 from sqlmodel import Session, SQLModel, create_engine, delete, select, update
 
-from NFTorrent.bot import BotApp, services
+from NFTorrent.bot import BotApp, services, StatisticsMiddleware
 from NFTorrent.bot.handlers import routers
 from NFTorrent.cache import BaseCacheManager, DisabledCacheManager
 from NFTorrent.dbmodels import NftTaskQueue, NftTaskType, PetMemoryNft, PetsCollection, TgUser
@@ -33,6 +33,7 @@ from NFTorrent.modelsbase import (
     CollectionConfig,
     CollectionInstance,
     MeasurementStore,
+    StatisticMeasurement
 )
 from NFTorrent.settings import IndexDbSettings
 from NFTorrent.tonlib import TonlibManager, TonlibRequestError
@@ -156,6 +157,16 @@ class EtcdPoolLock:
         if self._lock is not None:
             return await self.loop.run_in_executor(self.threadpool_executor, self._lock.refresh)
 
+    async def refresh_loop(self):
+        while True:
+            try:
+                await asyncio.sleep(self.lock_ttl / 2)
+                await self.refresh()
+            except Exception as E:
+                logger.warning(
+                    'etcd lock "%s", refresh error - %s: %s', self.lock_name, type(E).__name__, E
+                )
+
 
 class IndexDb:
     etcd_timeout_sec = 5
@@ -222,10 +233,17 @@ class IndexDb:
         self.tasks = {
             "event_processor": self.loop.create_task(self.event_processor()),
         }
+
+        self.dp = None
+        self.dp_active = False
         if self.bot_app:
             self.tasks["bot_polling"] = self.loop.create_task(self.bot_polling())
             self.dp = Dispatcher(storage=MemoryStorage())
             self.dp.include_routers(*routers)
+
+            self.dp_stats = MeasurementStore("NFTorrentBotDp", StatisticMeasurement)
+            self.dp.message.middleware(StatisticsMiddleware(stats_store=self.dp_stats))
+            self.dp.callback_query.middleware(StatisticsMiddleware(stats_store=self.dp_stats))
 
             logger.warning(
                 "Bot task intialized... bot_id: %s",
@@ -243,7 +261,6 @@ class IndexDb:
             logger.warning(
                 "Bot poling task not started, BotApp not provided",
             )
-            self.dp = None
 
         # running tasks
         for c in self.collection_config.collections:
@@ -256,7 +273,10 @@ class IndexDb:
 
     async def shutdown(self):
         if self.dp:
-            await self.dp.stop_polling()
+            try:
+                await self.dp.stop_polling()
+            except:
+                pass
         await self.tg_user_queue.join()
         for task in self.indexer_tasks.values():
             task.cancel()
@@ -299,26 +319,32 @@ class IndexDb:
         while True:
             try:
                 async with EtcdPoolLock(
-                    lock_name, self.etcd_clients, threadpool_executor=self.threadpool_executor, lock_ttl=self.etcd_lock_ttl_sec, loop=self.loop
+                    lock_name,
+                    self.etcd_clients,
+                    threadpool_executor=self.threadpool_executor,
+                    lock_ttl=self.etcd_lock_ttl_sec,
+                    loop=self.loop,
                 ) as lock:
-                    logger.warning("Bot polling task: Lock \"%s\" acquired, Entering start_polling...", lock_name)
-
-                    async def _bg_refresh():
-                        while True:
-                            try:
-                                await asyncio.sleep(self.etcd_lock_ttl_sec/2)
-                                await lock.refresh()
-                            except Exception as E:
-                                logger.warning('Bot polling task: Lock \"%s\" refresh error - %s: %s', lock_name, type(E).__name__, E)
+                    logger.warning('Bot polling task: Lock "%s" acquired, Entering start_polling...', lock_name)
 
                     pooling = asyncio.create_task(self.dp.start_polling(self.bot_app.bot, handle_signals=False))
-                    refresh = asyncio.create_task(_bg_refresh())
-                    done, pending = await asyncio.wait([pooling, refresh], return_when=asyncio.FIRST_COMPLETED)
-
-                    logger.warning("Bot polling task: polling complete - %s", [str(t.exception()) for t in done if t.exception()])
-                    await self.dp.stop_polling()
-                    refresh.cancel()
-                    await asyncio.wait([pooling, refresh], return_when=asyncio.ALL_COMPLETED)
+                    refresh = asyncio.create_task(lock.refresh_loop())
+                    self.dp_active = True
+                    try:
+                        done, pending = await asyncio.wait([pooling, refresh], return_when=asyncio.FIRST_COMPLETED)
+                        if pooling in done and pooling.exception():
+                            exc = pooling.exception()
+                            logger.warning("Bot polling task: polling terminated with error - %s: %s", type(exc).__name__, exc)
+                        else:
+                            logger.warning("Bot polling task: polling exited")
+                        if refresh in done and refresh.exception():
+                            exc = refresh.exception()
+                            logger.warning("Bot polling task: lock refresh task terminated with error - %s: %s", type(exc).__name__, exc)
+                    finally:
+                        self.dp_active = False
+                        pooling.cancel()
+                        refresh.cancel()
+                        await asyncio.gather(pooling, refresh, return_exceptions=True)
 
                 await asyncio.sleep(self.restart_timeout)
             except EtcdLockError as E:
@@ -581,6 +607,78 @@ class IndexDb:
                 )
                 await asyncio.sleep(self.restart_timeout)
 
+    async def _nft_indexer_cycle(self, data: CollectionTaskData):
+        address = data.nft_collection.b64url
+        logger.info("[%s]: Updating collection info...", address)
+        # Refresh data from DB
+        data.instance = await self.loop.run_in_executor(
+            self.threadpool_executor, self.sync_collection_upsert, data.nft_collection
+        )
+        data.meas.db_next_index = data.instance.index
+
+        # Refresh data from TON
+        data.collection_data = await self.tonlib.get_collection_data(address)
+        next_index = data.collection_data.next_item_index
+        data.meas.bc_next_index = next_index
+        if data.instance.index > next_index:
+            logger.error(
+                "[%s]: Collection On-Chain index less than IndexDB, db_index: %d, chain_index: %d",  # noqa: E501
+                address,
+                data.instance.index,
+                next_index,
+            )
+        elif data.instance.index < next_index:
+            logger.info(
+                "[%s]: Collection IndexDB, db_index: %d, chain_index: %d",  # noqa: E501
+                address,
+                data.instance.index,
+                next_index,
+            )
+            bulk = []
+            while data.instance.index < next_index and len(bulk) < self.settings.bulk_size:
+                nft_address = await self.tonlib.get_nft_item_address(address, data.instance.index)
+                logger.info(
+                    "[%s]: Indexing NFT, address: %s",
+                    address,
+                    nft_address,
+                )
+                try:
+                    nft_data = await self.tonlib.get_nft_data(nft_address, skip_verification=True)
+                    if nft_data.index != data.instance.index:
+                        raise TonlibRequestError("NFT index mistmath")
+                    instance = PetMemoryNft.from_nftmodel(collection_id=data.instance.id, data=nft_data)
+                    if uri_ipfs(instance.image):
+                        cid, _, _ = parse_ipfs_uri(instance.image)
+                        if cid:
+                            torrent_info = await self.ipfs.get_cid_info(cid)
+                            instance.torrent_info = pickle.dumps(torrent_info)
+
+                    bulk.append(instance)
+                except TonlibRequestError as E:
+                    data.meas.nft_index_errors += 1
+                    logger.warning(
+                        "[%s]: Contract request error, address: %s, index: %d - %s: %s",  # noqa: E501
+                        address,
+                        nft_address,
+                        data.instance.index,
+                        type(E).__name__,
+                        E,
+                    )
+                data.instance.index += 1
+
+            if len(bulk):
+                await self.collection_nft_make_icons(bulk)
+                notifs_count = await self.loop.run_in_executor(
+                    self.threadpool_executor, self.sync_collection_nft_bulk_insert, data.instance, bulk
+                )
+                data.meas.task_enqueued += notifs_count
+                data.meas.nft_index_count += len(bulk)
+                data.meas.updated_time = int(time.time())
+                data.meas.db_next_index = data.instance.index
+
+        data.meas.last_checked = int(time.time())
+
+
     async def nft_indexer(self, data: CollectionTaskData):
         address = data.nft_collection.b64url
         logger.warning("[%s]: Indexer task entering main loop", address)
@@ -596,74 +694,20 @@ class IndexDb:
                 async with EtcdPoolLock(
                     f"indexer:{address}", self.etcd_clients, self.threadpool_executor, self.etcd_lock_ttl_sec
                 ) as lock:
-                    logger.info("[%s]: Updating collection info...", address)
-                    # Refresh data from DB
-                    data.instance = await self.loop.run_in_executor(
-                        self.threadpool_executor, self.sync_collection_upsert, data.nft_collection
-                    )
-                    data.meas.db_next_index = data.instance.index
+                    cycle = asyncio.create_task(self._nft_indexer_cycle(data))
+                    refresh = asyncio.create_task(lock.refresh_loop())
+                    try:
+                        done, pending = await asyncio.wait([cycle, refresh], return_when=asyncio.FIRST_COMPLETED)
+                        if refresh in done and refresh.exception():
+                            exc = refresh.exception()
+                            logger.warning("[%s]: lock refresh task terminated with error - %s: %s", address, type(exc).__name__, exc)
+                        if cycle in done and cycle.exception():
+                            raise cycle.exception()
+                    finally:
+                        cycle.cancel()
+                        refresh.cancel()
+                        await asyncio.gather(cycle, refresh, return_exceptions=True)
 
-                    # Refresh data from TON
-                    data.collection_data = await self.tonlib.get_collection_data(address)
-                    next_index = data.collection_data.next_item_index
-                    data.meas.bc_next_index = next_index
-                    if data.instance.index > next_index:
-                        logger.error(
-                            "[%s]: Collection On-Chain index less than IndexDB, db_index: %d, chain_index: %d",  # noqa: E501
-                            address,
-                            data.instance.index,
-                            next_index,
-                        )
-                    elif data.instance.index < next_index:
-                        logger.info(
-                            "[%s]: Collection IndexDB, db_index: %d, chain_index: %d",  # noqa: E501
-                            address,
-                            data.instance.index,
-                            next_index,
-                        )
-                        bulk = []
-                        while data.instance.index < next_index and len(bulk) < self.settings.bulk_size:
-                            nft_address = await self.tonlib.get_nft_item_address(address, data.instance.index)
-                            logger.info(
-                                "[%s]: Indexing NFT, address: %s",
-                                address,
-                                nft_address,
-                            )
-                            try:
-                                nft_data = await self.tonlib.get_nft_data(nft_address, skip_verification=True)
-                                if nft_data.index != data.instance.index:
-                                    raise TonlibRequestError("NFT index mistmath")
-                                instance = PetMemoryNft.from_nftmodel(collection_id=data.instance.id, data=nft_data)
-                                if uri_ipfs(instance.image):
-                                    cid, _, _ = parse_ipfs_uri(instance.image)
-                                    if cid:
-                                        torrent_info = await self.ipfs.get_cid_info(cid)
-                                        instance.torrent_info = pickle.dumps(torrent_info)
-
-                                bulk.append(instance)
-                            except TonlibRequestError as E:
-                                data.meas.nft_index_errors += 1
-                                logger.warning(
-                                    "[%s]: Contract request error, address: %s, index: %d - %s: %s",  # noqa: E501
-                                    address,
-                                    nft_address,
-                                    data.instance.index,
-                                    type(E).__name__,
-                                    E,
-                                )
-                            data.instance.index += 1
-
-                        if len(bulk):
-                            await self.collection_nft_make_icons(bulk)
-                            notifs_count = await self.loop.run_in_executor(
-                                self.threadpool_executor, self.sync_collection_nft_bulk_insert, data.instance, bulk
-                            )
-                            data.meas.task_enqueued += notifs_count
-                            data.meas.nft_index_count += len(bulk)
-                            data.meas.updated_time = int(time.time())
-                            data.meas.db_next_index = data.instance.index
-
-                    data.meas.last_checked = int(time.time())
             except (TonlibException, asyncio.TimeoutError, EtcdLockError) as E:
                 logger.warning(
                     "[%s]: Got error - %s: %s",

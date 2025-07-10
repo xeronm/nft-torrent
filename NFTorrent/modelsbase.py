@@ -1,7 +1,8 @@
 import abc
 import time
 from collections import defaultdict
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
+from functools import wraps
 from typing import Any
 
 from pytonlib.utils.address import detect_address
@@ -29,8 +30,18 @@ class TonAddress:
 
 
 @dataclass(frozen=True)
-class StatisticNoTags:
+class BaseStatisticTags:
     pass
+
+
+@dataclass(frozen=True)
+class StatisticNoTags(BaseStatisticTags):
+    pass
+
+
+@dataclass(frozen=True)
+class MethodStatisticTags(BaseStatisticTags):
+    method: str
 
 
 @dataclass
@@ -51,20 +62,36 @@ class StatisticMeasurement:
 
 class MeasurementStore(defaultdict):
 
-    def __init__(self, name: str, *args, **kwargs):
+    def __init__(self, name: str, *args, default_tag_factory: type[BaseStatisticTags] = MethodStatisticTags, **kwargs):
         super().__init__(*args, **kwargs)
         self.name = name
+        self.default_tag_factory = default_tag_factory
 
     def get_timestamp(self):
         return int(time.time() * 1000000000)
 
     def as_list(self):
         _timestamp = self.get_timestamp()
-        return [{"tags": asdict(k), "fields": asdict(v), "timestamp": _timestamp} for k, v in self.items()]
+        return [{"tags": asdict(k if is_dataclass(k) else self.default_tag_factory(k)), "fields": asdict(v), "timestamp": _timestamp} for k, v in self.items()]
 
     def as_influx(self, timestamp):
         timestamp = timestamp or self.get_timestamp()
-        return [f"{self.name},{dataclass_to_influx(k)} {dataclass_to_influx(v)} {timestamp}" for k, v in self.items()]
+        return sorted([f"{self.name},{dataclass_to_influx(k if is_dataclass(k) else self.default_tag_factory(k))} {dataclass_to_influx(v)} {timestamp}" for k, v in self.items()])
+
+
+def with_stats(key: Any = None, stats: MeasurementStore = None, stats_attr: str = "stats"):
+    def decorator(method):
+        @wraps(method)
+        async def wrapper(*args, **kwargs):
+            if stats is not None:
+                container = stats
+            else:
+                container = getattr(args[0], stats_attr)
+
+            with container[key or method.__name__]:
+                return await method(*args, **kwargs)
+        return wrapper
+    return decorator
 
 
 @dataclass
