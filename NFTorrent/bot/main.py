@@ -91,6 +91,7 @@ class BotApp:
         backend: BackendInterface = None,
         torrent_file_size_limit=None,
     ):
+        self.bot_id = token.split(":")[0]
         self.bot = _Bot(token=token, app=self, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
         self.getgems_authority = getgems_authority
         self.ipfs_authority = ipfs_authority

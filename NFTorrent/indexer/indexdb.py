@@ -124,7 +124,7 @@ class EtcdPoolLock:
 
     def __enter__(self):
         if not self.etcd_clients:
-            return
+            return self
 
         for etcd in self.etcd_clients:
             try:
@@ -132,9 +132,12 @@ class EtcdPoolLock:
                 lock = etcd.lock(name=self.lock_name, ttl=self.lock_ttl)
                 if lock.acquire():
                     self._lock = lock
+                    logger.info('etcd lock "%s" acquired', self.lock_name)
                     return self
-            except etcd3.Etcd3Exception:
+            except etcd3.Etcd3Exception as E:
+                logger.info('etcd lock "%s", peer: %s error - %s: %s', self.lock_name, etcd._url, type(E).__name__, E)
                 pass
+        logger.info('etcd lock "%s" failed to acquire', self.lock_name)
         raise EtcdLockError("Unable to acquire Lock")
 
     def __exit__(self):
@@ -151,7 +154,7 @@ class EtcdPoolLock:
 
     async def refresh(self):
         if self._lock is not None:
-            return await self.loop.run_in_executor(self.threadpool_executor, self._lock.refresh())
+            return await self.loop.run_in_executor(self.threadpool_executor, self._lock.refresh)
 
 
 class IndexDb:
@@ -219,19 +222,27 @@ class IndexDb:
         self.tasks = {
             "event_processor": self.loop.create_task(self.event_processor()),
         }
-        if self.settings.task_queue_bulk_size and self.bot_app:
-            self.tasks["nft_task_processor"] = self.loop.create_task(self.nft_task_processor())
-        else:
-            logger.warning(
-                "NFT scheduled task processor not started... task_queue_bulk_size: %d, bot_app=%s",
-                self.settings.task_queue_bulk_size,
-                str(self.bot_app is not None),
-            )
         if self.bot_app:
             self.tasks["bot_polling"] = self.loop.create_task(self.bot_polling())
             self.dp = Dispatcher(storage=MemoryStorage())
             self.dp.include_routers(*routers)
+
+            logger.warning(
+                "Bot task intialized... bot_id: %s",
+                self.bot_app.bot_id,
+            )
+
+            if self.settings.task_queue_bulk_size:
+                self.tasks["nft_task_processor"] = self.loop.create_task(self.nft_task_processor())
+            else:
+                logger.warning(
+                    "NFT scheduled task processor not started, cause task_queue_bulk_size: %d",
+                    self.settings.task_queue_bulk_size,
+                )
         else:
+            logger.warning(
+                "Bot poling task not started, BotApp not provided",
+            )
             self.dp = None
 
         # running tasks
@@ -283,36 +294,41 @@ class IndexDb:
 
     async def bot_polling(self):
         logger.warning("Bot polling task entering main loop")
+        lock_name = f"bot:{self.bot_app.bot_id}"
 
         while True:
             try:
                 async with EtcdPoolLock(
-                    "bot_polling", self.etcd_clients, threadpool_executor=self.threadpool_executor, lock_ttl=self.etcd_lock_ttl_sec, loop=self.loop
+                    lock_name, self.etcd_clients, threadpool_executor=self.threadpool_executor, lock_ttl=self.etcd_lock_ttl_sec, loop=self.loop
                 ) as lock:
-                    logger.warning("Bot polling task - start polling")
+                    logger.warning("Bot polling task: Lock \"%s\" acquired, Entering start_polling...", lock_name)
 
                     async def _bg_refresh():
                         while True:
-                            await asyncio.sleep(self.etcd_lock_ttl_sec/2)
-                            await lock.refresh()
+                            try:
+                                await asyncio.sleep(self.etcd_lock_ttl_sec/2)
+                                await lock.refresh()
+                            except Exception as E:
+                                logger.warning('Bot polling task: Lock \"%s\" refresh error - %s: %s', lock_name, type(E).__name__, E)
 
                     pooling = asyncio.create_task(self.dp.start_polling(self.bot_app.bot, handle_signals=False))
                     refresh = asyncio.create_task(_bg_refresh())
-                    finished, unfinished = await asyncio.wait([pooling, refresh], return_when=asyncio.FIRST_COMPLETED)
-                    logger.warning("Bot polling task - completed")
+                    done, pending = await asyncio.wait([pooling, refresh], return_when=asyncio.FIRST_COMPLETED)
+
+                    logger.warning("Bot polling task: polling complete - %s", [str(t.exception()) for t in done if t.exception()])
                     await self.dp.stop_polling()
                     refresh.cancel()
                     await asyncio.wait([pooling, refresh], return_when=asyncio.ALL_COMPLETED)
 
                 await asyncio.sleep(self.restart_timeout)
             except EtcdLockError as E:
-                logger.info("Bot polling - lock error: %s", type(E).__name__)
+                logger.info("Bot polling task: lock error: %s", type(E).__name__)
                 await asyncio.sleep(self.restart_timeout)
             except asyncio.CancelledError:
                 logger.info("Bot polling task was cancelled")
                 return
             except (Exception, BaseException):
-                logger.exception("Bot polling task got unhandled exception, sleep for %d", self.restart_timeout)
+                logger.exception("Bot polling task got unhandled exception, sleep for %d sec", self.restart_timeout)
                 await asyncio.sleep(self.restart_timeout)
 
     async def event_processor(self):
@@ -327,7 +343,7 @@ class IndexDb:
                 logger.info("Event Processor task was cancelled")
                 return
             except (Exception, BaseException):
-                logger.exception("Event Processor task got unhandled exception, sleep for %d", self.restart_timeout)
+                logger.exception("Event Processor task got unhandled exception, sleep for %d sec", self.restart_timeout)
                 await asyncio.sleep(self.restart_timeout)
 
     def _nft_update(self, nft: PetMemoryNft, new_nft: PetMemoryNft, nft_notifs: list[NftTaskQueue]):
@@ -561,7 +577,7 @@ class IndexDb:
                 return
             except (Exception, BaseException):
                 logger.exception(
-                    "NFT scheduled processor task got unhandled exception, sleep for %d", self.restart_timeout
+                    "NFT scheduled processor task got unhandled exception, sleep for %d sec", self.restart_timeout
                 )
                 await asyncio.sleep(self.restart_timeout)
 
@@ -660,7 +676,7 @@ class IndexDb:
                 return
             except (Exception, BaseException):
                 logger.exception(
-                    "[%s]: Indexer task got unhandled exception, sleep for %d", address, self.restart_timeout
+                    "[%s]: Indexer task got unhandled exception, sleep for %d sec", address, self.restart_timeout
                 )
                 await asyncio.sleep(self.restart_timeout)
 

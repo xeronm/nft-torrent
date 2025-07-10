@@ -154,7 +154,7 @@
     path: /etc/ssl/pgcluster/server.csr
     privatekey_path: /etc/ssl/pgcluster/server.key
     common_name: "{{ inventory_hostname }}"
-    subject_alt_name: "IP:{{ ansible_host }}"
+    subject_alt_name: "IP:{{ ansible_host }},IP:172.16.1.1"
     key_usage:
       - digitalSignature
       - keyEncipherment
