@@ -40,8 +40,8 @@ dependencies = [
   "etcd3",
   "tenacity<7.0.0",
   "protobuf>=3.20.0,<4.21.0",
-  "aiogram",
   "babel",
+  "aiogram",
 ]
 
 classifiers = [
