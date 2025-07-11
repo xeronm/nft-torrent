@@ -116,7 +116,7 @@ async def nft_view_command(message: Message, command: CommandObject, state: FSMC
     _ = partial(gettext, message.from_user.language_code)
 
     if not command.args:
-        await message.answer(_("Send <b>NFT address</b> to view or /cancel"))
+        await message.answer(_("Send <b>NFT address</b> to view or /cancel."))
         await state.set_state(NftForm.address)
         return
 
@@ -124,7 +124,7 @@ async def nft_view_command(message: Message, command: CommandObject, state: FSMC
         address = TonAddress(command.args.strip())
     except Exception:
         await message.answer(
-            _("Provided input is not a valid TON Address. Please send the valid <b>NFT address</b> or just /cancel"),
+            _("Provided input is not a valid TON Address. Please send the valid <b>NFT address</b> or just /cancel."),
         )
         await state.set_state(NftForm.address)
         return
@@ -144,7 +144,7 @@ async def get_address(message: Message, state: FSMContext):
         address = TonAddress(message.text.strip())
     except Exception:
         await message.answer(
-            _("Provided input is not a valid TON Address. Please send the valid <b>NFT address</b> or just /cancel"),
+            _("The input you provided is not a valid TON address. Please send a valid <b>NFT address</b>, or just /cancel."),
         )
         return
 
