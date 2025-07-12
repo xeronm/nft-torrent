@@ -40,7 +40,7 @@ class PetMemoryNft(SQLModel, table=True):
     birth_date: str | None = Field(default=None)
     death_date: str | None = Field(default=None)
     # Mutable Data
-    owner: str = Field(index=True, max_length=48)
+    owner: str | None = Field(index=True, max_length=48)
     fee_due_time: int = Field()
     uri: str | None = Field(default=None, max_length=500)
     description: str | None = Field(default=None, max_length=2000)
@@ -155,6 +155,7 @@ class NftTaskType(enum.IntEnum):
     NOTIFY_DUE_DATE = 2
     NOTIFY_MINT = 3
     NOTIFY_UPDATED = 4
+    NOTIFY_TRANSFERED = 5
 
 
 class NftTaskQueue(SQLModel, table=True):

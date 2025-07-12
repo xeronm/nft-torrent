@@ -37,6 +37,10 @@ class TonlibRequestError(Exception):
     pass
 
 
+class TonlibContractIsNotNft(TonlibRequestError):
+    pass
+
+
 class TonlibSelectWorkerError(TonlibRequestError):
     pass
 
@@ -557,7 +561,7 @@ class TonlibManager:
         addr = TonAddress(address)
         nft_data_result = await self.raw_run_method(address, "get_nft_data", [], None)
         if nft_data_result["stack"] is None or len(nft_data_result["stack"]) != 5:
-            raise TonlibRequestError("Smart contract is not NFT")
+            raise TonlibContractIsNotNft("Smart contract is not NFT")
 
         nft_data = parse_nft_item_data(nft_data_result["stack"])
         if owner is not None and TonAddress(nft_data["owner_address"]) != TonAddress(owner):

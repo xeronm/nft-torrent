@@ -59,6 +59,7 @@ class CollectionMeasurement:
     task_enqueued: int = 0
     task_processed: int = 0
     nft_sync_updates: int = 0
+    nft_sync_deletes: int = 0
     nft_updates: int = 0
     nft_update_errors: int = 0
     nft_notif_storage: int = 0
@@ -173,7 +174,7 @@ class IndexDb:
     etcd_lock_ttl_sec = 60
     warn_offset = datetime.timedelta(days=10)
     expired_offset = datetime.timedelta(days=1)
-    nft_mutable_attributes = ["uri", "image", "image_data", "fee_due_time", "description"]
+    nft_mutable_attributes = ["owner", "uri", "image", "image_data", "fee_due_time", "description"]
     nft_image_attributes = {"image", "image_data"}
     task_queue_timeout_sec = 3
 
@@ -290,6 +291,7 @@ class IndexDb:
 
     def setup_cache(self):
         self.collection_query = self.cache_manager.cached(expire=60)(self.collection_query)
+        self.nft_get = self.cache_manager.cached(expire=15)(self.nft_get)
         self.collection_random_feed = self.cache_manager.cached(expire=600)(self.collection_random_feed)
 
     async def register_tg_user(
@@ -376,12 +378,15 @@ class IndexDb:
         curr_time = datetime.datetime.now(datetime.timezone.utc)
         nft._nft_updated = False
         nft._nft_image_updated = False
+        nft._nft_transfered = False
         for attr in self.nft_mutable_attributes:
             vold = getattr(nft, attr)
             vnew = getattr(new_nft, attr)
             if vold != vnew:
                 setattr(nft, attr, vnew)
                 nft._nft_updated = True
+                if attr == "owner":
+                    nft._nft_transfered = True
                 if attr in self.nft_image_attributes:
                     nft._nft_image_updated = True
 
@@ -391,7 +396,7 @@ class IndexDb:
                 NftTaskQueue(
                     task_time=curr_time + datetime.timedelta(seconds=self.task_queue_timeout_sec),
                     collection_id=nft.collection_id,
-                    task_type=NftTaskType.NOTIFY_UPDATED,
+                    task_type=NftTaskType.NOTIFY_TRANSFERED if nft._nft_transfered else NftTaskType.NOTIFY_UPDATED,
                     pet_memory_nft_id=nft.id,
                     index=nft.index,
                 )
@@ -410,23 +415,37 @@ class IndexDb:
                 )
             )
 
-    async def nft_update_nft_data(self, nft_data: NftItemData):
+    def sync_nft_get(self, address: str):
+        nft = None
+        with Session(self.dbengine) as session:
+            try:
+                nft = session.exec(select(PetMemoryNft).where(PetMemoryNft.address == address)).one()
+                session.expunge(nft)
+            except NoResultFound:
+                pass
+        return nft
+
+    async def nft_get(self, address: str):
+        return await self.loop.run_in_executor(self.threadpool_executor, self.sync_nft_get, address)
+
+    async def nft_update_nft_data(self, address: str, nft_data: NftItemData = None):
         # TODO: Shoud rewrite to queue and bulk operations
+        nft = await self.nft_get(address)
+        if nft_data is None:
+            if nft is not None:
+                cdata = self.collections_id.get(nft.collection_id)
+                cdata.meas.nft_sync_deletes += 1
+                nft.owner = None
+                await self.loop.run_in_executor(
+                    self.threadpool_executor, self.sync_collection_nft_bulk_update, [nft], [], []
+                )
+            return
+
         cdata = self.collections.get(nft_data.collection_address)
         if cdata is None:
             return
         new_nft = PetMemoryNft.from_nftmodel(collection_id=cdata.instance.id, data=nft_data)
 
-        def _sync_get_nft(address: str):
-            nft = None
-            with Session(self.dbengine) as session:
-                try:
-                    nft = session.exec(select(PetMemoryNft).where(PetMemoryNft.address == address)).one()
-                except NoResultFound:
-                    pass
-            return nft
-
-        nft = await self.loop.run_in_executor(self.threadpool_executor, _sync_get_nft, new_nft.address)
         if nft is None:
             nft = new_nft
             nft._nft_image_updated = True
@@ -581,10 +600,10 @@ class IndexDb:
                         coldata.meas.nft_notif_mints += 1
                         await services.nft.nft_preview(self.bot_app, nft, collection, user)
                         await services.nft.notify_nft_minted(self.bot_app, nft, collection, user, keyboard=True)
-                    if task.task_type == NftTaskType.NOTIFY_UPDATED:
+                    if task.task_type in [NftTaskType.NOTIFY_UPDATED, NftTaskType.NOTIFY_TRANSFERED]:
                         coldata.meas.nft_notif_updates += 1
                         await services.nft.nft_preview(self.bot_app, nft, collection, user)
-                        await services.nft.notify_nft_updated(self.bot_app, nft, collection, user, keyboard=True)
+                        await services.nft.notify_nft_updated(self.bot_app, nft, collection, user, keyboard=True, transfered=(task.task_type == NftTaskType.NOTIFY_TRANSFERED))
 
                     task_queue_logger.info(
                         "nft task done - task_id: %s, type: %d, collection: %s, index: %d, nft: %s",
