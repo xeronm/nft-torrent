@@ -147,6 +147,12 @@ def load_string(stack, opt: bool = False):
     return CellSlice(stack[1]["bytes"]).load_string()
 
 
+def load_address(stack, opt: bool = False):
+    if opt and "bytes" not in stack[1]:
+        return None
+    return CellSlice(stack[1]["bytes"]).load_address()
+
+
 @dataclass
 class PetsCollectionInfo:
     fee_storage: float
@@ -157,11 +163,18 @@ class PetsCollectionInfo:
     balance_class_b: float
     fb_mode: int
     fb_uri: str
+    minter: str | None = None
 
     @classmethod
     def from_tvm(cls, stack: list):
-        if len(stack) != 8:
+        if len(stack) not in  [8, 9]:
             raise ValueError(f"Invalid PetsCollectionInfo response length: {len(stack)}")
+
+        minter = None
+        if len(stack) > 8:
+            minter = load_address(stack[0])
+            stack = stack[1:]
+
         return PetsCollectionInfo(
             fee_storage=int(stack[0][1], 16) / 1e9,
             fee_class_a=int(stack[1][1], 16) / 1e9,
@@ -171,4 +184,5 @@ class PetsCollectionInfo:
             balance_class_b=int(stack[5][1], 16) / 1e9,
             fb_mode=int(stack[6][1], 16),
             fb_uri=load_string(stack[7]),
+            minter=minter,
         )
