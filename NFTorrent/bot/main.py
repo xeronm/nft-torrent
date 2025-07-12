@@ -127,9 +127,7 @@ class BotApp:
     def get_petsmem_link(self, nft_address: str = None, action: str = None, query_params: dict = None):
         url = self.petsmem_authority
         if nft_address:
-            url = urljoin(url, f"/#/nft/{nft_address}")
-        else:
-            url = urljoin(url, "/#/")
+            url = urljoin(url, f"/nft/{nft_address}")
         if query_params or action:
             query_params = copy.deepcopy(query_params) or {}
             if action:

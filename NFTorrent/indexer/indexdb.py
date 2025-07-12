@@ -996,6 +996,7 @@ class IndexDb:
         return [
             x.to_nftheader(self.collections_id.get(x.collection_id).nft_collection.b64url, icon_size=icon_size)
             for x in result
+            if x.collection_id in self.collections_id
         ]
 
     def sync_collection_random_feed(self, limit: int = 100, **kwargs):
@@ -1043,4 +1044,5 @@ class IndexDb:
         return [
             x.to_nftheader(self.collections_id.get(x.collection_id).nft_collection.b64url, icon_size=icon_size)
             for x in result
+            if x.collection_id in self.collections_id
         ]
