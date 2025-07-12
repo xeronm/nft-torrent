@@ -319,9 +319,7 @@ async def sync_nft_data(
         await ws.register_tg_user(
             owner=jwt_payload.sub, userdata=jwt_payload.user, country=rawRequest.headers.get("x-country-code")
         )
-        return await ws.sync_nft_data(request.address, owner=jwt_payload.sub, userdata=jwt_payload.user)
-    else:
-        return await ws.sync_nft_data(request.address)
+    return await ws.sync_nft_data(request.address)
 
 
 @app.get(

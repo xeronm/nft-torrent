@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2025-07-11 10:37+0300\n"
+"POT-Creation-Date: 2025-07-12 16:32+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -298,20 +298,26 @@ msgid ""
 "\n"
 msgstr ""
 
-#: NFTorrent/bot/services/nft.py:41 NFTorrent/bot/services/nft.py:74
+#: NFTorrent/bot/services/nft.py:41 NFTorrent/bot/services/nft.py:77
 msgid ""
 "<code>{nft_address}</code> - <a href=\"{tonviewer_link}\">Tonviewer</a>\n"
 "\n"
 "{storage_due_time}"
 msgstr ""
 
-#: NFTorrent/bot/services/nft.py:73
+#: NFTorrent/bot/services/nft.py:74
+msgid ""
+"✨ You've just received an memorial NFT from another owner\n"
+"\n"
+msgstr ""
+
+#: NFTorrent/bot/services/nft.py:75
 msgid ""
 "✨ You have just updated memorial NFT\n"
 "\n"
 msgstr ""
 
-#: NFTorrent/bot/services/nft.py:190
+#: NFTorrent/bot/services/nft.py:193
 msgid ""
 "⚠️ The guaranteed storage period for your NFT IPFS content ends on "
 "<b>{due_date}</b>.\n"

@@ -1,3 +1,3 @@
-from .manager import TonlibManager, TonlibRequestError
+from .manager import TonlibManager, TonlibRequestError, TonlibContractIsNotNft
 
-__all__ = ["TonlibManager", "TonlibRequestError"]
+__all__ = ["TonlibManager", "TonlibRequestError", "TonlibContractIsNotNft"]

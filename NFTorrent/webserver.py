@@ -19,7 +19,7 @@ from NFTorrent.ipfs import IpfsRpcManager
 from NFTorrent.models import HealthCheckResult, NftContentState, torrent_digest
 from NFTorrent.modelsbase import CollectionConfig
 from NFTorrent.settings import Settings
-from NFTorrent.tonlib import TonlibManager
+from NFTorrent.tonlib import TonlibManager, TonlibContractIsNotNft
 from NFTorrent.utils import dict_to_influx, guess_type, parse_ipfs_uri, uri_ipfs
 
 logger = logging.getLogger(__name__)
@@ -266,8 +266,18 @@ class Server:
                 )
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
-    async def sync_nft_data(self, address: str = None, owner: str = None, userdata: Any = None):
-        nft_data = await self.tonlib.get_nft_data(address, owner=owner)
+    async def sync_nft_data(self, address: str = None):
+        try:
+            # Ownership is not verified here, since the NFT may have been transferred or deleted.
+            nft_data = await self.tonlib.get_nft_data(address)
+        except TonlibContractIsNotNft as E:
+            nft_data = None
+            account_state = await self.tonlib.generic_get_account_state(address)
+            if (account_state['account_state']['@type'] == "uninited.accountState"):
+                # looks as if NFT was destroyed
+                await self.indexer.nft_update_nft_data(address)
+            raise
+
         nft_content = nft_data.individual_content
         if nft_content is not None:
             image = nft_content.image()
@@ -277,13 +287,11 @@ class Server:
                     pin_status = await self.ipfs.cid_pin_status(cid=cid)
                     if (
                         nft_content.storage_due_time() > (pin_status.expires if pin_status else time.time())
-                        or pin_status.userdata is None
-                        and userdata is not None
                     ):
                         self.loop.create_task(
-                            self.ipfs.confirm_content(address, old_cid=None, cid=cid, userdata=userdata)
+                            self.ipfs.confirm_content(address, old_cid=None, cid=cid)
                         )
-            await self.indexer.nft_update_nft_data(nft_data)
+            await self.indexer.nft_update_nft_data(address, nft_data)
 
     async def get_nft_cid_info(self, address: str, digest: str = None):
         cid, _ = await self.ipfs.get_nft_cid(address, raise_error=True)

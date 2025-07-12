@@ -212,7 +212,7 @@ class IpfsRpcManager:
         name = name or ""
         if self.settings.cluster_rpc_uri:
             expire_at_str = (
-                datetime.datetime.fromtimestamp(expire_at, tz=datetime.timezone.utc).isoformat() + "Z"
+                datetime.datetime.fromtimestamp(expire_at, tz=datetime.timezone.utc).isoformat()
                 if expire_at
                 else ""
             )
@@ -442,7 +442,7 @@ class IpfsRpcManager:
         return content
 
     @with_stats()
-    async def create_content(self, address: str, files: list[UploadFile], owner: str = None):
+    async def create_content(self, address: str, files: list[UploadFile], owner: str = None, userdata: Any = None):
         cid, nft_content = await self.get_nft_cid(address, owner=owner)
 
         total_size = sum([f.size for f in files])
@@ -464,7 +464,6 @@ class IpfsRpcManager:
             cid,
             total_size,
         )
-        userdata = None  # TODO: set to telegram user_id
         try:
             async with OperationLock(f"nft:{address}:add", self.cid_wlock, wait=False):
                 content = await self.cid_add_local(files=files)
