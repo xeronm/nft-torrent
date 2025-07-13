@@ -180,7 +180,7 @@ class Backend(BackendInterface):
                 NftListItem(address=x.address, name=x.name, species=x.species, species_name=x.species_name)
                 for x in session.exec(
                     select(PetMemoryNft)
-                    .where(PetMemoryNft.owner.in_(owners))
+                    .where((PetMemoryNft.owner.in_(owners) & PetMemoryNft.deleted_time.is_(None)))
                     .order_by(PetMemoryNft.id)
                     .offset(offset)
                     .limit(limit)
@@ -197,7 +197,10 @@ class Backend(BackendInterface):
 
     def sync_nft_get(self, address: str = None):
         with Session(self.dbengine) as session:
-            nft = session.exec(select(PetMemoryNft).where(PetMemoryNft.address == address)).one()
+            nft = session.exec(
+                select(PetMemoryNft)
+                .where((PetMemoryNft.address == address & PetMemoryNft.deleted_time.is_(None)))
+            ).one()
             session.expunge(nft)
             return nft, self.sync_get_collection(nft.collection_id)
 

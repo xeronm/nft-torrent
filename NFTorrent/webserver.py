@@ -270,12 +270,13 @@ class Server:
         try:
             # Ownership is not verified here, since the NFT may have been transferred or deleted.
             nft_data = await self.tonlib.get_nft_data(address)
-        except TonlibContractIsNotNft as E:
+        except TonlibContractIsNotNft:
             nft_data = None
             account_state = await self.tonlib.generic_get_account_state(address)
             if (account_state['account_state']['@type'] == "uninited.accountState"):
                 # looks as if NFT was destroyed
                 await self.indexer.nft_update_nft_data(address)
+                return
             raise
 
         nft_content = nft_data.individual_content

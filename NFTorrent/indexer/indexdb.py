@@ -36,7 +36,7 @@ from NFTorrent.modelsbase import (
     StatisticMeasurement
 )
 from NFTorrent.settings import IndexDbSettings
-from NFTorrent.tonlib import TonlibManager, TonlibRequestError
+from NFTorrent.tonlib import TonlibManager, TonlibRequestError, TonlibContractIsNotNft
 from NFTorrent.utils import parse_ipfs_uri, uri_ipfs
 
 logger = logging.getLogger(__name__)
@@ -61,6 +61,7 @@ class CollectionMeasurement:
     nft_sync_updates: int = 0
     nft_sync_deletes: int = 0
     nft_updates: int = 0
+    nft_deletes: int = 0
     nft_update_errors: int = 0
     nft_notif_storage: int = 0
     nft_notif_mints: int = 0
@@ -290,9 +291,10 @@ class IndexDb:
         self.threadpool_executor.shutdown()
 
     def setup_cache(self):
-        self.collection_query = self.cache_manager.cached(expire=60)(self.collection_query)
         self.nft_get = self.cache_manager.cached(expire=15)(self.nft_get)
-        self.collection_random_feed = self.cache_manager.cached(expire=600)(self.collection_random_feed)
+        self.nft_list = self.cache_manager.cached(expire=15)(self.nft_list)
+        self.collection_query = self.cache_manager.cached(expire=60)(self.collection_query)
+        self.collection_random_feed = self.cache_manager.cached(expire=300)(self.collection_random_feed)
 
     async def register_tg_user(
         self,
@@ -379,6 +381,10 @@ class IndexDb:
         nft._nft_updated = False
         nft._nft_image_updated = False
         nft._nft_transfered = False
+        if nft.deleted_time is None:
+            logger.warning("looks like NFT was restored! address: %s", nft.address)
+            nft._nft_updated = True
+            nft.deleted_time = None
         for attr in self.nft_mutable_attributes:
             vold = getattr(nft, attr)
             vnew = getattr(new_nft, attr)
@@ -419,7 +425,10 @@ class IndexDb:
         nft = None
         with Session(self.dbengine) as session:
             try:
-                nft = session.exec(select(PetMemoryNft).where(PetMemoryNft.address == address)).one()
+                nft = session.exec(
+                    select(PetMemoryNft)
+                    .where(PetMemoryNft.address == address)
+                ).one()
                 session.expunge(nft)
             except NoResultFound:
                 pass
@@ -428,6 +437,24 @@ class IndexDb:
     async def nft_get(self, address: str):
         return await self.loop.run_in_executor(self.threadpool_executor, self.sync_nft_get, address)
 
+    def sync_nft_list(self, owner: str, offset: int = 0, limit: int = 20):
+        with Session(self.dbengine) as session:
+            return session.exec(
+                select(PetMemoryNft)
+                .where(PetMemoryNft.owner == owner)
+                .order_by(PetMemoryNft.id)
+                .offset(offset)
+                .limit(limit)
+            ).all()
+
+    async def nft_list(self, owner: str, icon_size: str = None, offset: int = 0, limit: int = 20):
+        result = await self.loop.run_in_executor(self.threadpool_executor, self.sync_nft_list, owner, offset, limit)
+        return [
+            x.to_nftheader(self.collections_id.get(x.collection_id).nft_collection.b64url, icon_size=icon_size)
+            for x in result
+            if x.collection_id in self.collections_id
+        ]
+
     async def nft_update_nft_data(self, address: str, nft_data: NftItemData = None):
         # TODO: Shoud rewrite to queue and bulk operations
         nft = await self.nft_get(address)
@@ -435,7 +462,7 @@ class IndexDb:
             if nft is not None:
                 cdata = self.collections_id.get(nft.collection_id)
                 cdata.meas.nft_sync_deletes += 1
-                nft.owner = None
+                nft.deleted_time = datetime.datetime.now(datetime.timezone.utc)
                 await self.loop.run_in_executor(
                     self.threadpool_executor, self.sync_collection_nft_bulk_update, [nft], [], []
                 )
@@ -480,16 +507,30 @@ class IndexDb:
         for nft in nfts:
             logger.info("Updating NFT address: %s", nft.address)
             nft._nft_update_error = None
+            cdata = self.collections_id.get(nft.collection_id)
             try:
-                nft_data = await self.tonlib.get_nft_data(nft.address, skip_verification=True)
-                new_nft = PetMemoryNft.from_nftmodel(collection_id=None, data=nft_data)
+                nft_data = None
+                try:
+                    nft_data = await self.tonlib.get_nft_data(nft.address, skip_verification=True)
+                except TonlibContractIsNotNft as E:
+                    account_state = await self.tonlib.generic_get_account_state(nft.address)
+                    if (account_state['account_state']['@type'] != "uninited.accountState"):
+                        raise
 
-                self._nft_update(nft, new_nft, nft_notifs)
-                if nft._nft_updated:
+                if nft_data is None:
+                    cdata.meas.nft_deletes += 1
+                    nft.deleted_time = datetime.datetime.now(datetime.timezone.utc)
                     nft_updates.append(nft)
+                else:
+                    new_nft = PetMemoryNft.from_nftmodel(collection_id=nft.collection_id, data=nft_data)
+                    self._nft_update(nft, new_nft, nft_notifs)
+                    if nft._nft_updated:
+                        cdata.meas.nft_updates += 1
+                        nft_updates.append(nft)
             except TonlibRequestError as E:
                 logger.info("Updating NFT address: %s, got error - %s: %s", nft.address, type(E).__name__, E)
                 nft._nft_update_error = E
+                cdata.meas.nft_update_errors += 1
 
         await self.collection_nft_make_icons([x for x in nft_updates if x._nft_image_updated])
         return nft_updates, nft_notifs
@@ -537,7 +578,6 @@ class IndexDb:
                         continue
 
                     if getattr(nft, "_nft_update_error", None) is not None:
-                        coldata.meas.nft_update_errors += 1
                         task_queue_logger.warning(
                             "nft task skipped (nft update error) - task_id: %s, type: %d, collection: %s, index: %d - %s: %s",
                             task.id,
@@ -548,9 +588,6 @@ class IndexDb:
                             nft._nft_update_error,
                         )
                         continue
-
-                    if getattr(nft, "_nft_updated", False):
-                        coldata.meas.nft_updates += 1
 
                     user = tgusers.get(nft.owner)
                     if user is None:
@@ -974,12 +1011,11 @@ class IndexDb:
         return self.stats.as_influx(timestamp)
 
     def sync_collection_query(self, limit: int = 100, offset: int = None, **kwargs):
-        model_class = self.collection_config.dbmodel_nft_class
         with Session(self.dbengine) as session:
-            select_stmt = select(model_class).where(model_class.error_time is None)
+            select_stmt = select(PetMemoryNft).where(PetMemoryNft.error_time.is_(None))
             for col, value in kwargs.items():
                 if value is not None:
-                    select_stmt = select_stmt.where(getattr(model_class, col) == value)
+                    select_stmt = select_stmt.where(getattr(PetMemoryNft, col) == value)
 
             if offset is not None:
                 select_stmt = select_stmt.offset(offset)
@@ -1010,7 +1046,7 @@ class IndexDb:
             x0 = p0 = segment_size * n
             x1 = p1 = p0 + segment_size
 
-            select_stmt = select(PetMemoryNft).where(PetMemoryNft.error_time.is_(None))
+            select_stmt = select(PetMemoryNft).where((PetMemoryNft.error_time.is_(None) & PetMemoryNft.deleted_time.is_(None)))
             for col, value in kwargs.items():
                 if value is not None:
                     select_stmt = select_stmt.where(getattr(PetMemoryNft, col) == value)

@@ -4,7 +4,7 @@ from functools import wraps
 
 import aiohttp
 import aiohttp.client_exceptions
-from fastapi import FastAPI, Request, Response, status
+from fastapi import FastAPI, Request, Response, status, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.params import Depends
@@ -272,6 +272,22 @@ async def get_nft_torrent_content(request: models.BaseNftContentMethod = Depends
     if isinstance(response, Response):
         response.headers["Cache-Control"] = "public, max-age=86400, immutable"
     return response
+
+
+if ws.settings.indexdb.enabled:
+    @app.get("/api/v1/nft/list", response_model_exclude_none=True, tags=["nft"])
+    @wrap_result
+    async def list_nft(
+        request: models.NftListMethod = Depends(),  # noqa: B008
+        jwt_payload: models.JWTPayload = Depends(ws.jwt_session),  # noqa: B008
+    ) -> list[models.NftItemHeader]:  # noqa: B008
+        """
+        Get NFT Data information.
+        """
+        if jwt_payload is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="valid JWT API key required for this operation")
+        nft_data = await ws.indexer.nft_list(owner=jwt_payload.sub, **request.dict())
+        return nft_data
 
 
 @app.get(
