@@ -29,6 +29,7 @@ dependencies = [
   "ring",
   "fastapi",
   "pydantic",
+  "python-dateutil",
   "python-multipart",
   "tonpy",
   "aiohttp",

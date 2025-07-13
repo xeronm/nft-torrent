@@ -9,6 +9,7 @@ from urllib.parse import urlencode, urljoin
 
 import aiohttp
 from fastapi import HTTPException, UploadFile, status
+from dateutil.parser import isoparse
 
 from NFTorrent import exceptions, models
 from NFTorrent.cache import BaseCacheManager, DisabledCacheManager
@@ -267,8 +268,8 @@ class IpfsRpcManager:
 
             return models.NftContentPin(
                 redundancy=len(pin_status["allocations"]),
-                expires=float(pin_status["metadata"].get("expires", "0")),
-                created=time.mktime(time.strptime(pin_status["created"], "%Y-%m-%dT%H:%M:%SZ")),
+                expires=int(pin_status["metadata"].get("expires", "0")),
+                created=int(isoparse(pin_status["created"]).timestamp()),
                 userdata=userdata,
             )
         except IpfsRpcHttpException as E:
