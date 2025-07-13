@@ -200,6 +200,7 @@ class NftItemHeader(BaseModel):
     image: str | None = None
     image_data: str | None = None
     icons: dict[str, list[str]] | None = None
+    deleted: bool | None = False
 
 
 class CollectionItemsMethod(BaseModel):
@@ -209,6 +210,12 @@ class CollectionItemsMethod(BaseModel):
     limit: int = Query(default=100)
     offset: int = Query(default=0)
     icon_size: str = Query(default="small")
+
+
+class NftListMethod(BaseModel):
+    limit: int = Query(default=20)
+    offset: int = Query(default=0)
+    icon_size: str = Query(default="medium")
 
 
 class NftContentState(Enum):

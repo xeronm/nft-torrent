@@ -19,7 +19,7 @@ from NFTorrent.dbmodels import PetMemoryNft, PetsCollection
 logger = logging.getLogger(__name__)
 
 
-MAX_CAPTION_LENGTH = 1400
+MAX_CAPTION_LENGTH = 1500
 
 
 class NftListItem(BaseModel):

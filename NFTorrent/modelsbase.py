@@ -177,3 +177,4 @@ class NftItemHeader:
     collection_address: str = None
     image: str = None
     icons: dict[str, list[str]] = None
+    deleted: bool = False

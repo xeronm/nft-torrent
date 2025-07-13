@@ -24,6 +24,7 @@ class PetMemoryNft(SQLModel, table=True):
     index: int = Field(index=True)
     created_time: datetime.datetime = Field(default_factory=datetime.datetime.utcnow, nullable=False)
     updated_time: datetime.datetime = Field(default_factory=datetime.datetime.utcnow, nullable=False)
+    deleted_time: datetime.datetime | None = Field(default=None)
     last_notified: datetime.datetime | None = Field(default=None)
     # Immutable Data
     lang: str = Field(index=True, max_length=2)
@@ -40,7 +41,7 @@ class PetMemoryNft(SQLModel, table=True):
     birth_date: str | None = Field(default=None)
     death_date: str | None = Field(default=None)
     # Mutable Data
-    owner: str | None = Field(index=True, max_length=48)
+    owner: str = Field(index=True, max_length=48)
     fee_due_time: int = Field()
     uri: str | None = Field(default=None, max_length=500)
     description: str | None = Field(default=None, max_length=2000)
@@ -147,6 +148,7 @@ class PetMemoryNft(SQLModel, table=True):
             collection_address=collection_address,
             image=self.image,
             icons=icons,
+            deleted=self.deleted_time is not None
         )
 
 
