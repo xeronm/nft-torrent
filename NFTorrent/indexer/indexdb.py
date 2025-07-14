@@ -1,7 +1,6 @@
 import asyncio
 import copy
 import datetime
-import io
 import logging
 import math
 import pickle
@@ -18,7 +17,6 @@ import etcd3
 from aiogram import Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from fastapi import status
-from PIL import Image
 from pytonlib import TonlibException
 from sqlalchemy.exc import NoResultFound, SQLAlchemyError
 from sqlmodel import Session, SQLModel, create_engine, delete, select, update
@@ -38,6 +36,7 @@ from NFTorrent.modelsbase import (
 from NFTorrent.settings import IndexDbSettings
 from NFTorrent.tonlib import TonlibManager, TonlibRequestError, TonlibContractIsNotNft
 from NFTorrent.utils import parse_ipfs_uri, uri_ipfs
+from NFTorrent.imageutils import convert_image
 
 logger = logging.getLogger(__name__)
 task_queue_logger = logging.getLogger("NFTorrent.TaskQueue")
@@ -74,35 +73,6 @@ class CollectionTaskData:
     collection_data: CollectionData = None
     instance: PetsCollection = None
     meas: CollectionMeasurement = None
-
-
-def _convert_image(buffer: bytes, size: int, format: str) -> bytes:
-    img = Image.open(io.BytesIO(buffer))
-    # 1. Resize min dimension to `size`
-    x, y = img.size
-    if x > size and y > size:
-        m, n = x / size, y / size
-        x0 = y0 = size
-        if m > n:
-            x0 = math.ceil(x / n)
-        elif n > m:
-            y0 = math.ceil(y / m)
-        img = img.resize([x0, y0])
-
-    # 2. Crop center
-    x, y = img.size
-    if x > size or y > size:
-        x0 = y0 = 0
-        if x > size:
-            x0 = (x - size) // 2
-        if y > size:
-            y0 = (y - size) // 2
-        img = img.crop((x0, y0, x0 + size, y0 + size))
-
-    bufferOut = io.BytesIO()
-    img.save(bufferOut, format)
-    return bufferOut.getvalue()
-
 
 class EtcdLockError(Exception):
     pass
@@ -823,14 +793,14 @@ class IndexDb:
         try:
             small = await self.loop.run_in_executor(
                 self.threadpool_executor,
-                _convert_image,
+                convert_image,
                 buffer,
                 self.settings.icon_size_small,
                 self.settings.icon_format,
             )
             medium = await self.loop.run_in_executor(
                 self.threadpool_executor,
-                _convert_image,
+                convert_image,
                 buffer,
                 self.settings.icon_size_medium,
                 self.settings.icon_format,
