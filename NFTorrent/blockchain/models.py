@@ -7,7 +7,7 @@ from ..modelsbase import BaseNftContent
 from .encoders import bcd2c_to_string, date_mask_to_string, flatten_snake_cell
 
 
-SPECIES = ["Other", "Dog", "Cat", "Hamster/Guinea Pig", "Rabbit", "Parrot", "Fish", "Turtle", "Reptile", "Horse/Pony"]
+SPECIES = ["Other", "Dog", "Cat", "Hamster/Guinea Pig", "Rabbit", "Parrot", "Fish", "Turtle", "Reptile", "Horse/Pony", "Reserved", "Reserved", "Reserved", "Reserved", "Reserved", "Reserved", ]
 
 
 @dataclass
@@ -118,17 +118,16 @@ class PetMemoryNftContent(BaseNftContent):
         return self.imm_data.name
 
     def subtitle(self):
-        return self.imm_data.breed
+        return self.imm_data.breed if self.imm_data.breed else self.species()
+
+    def species(self):
+        return self.imm_data.species_name if self.imm_data.species_name else SPECIES[self.imm_data.species]
 
     def metadata_attributes(self):
         gp = self.imm_data.geo_point
         attrs = {
             "name": self.imm_data.name,
-            "species": (
-                self.imm_data.species_name
-                if self.imm_data.species_name
-                else (SPECIES[self.imm_data.species])
-            ),
+            "species": self.species(),
             "breed": self.imm_data.breed,
             "sex": "Female" if self.imm_data.sex else "Male",
             "birth_date": self.imm_data.birth_date,

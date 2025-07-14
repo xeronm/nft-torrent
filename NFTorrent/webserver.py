@@ -21,7 +21,7 @@ from NFTorrent.models import HealthCheckResult, NftContentState, torrent_digest
 from NFTorrent.modelsbase import CollectionConfig
 from NFTorrent.settings import Settings
 from NFTorrent.tonlib import TonlibManager, TonlibContractIsNotNft
-from NFTorrent.utils import dict_to_influx, guess_type, parse_ipfs_uri, uri_ipfs
+from NFTorrent.utils import dict_to_influx, guess_type, parse_ipfs_uri, uri_ipfs, uri_supported
 from NFTorrent.imageutils import generate_cover
 
 logger = logging.getLogger(__name__)
@@ -215,7 +215,7 @@ class Server:
         nft_content = nft_data.individual_content
 
         uri = nft_content.uri() if query == "uri" else nft_content.image()
-        if uri:
+        if uri and uri_supported(uri):
             if uri_ipfs(uri):
                 cid, file_path, digest = parse_ipfs_uri(uri)
                 cid_info = await self.ipfs.get_cid_info(cid=cid)

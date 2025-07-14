@@ -50,10 +50,15 @@ def dict_to_influx(instance: dict):
 
 
 SCHEME_IPFS = "ipfs"
+SUPPORTED_SCHEMES = {'http', 'https', 'ipfs'}
 
 
 def uri_ipfs(uri: str) -> bool:
     return uri and uri.startswith(f"{SCHEME_IPFS}://")
+
+def uri_supported(uri: str) -> bool:
+    comp = urlparse(uri)
+    return comp.scheme and comp.netloc and comp.scheme.lower() in SUPPORTED_SCHEMES
 
 
 def parse_ipfs_uri(uri: str) -> tuple[str, str, str]:
@@ -66,4 +71,4 @@ def parse_ipfs_uri(uri: str) -> tuple[str, str, str]:
     return cid, path, digest
 
 
-__all__ = ["guess_type", "dataclass_to_influx", "dict_to_influx"]
+__all__ = ["guess_type", "dataclass_to_influx", "dict_to_influx", "uri_supported", "parse_ipfs_uri", "uri_ipfs"]
