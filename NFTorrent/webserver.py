@@ -4,6 +4,7 @@ import logging
 import logging.config
 import time
 from typing import Any
+from dataclasses import asdict
 from urllib.parse import urljoin
 
 from fastapi import Request, status
@@ -21,6 +22,7 @@ from NFTorrent.modelsbase import CollectionConfig
 from NFTorrent.settings import Settings
 from NFTorrent.tonlib import TonlibManager, TonlibContractIsNotNft
 from NFTorrent.utils import dict_to_influx, guess_type, parse_ipfs_uri, uri_ipfs
+from NFTorrent.imageutils import generate_cover
 
 logger = logging.getLogger(__name__)
 
@@ -245,8 +247,23 @@ class Server:
         if query == "uri":
             return JSONResponse({"attributes": nft_content.metadata_attributes()})
 
-        # TODO: Generate dynamic default image with pets Name
-        return HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+        nft_collection = self.collection_config.get_collection(nft_data.collection_address)
+        if nft_collection.item_cover:
+            kwargs = asdict(nft_collection.item_cover)
+            image = generate_cover(
+                title=nft_content.title(),
+                subtitle=nft_content.subtitle(),
+                format="webp",
+                **kwargs)
+            return StreamingResponse(
+                io.BytesIO(image),
+                media_type="image/webp",
+                headers={
+                    "Content-Disposition": f'inline; filename="{address}.webp"',
+                },
+            )
+
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
     async def get_nft_torrent_content(self, address: str = None, file_path: str = None, digest: str = None):
         nft_data = await self.tonlib.get_nft_data(address)

@@ -95,7 +95,7 @@ def with_stats(key: Any = None, stats: MeasurementStore = None, stats_attr: str 
 
 
 @dataclass
-class BaseNftContent:
+class BaseNftContent(abc.ABC):
 
     @classmethod
     @abc.abstractmethod
@@ -118,9 +118,22 @@ class BaseNftContent:
     def storage_due_time(self) -> int:
         pass
 
+    @abc.abstractmethod
+    def title(self) -> str:
+        pass
+
+    @abc.abstractmethod
+    def subtitle(self) -> str:
+        pass
+
+    @abc.abstractmethod
+    def metadata_attributes(self) -> dict[str, Any]:
+        pass
+
+
 
 @dataclass
-class BaseCollectionInfo:
+class BaseCollectionInfo(abc.ABC):
 
     @classmethod
     @abc.abstractmethod
@@ -129,8 +142,23 @@ class BaseCollectionInfo:
 
 
 @dataclass(frozen=True)
+class CollectionItemCover:
+    baseimage: str
+    font: str
+    subtitle_font: str = None
+    title_size: int = 96
+    subtitle_size: int = 48
+    offset_top: float = 0.85
+    color: Any = "black"
+    rect_fill: Any = "white"
+    rect_padding: tuple[int, int] = (64, 8)
+    rect_margin: tuple[int, int] = (24, 0)
+
+
+@dataclass(frozen=True)
 class CollectionInstance(TonAddress):
     image: str
+    item_cover: CollectionItemCover = None
     meta: dict[str, Any] = field(default_factory=dict)
     nft_samples: dict[str, str] = None
 

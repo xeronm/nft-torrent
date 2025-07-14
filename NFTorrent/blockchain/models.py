@@ -7,6 +7,9 @@ from ..modelsbase import BaseNftContent
 from .encoders import bcd2c_to_string, date_mask_to_string, flatten_snake_cell
 
 
+SPECIES = ["Other", "Dog", "Cat", "Hamster/Guinea Pig", "Rabbit", "Parrot", "Fish", "Turtle", "Reptile", "Horse/Pony"]
+
+
 @dataclass
 class GeoPoint:
     is_south: bool
@@ -111,6 +114,12 @@ class PetMemoryNftContent(BaseNftContent):
     def storage_due_time(self):
         return self.fee_due_time
 
+    def title(self):
+        return self.imm_data.name
+
+    def subtitle(self):
+        return self.imm_data.breed
+
     def metadata_attributes(self):
         gp = self.imm_data.geo_point
         attrs = {
@@ -118,7 +127,7 @@ class PetMemoryNftContent(BaseNftContent):
             "species": (
                 self.imm_data.species_name
                 if self.imm_data.species_name
-                else (["Other", "Dog", "Cat"][self.imm_data.species])
+                else (SPECIES[self.imm_data.species])
             ),
             "breed": self.imm_data.breed,
             "sex": "Female" if self.imm_data.sex else "Male",
