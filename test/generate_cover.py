@@ -7,7 +7,7 @@ img = generate_cover(
     title="Marcus",
     subtitle="Nibelung",
     subtitle_font="assets/fonts/Inter_24pt-Regular.ttf",
-    rect_padding=(64, 8)
+    rect_padding=(96, 8)
     )
 
 with open("./.tox/cover.webp", "bw+") as f:

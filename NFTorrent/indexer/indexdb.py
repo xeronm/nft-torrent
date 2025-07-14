@@ -6,6 +6,7 @@ import math
 import pickle
 import random
 import time
+
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import (
@@ -35,7 +36,7 @@ from NFTorrent.modelsbase import (
 )
 from NFTorrent.settings import IndexDbSettings
 from NFTorrent.tonlib import TonlibManager, TonlibRequestError, TonlibContractIsNotNft
-from NFTorrent.utils import parse_ipfs_uri, uri_ipfs
+from NFTorrent.utils import parse_ipfs_uri, uri_ipfs, uri_supported
 from NFTorrent.imageutils import convert_image
 
 logger = logging.getLogger(__name__)
@@ -351,10 +352,11 @@ class IndexDb:
         nft._nft_updated = False
         nft._nft_image_updated = False
         nft._nft_transfered = False
-        if nft.deleted_time is None:
+        if nft.deleted_time is not None:
             logger.warning("looks like NFT was restored! address: %s", nft.address)
             nft._nft_updated = True
             nft.deleted_time = None
+
         for attr in self.nft_mutable_attributes:
             vold = getattr(nft, attr)
             vnew = getattr(new_nft, attr)
@@ -449,6 +451,7 @@ class IndexDb:
             nft._nft_updated = True
         nft_notifs = []
         self._nft_update(nft, new_nft, nft_notifs)
+
         if nft._nft_image_updated:
             if uri_ipfs(nft.image):
                 cid, _, _ = parse_ipfs_uri(nft.image)
@@ -457,6 +460,9 @@ class IndexDb:
                 nft.torrent_info = pickle.dumps(torrent_info)
             else:
                 nft.torrent_info = None
+            await self.collection_nft_make_icons([nft])
+        elif nft.error_code is not None:
+            nft._nft_updated = True
             await self.collection_nft_make_icons([nft])
 
         if nft._nft_updated:
@@ -752,7 +758,9 @@ class IndexDb:
 
     async def collection_nft_make_icon(self, instance: PetMemoryNft):
         buffer = None
-        if instance.image:
+        instance.error_time = None
+        instance.error_code = None
+        if instance.image and uri_supported(instance.image):
             logger.info(
                 "Getting image for NFT icons, address: %s, uri: %s",
                 instance.address,

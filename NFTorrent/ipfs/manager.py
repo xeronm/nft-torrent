@@ -398,7 +398,7 @@ class IpfsRpcManager:
         file_info = None
         if info.files:
             file_info = info.get_file(filename=file_path, digest=digest)
-        elif info.digest == digest or info.name == file_path:
+        elif info.digest == digest or not digest:
             file_info = info
         if not file_info:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
