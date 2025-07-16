@@ -199,7 +199,7 @@ class Backend(BackendInterface):
         with Session(self.dbengine) as session:
             nft = session.exec(
                 select(PetMemoryNft)
-                .where((PetMemoryNft.address == address & PetMemoryNft.deleted_time.is_(None)))
+                .where(((PetMemoryNft.address == address) & PetMemoryNft.deleted_time.is_(None)))
             ).one()
             session.expunge(nft)
             return nft, self.sync_get_collection(nft.collection_id)

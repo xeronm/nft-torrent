@@ -1,5 +1,6 @@
 import asyncio
 import io
+import os
 import logging
 import logging.config
 import time
@@ -26,6 +27,7 @@ from NFTorrent.imageutils import generate_cover
 
 logger = logging.getLogger(__name__)
 
+SPECIES_LOGO = ["Other", "Dog", "Cat", "Hamster", "Rabbit", "Parrot", "Fish", "Turtle", "Reptile", "Horse", "Hendehog", "Mouse" ]
 
 class Server:
 
@@ -161,7 +163,7 @@ class Server:
                 stotage_state = ipfs_state["peers"] >= self.ipfs.settings.min_peers_count
         if self.indexer is not None:
             indexer_state = self.indexer.get_indexdb_state()
-            last_checked = [x["fields"]["last_checked"] for x in indexer_state["stats"]]
+            last_checked = [x.last_checked for x in self.indexer.stats_coll.values()]
             indexer_state = len(last_checked) == len(
                 [x for x in last_checked if x >= time.time() - self.indexer.settings.indexer_timeout * 2]
             )
@@ -250,7 +252,10 @@ class Server:
         nft_collection = self.collection_config.get_collection(nft_data.collection_address)
         if nft_collection.item_cover:
             kwargs = asdict(nft_collection.item_cover)
+            species_name = SPECIES_LOGO[nft_content.imm_data.species] if nft_content.imm_data.species < len(SPECIES_LOGO) else SPECIES_LOGO[0]
+            baseimage = os.path.join(kwargs.pop('baseimage_path'), f"{species_name}.webp")
             image = generate_cover(
+                baseimage=baseimage,
                 title=nft_content.title(),
                 subtitle=nft_content.subtitle(),
                 format="webp",
