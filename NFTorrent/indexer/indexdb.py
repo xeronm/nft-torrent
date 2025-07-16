@@ -32,7 +32,8 @@ from NFTorrent.modelsbase import (
     CollectionConfig,
     CollectionInstance,
     MeasurementStore,
-    StatisticMeasurement
+    StatisticMeasurement,
+    StatisticNoTags
 )
 from NFTorrent.settings import IndexDbSettings
 from NFTorrent.tonlib import TonlibManager, TonlibRequestError, TonlibContractIsNotNft
@@ -66,6 +67,18 @@ class CollectionMeasurement:
     nft_notif_storage: int = 0
     nft_notif_mints: int = 0
     nft_notif_updates: int = 0
+
+
+@dataclass
+class IndexerMeasurement:
+    tg_user_queue_adds: int = 0
+    tg_user_queue_gets: int = 0
+    tg_user_creates: int = 0
+    tg_user_create_errors: int = 0
+    dp_active: int = 0
+    dp_poll_time: int = 0
+    dp_lock_failures: int = 0
+    dp_task_failures: int = 0
 
 
 @dataclass
@@ -168,7 +181,8 @@ class IndexDb:
         self.settings = settings
         self.tonlib = tonlib
         self.ipfs = ipfs
-        self.stats = MeasurementStore("NFTorrentIndexer", CollectionMeasurement)
+        self.stats = MeasurementStore("NFTorrentIndexer", IndexerMeasurement)
+        self.stats_coll = MeasurementStore("NFTorrentIndexerColl", CollectionMeasurement)
         self.collection_config = collection_config
         self.cache_manager = cache_manager or DisabledCacheManager()
         self.tg_user_queue = asyncio.Queue(maxsize=10000)
@@ -238,7 +252,7 @@ class IndexDb:
         # running tasks
         for c in self.collection_config.collections:
             data = CollectionTaskData(c, instance=self.sync_collection_upsert(c))
-            data.meas = self.stats[StatisticTags(c.b64url)]
+            data.meas = self.stats_coll[StatisticTags(c.b64url)]
             self.collections[c.b64url] = data
             self.indexer_tasks[c.b64url] = self.loop.create_task(self.nft_indexer(data))
             data.instance = self.sync_collection_upsert(c)
@@ -276,6 +290,7 @@ class IndexDb:
         country: str = None,
         language: str = None,
     ):
+        self.stats[StatisticNoTags()].tg_user_queue_adds += 1
         self.tg_user_queue.put_nowait(
             TgUser(
                 owner=owner,
@@ -290,6 +305,7 @@ class IndexDb:
     async def bot_polling(self):
         logger.warning("Bot polling task entering main loop")
         lock_name = f"bot:{self.bot_app.bot_id}"
+        meas: IndexerMeasurement = self.stats[StatisticNoTags()]
 
         while True:
             try:
@@ -305,18 +321,24 @@ class IndexDb:
                     pooling = asyncio.create_task(self.dp.start_polling(self.bot_app.bot, handle_signals=False))
                     refresh = asyncio.create_task(lock.refresh_loop())
                     self.dp_active = True
+                    meas.dp_active = 1
+                    meas.dp_poll_time = int(time.time())
                     try:
                         done, pending = await asyncio.wait([pooling, refresh], return_when=asyncio.FIRST_COMPLETED)
                         if pooling in done and pooling.exception():
+                            meas.dp_task_failures += 1
                             exc = pooling.exception()
                             logger.warning("Bot polling task: polling terminated with error - %s: %s", type(exc).__name__, exc)
                         else:
                             logger.warning("Bot polling task: polling exited")
                         if refresh in done and refresh.exception():
+                            meas.dp_lock_failures += 1
                             exc = refresh.exception()
                             logger.warning("Bot polling task: lock refresh task terminated with error - %s: %s", type(exc).__name__, exc)
                     finally:
                         self.dp_active = False
+                        meas.dp_active = 0
+                        meas.dp_poll_time = 0
                         pooling.cancel()
                         refresh.cancel()
                         await asyncio.gather(pooling, refresh, return_exceptions=True)
@@ -832,7 +854,7 @@ class IndexDb:
         await asyncio.gather(*tasks)
 
     def sync_tg_user_bulk_upsert(self, bulk: list[TgUser]):
-        count = 0
+        creates = errors = 0
         with Session(self.dbengine) as session:
             for user in bulk:
                 ex_user = None
@@ -847,12 +869,15 @@ class IndexDb:
 
                 try:
                     session.add(user)
-                    count += 1
+                    creates += 1
                 except SQLAlchemyError as E:
                     logger.warning("TgUser Queue: User record writing error %s: %s", type(E).__name__, E)
+                    errors += 1
                     pass
             session.commit()
-            logger.info("TgUser Queue: Writren %d User records", count)
+            self.stats[StatisticNoTags()].tg_user_creates += creates
+            self.stats[StatisticNoTags()].tg_user_create_errors += errors
+            logger.info("TgUser Queue: Writren %d User records, errors: %s", creates, errors)
 
     async def process_tg_queue(self, maxsize: int = 100):
         bulk: list[TgUser] = []
@@ -865,6 +890,7 @@ class IndexDb:
                 bulk.append(item)
 
         logger.info("TgUser Queue: Read %d unique User records", len(bulk))
+        self.stats[StatisticNoTags()].tg_user_queue_gets += len(bulk)
         if len(bulk):
             await self.loop.run_in_executor(self.threadpool_executor, self.sync_tg_user_bulk_upsert, bulk)
 
@@ -982,11 +1008,11 @@ class IndexDb:
             "collections": [
                 {"config": x.nft_collection, "blockchain": x.collection_data} for x in self.collections.values()
             ],
-            "stats": self.stats.as_list(),
+            "stats": self.stats.as_list() + self.stats_coll.as_list() + (self.bot_app.backend.stats.as_list() if self.bot_app else []),
         }
 
     def get_measurements(self, timestamp: int) -> list[str]:
-        return self.stats.as_influx(timestamp)
+        return self.stats.as_influx(timestamp) + self.stats_coll.as_influx(timestamp)
 
     def sync_collection_query(self, limit: int = 100, offset: int = None, **kwargs):
         with Session(self.dbengine) as session:

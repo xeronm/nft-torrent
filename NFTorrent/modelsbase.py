@@ -72,7 +72,7 @@ class MeasurementStore(defaultdict):
 
     def as_list(self):
         _timestamp = self.get_timestamp()
-        return [{"tags": asdict(k if is_dataclass(k) else self.default_tag_factory(k)), "fields": asdict(v), "timestamp": _timestamp} for k, v in self.items()]
+        return [{"measurement": self.name, "tags": asdict(k if is_dataclass(k) else self.default_tag_factory(k)), "fields": asdict(v), "timestamp": _timestamp} for k, v in self.items()]
 
     def as_influx(self, timestamp):
         timestamp = timestamp or self.get_timestamp()
@@ -143,12 +143,12 @@ class BaseCollectionInfo(abc.ABC):
 
 @dataclass(frozen=True)
 class CollectionItemCover:
-    baseimage: str
+    baseimage_path: str
     font: str
     subtitle_font: str = None
     title_size: int = 96
     subtitle_size: int = 48
-    offset_top: float = 0.85
+    offset_top: float = 0.875
     color: Any = "black"
     rect_fill: Any = "white"
     rect_padding: tuple[int, int] = (64, 8)

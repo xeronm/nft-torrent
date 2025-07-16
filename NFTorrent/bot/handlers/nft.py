@@ -170,6 +170,13 @@ async def _nvt_view(user: User, message: Message, address: str):
             text=_("NFT <code>{address}</code> not found or not indexed yet.").format(address=address),
         )
     except Exception as E:
+        logger.warning(
+            "Failed to view NFT, user_id: %s, username: %s - %s: %s",
+            user.id,
+            user.username,
+            type(E).__name__,
+            E,
+        )
         await message.answer(
             text=_("Failed to view NFT <code>{address}</code>, error - {errorname}").format(
                 address=address, errorname=type(E).__name__

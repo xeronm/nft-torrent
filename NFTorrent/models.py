@@ -81,6 +81,7 @@ class TonlibWorkerState(BaseModel):
 
 
 class MeasurementItem(BaseModel):
+    measurement: str | None
     tags: dict[str, Any] | None
     fields: dict[str, Any]
     timestamp: int

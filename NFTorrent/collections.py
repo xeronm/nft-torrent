@@ -2,11 +2,12 @@ from NFTorrent.blockchain.models import PetMemoryNftContent, PetsCollectionInfo
 from NFTorrent.modelsbase import CollectionConfig, CollectionInstance, CollectionItemCover
 
 cover = CollectionItemCover(
-    baseimage="./assets/images/collection-logo.webp",
+    baseimage_path="./assets/images/species",
     font="./assets/fonts/Inter_24pt-Bold.ttf",
     subtitle_font="./assets/fonts/Inter_24pt-Regular.ttf",
-    title_size=96,
-    subtitle_size=48,
+    title_size=72,
+    subtitle_size=40,
+    rect_padding=(128, 0),
     rect_fill=(31, 33, 66),
     color="white",
 )
