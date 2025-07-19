@@ -1,18 +1,35 @@
 import asyncio
 import datetime
+import logging
+from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
 
 from aiogram.types import User
+from sqlalchemy import distinct, func
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from NFTorrent.cache import BaseCacheManager
-from NFTorrent.dbmodels import PetMemoryNft, PetsCollection, TgUser, UserInquiry
-from NFTorrent.modelsbase import MeasurementStore, StatisticMeasurement, with_stats
+from NFTorrent.dbmodels import PetMemoryNft, PetsCollection, TgUser, UserInquiry, NftTaskQueue
+from NFTorrent.modelsbase import MeasurementStore, StatisticMeasurement, StatisticNoTags, with_stats
 
 from .main import BackendForbidden, BackendInterface, BaseInquiry, NftListItem
 
 
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class DbStats:
+    users: int = 0
+    wallets: int = 0
+    inquiries: int = 0
+    nfts: int = 0
+    tasks: int = 0
+    task_errors: int = 0
+
+
 class Backend(BackendInterface):
+    check_dbstats_timeout = 60
 
     def __init__(
         self,
@@ -20,7 +37,7 @@ class Backend(BackendInterface):
         loop: asyncio.BaseEventLoop | None = None,
         threadpool_executor: ThreadPoolExecutor | None = None,
         cache_manager: BaseCacheManager | None = None,
-        max_workers: int = 4,
+        max_workers: int = 8,
     ):
         self.dbengine = create_engine(url)
         SQLModel.metadata.create_all(self.dbengine)
@@ -29,13 +46,48 @@ class Backend(BackendInterface):
         self.cache_manager = cache_manager
         self._collection = {}
         self.stats = MeasurementStore("NFTorrentBotBackend", StatisticMeasurement)
+        self.stats_db = MeasurementStore("NFTorrentBotBackendDb", DbStats)
         if cache_manager is not None:
             self.setup_cache()
+        self._cached_dbstats = None
+
+    async def check_dbstats(self):
+        logger.warning("[check_dbstats]: Entering main loop")
+        while True:
+            try:
+                try:
+                    self.stats_db[StatisticNoTags()] = await self.dbstats()
+                except Exception as E:
+                    logger.warning(
+                        "[check_dbstats]: Failed to get node state - %s: %s",
+                        type(E),
+                        E,
+                    )
+
+                await asyncio.sleep(self.check_dbstats_timeout)
+            except asyncio.CancelledError:
+                logger.info("[check_dbstats]: Task was cancelled")
+                return
+            except (Exception, BaseException):
+                logger.exception(
+                    "[check_dbstats]: Unhandled exception, sleep for %d sec",
+                    self.check_dbstats_timeout*5,
+                )
+                await asyncio.sleep(self.check_dbstats_timeout*5)
 
     def setup_cache(self):
-        self.nft_list = with_stats(key="cached_nft_list", stats=self.stats)(self.cache_manager.cached(expire=30)(self.nft_list))
-        self.nft_get = with_stats(key="cached_nft_get", stats=self.stats)(self.cache_manager.cached(expire=30)(self.nft_get))
-        self.inquiry_get = with_stats(key="cached_inquiry_get", stats=self.stats)(self.cache_manager.cached(expire=15)(self.inquiry_get))
+        self.dbstats = with_stats(key="cached_dbstats", stats=self.stats)(
+            self.cache_manager.cached(expire=30)(self.dbstats)
+        )
+        self.nft_list = with_stats(key="cached_nft_list", stats=self.stats)(
+            self.cache_manager.cached(expire=30)(self.nft_list)
+        )
+        self.nft_get = with_stats(key="cached_nft_get", stats=self.stats)(
+            self.cache_manager.cached(expire=30)(self.nft_get)
+        )
+        self.inquiry_get = with_stats(key="cached_inquiry_get", stats=self.stats)(
+            self.cache_manager.cached(expire=15)(self.inquiry_get)
+        )
 
     def sync_get_collection(self, collection_id: int):
         collection = self._collection.get(collection_id)
@@ -46,20 +98,24 @@ class Backend(BackendInterface):
                 self._collection[collection_id] = collection
         return collection
 
-    def sync_inquiry_list(self, user_id: int) -> list[BaseInquiry]:
+    def sync_inquiry_list(self, user_id: int = None, offset: int = 0, limit: int = 20) -> list[BaseInquiry]:
         with Session(self.dbengine) as session:
+            stmt = select(UserInquiry).where(UserInquiry.state.is_not(None))
+            if user_id is not None:
+                stmt = stmt.where(UserInquiry.user_id == user_id)
+
             items = [
                 BaseInquiry(**x.model_dump())
-                for x in session.exec(
-                    select(UserInquiry).where((UserInquiry.user_id == user_id) & (UserInquiry.state.is_not(None)))
-                ).all()
+                for x in session.exec(stmt.order_by(UserInquiry.id).offset(offset).limit(limit)).all()
             ]
         return items
 
     @with_stats()
-    async def inquiry_list(self, user_id: int) -> list[BaseInquiry]:
+    async def inquiry_list(self, user_id: int = None, offset: int = 0, limit: int = 20) -> list[BaseInquiry]:
         if self.threadpool_executor:
-            return await self.loop.run_in_executor(self.threadpool_executor, self.sync_inquiry_list, user_id)
+            return await self.loop.run_in_executor(
+                self.threadpool_executor, self.sync_inquiry_list, user_id, offset, limit
+            )
         else:
             return self.sync_inquiry_list(user_id)
 
@@ -160,8 +216,7 @@ class Backend(BackendInterface):
     def sync_inquiry_get(self, inquiry_id: str) -> BaseInquiry:
         with Session(self.dbengine) as session:
             inquiry = session.exec(select(UserInquiry).where(UserInquiry.inquiry_id == inquiry_id)).one()
-
-            return BaseInquiry(**inquiry.model_dump())
+            return inquiry
 
     @with_stats()
     async def inquiry_get(
@@ -180,7 +235,7 @@ class Backend(BackendInterface):
                 NftListItem(address=x.address, name=x.name, species=x.species, species_name=x.species_name)
                 for x in session.exec(
                     select(PetMemoryNft)
-                    .where((PetMemoryNft.owner.in_(owners) & PetMemoryNft.deleted_time.is_(None)))
+                    .where(PetMemoryNft.owner.in_(owners) & PetMemoryNft.deleted_time.is_(None))
                     .order_by(PetMemoryNft.id)
                     .offset(offset)
                     .limit(limit)
@@ -198,8 +253,7 @@ class Backend(BackendInterface):
     def sync_nft_get(self, address: str = None):
         with Session(self.dbengine) as session:
             nft = session.exec(
-                select(PetMemoryNft)
-                .where(((PetMemoryNft.address == address) & PetMemoryNft.deleted_time.is_(None)))
+                select(PetMemoryNft).where((PetMemoryNft.address == address) & PetMemoryNft.deleted_time.is_(None))
             ).one()
             session.expunge(nft)
             return nft, self.sync_get_collection(nft.collection_id)
@@ -210,3 +264,35 @@ class Backend(BackendInterface):
             return await self.loop.run_in_executor(self.threadpool_executor, self.sync_nft_get, address)
         else:
             return self.sync_nft_get(address)
+
+    def sync_dbstats(self, address: str = None) -> DbStats:
+        with Session(self.dbengine) as session:
+            # users = session.exec(select(func.count()).select_from(TgUser)).scalar()
+            nfts = session.exec(select(func.count()).select_from(PetMemoryNft)).one()
+            inquiries = session.exec(
+                select(func.count()).select_from(UserInquiry).where(UserInquiry.state.is_not(None))
+            ).one()
+
+            users = session.exec(
+                select(
+                    func.count(distinct(TgUser.user_id)).label("users"),
+                    func.count(distinct(TgUser.owner)).label("wallets"),
+                )
+            ).one()
+
+            tasks = session.exec(
+                select(
+                    func.count(NftTaskQueue.task_time).label("tasks"),
+                    func.count(NftTaskQueue.procst_time).label("task_errors"),
+                )
+            ).one()
+
+            return DbStats(users=users[0], wallets=users[1], inquiries=inquiries, nfts=nfts, tasks=tasks[0], task_errors=tasks[1])
+
+    @with_stats()
+    async def dbstats(self) -> DbStats:
+        if self.threadpool_executor:
+            return await self.loop.run_in_executor(self.threadpool_executor, self.sync_dbstats)
+        else:
+            return self.sync_dbstats()
+

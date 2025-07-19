@@ -4,7 +4,7 @@ from functools import wraps
 
 import aiohttp
 import aiohttp.client_exceptions
-from fastapi import FastAPI, Request, Response, status, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.params import Depends
@@ -189,6 +189,37 @@ async def get_ipfs_state():
     return ws.ipfs.get_cached_node_state()
 
 
+@app.get(
+    "/api/v1/ipfs/pins",
+    dependencies=[Depends(ws.jwt_bearer)],  # noqa: B008
+    tags=["ipfs"],
+    response_model=list[models.NftContentPin]
+)
+@wrap_result
+async def get_ipfs_cid_pin():
+    """
+    Get IPFS pin list.
+    """
+    return await ws.ipfs.pin_list()
+
+
+@app.get(
+    "/api/v1/ipfs/cid/{cid}/pin",
+    dependencies=[Depends(ws.jwt_bearer)],  # noqa: B008
+    tags=["ipfs"],
+    response_model=models.NftContentPin
+)
+@wrap_result
+async def get_ipfs_cid_pin(request: models.IpfsCidMethod = Depends()):
+    """
+    Get IPFS CID pin status.
+    """
+    return await ws.ipfs.cid_pin_status(request.cid)
+
+
+
+
+
 if ws.settings.indexdb.enabled:
 
     @app.get(
@@ -275,6 +306,7 @@ async def get_nft_torrent_content(request: models.BaseNftContentMethod = Depends
 
 
 if ws.settings.indexdb.enabled:
+
     @app.get("/api/v1/nft/list", response_model_exclude_none=True, tags=["nft"])
     @wrap_result
     async def list_nft(
@@ -285,7 +317,9 @@ if ws.settings.indexdb.enabled:
         Get NFT Data information.
         """
         if jwt_payload is None:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="valid JWT API key required for this operation")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="valid JWT API key required for this operation"
+            )
         nft_data = await ws.indexer.nft_list(owner=jwt_payload.sub, **request.dict())
         return nft_data
 

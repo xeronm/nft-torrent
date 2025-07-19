@@ -190,7 +190,9 @@ class ContractAPIKeyCookie(APIKeyCookie):
         api_key: str = await super().__call__(request)
         if not api_key:
             if allow_ip:
-                logger.debug('СontractAPIKeyCookie: Not authenticated. Error ignored, since the client_ip matches an allow_networks.')
+                logger.debug(
+                    "СontractAPIKeyCookie: Not authenticated. Error ignored, since the client_ip matches an allow_networks."
+                )
                 return
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authenticated")
 
@@ -198,7 +200,9 @@ class ContractAPIKeyCookie(APIKeyCookie):
             payload = jwt.decode(api_key, self.jwt_secret, audience=self.audience, algorithms=[self.jwt_algorithm])
         except InvalidTokenError as E:
             if allow_ip:
-                logger.debug('СontractAPIKeyCookie: Invalid or expired token. Error ignored, since the client_ip matches an allow_networks.')
+                logger.debug(
+                    "СontractAPIKeyCookie: Invalid or expired token. Error ignored, since the client_ip matches an allow_networks."
+                )
                 return
             logger.info(
                 "ContractAPIKeyCookie: token validation error, token: %s, client_ip: %s, host: %s - %s: %s",  # noqa: E501

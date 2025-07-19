@@ -148,7 +148,7 @@ class PetMemoryNft(SQLModel, table=True):
             collection_address=collection_address,
             image=self.image,
             icons=icons,
-            deleted=self.deleted_time is not None
+            deleted=self.deleted_time is not None,
         )
 
 

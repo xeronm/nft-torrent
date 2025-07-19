@@ -50,11 +50,12 @@ def dict_to_influx(instance: dict):
 
 
 SCHEME_IPFS = "ipfs"
-SUPPORTED_SCHEMES = {'http', 'https', 'ipfs'}
+SUPPORTED_SCHEMES = {"http", "https", "ipfs"}
 
 
 def uri_ipfs(uri: str) -> bool:
     return uri and uri.startswith(f"{SCHEME_IPFS}://")
+
 
 def uri_supported(uri: str) -> bool:
     comp = urlparse(uri)

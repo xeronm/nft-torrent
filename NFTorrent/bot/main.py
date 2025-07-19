@@ -12,9 +12,12 @@ from aiogram.enums import ParseMode
 from aiogram.types import ReplyMarkupUnion, User
 from pydantic import BaseModel
 
-from NFTorrent.utils import parse_ipfs_uri, uri_ipfs
 from NFTorrent.dbmodels import PetMemoryNft, PetsCollection
-
+from NFTorrent.modelsbase import (
+    MeasurementStore,
+    StatisticMeasurement,
+)
+from NFTorrent.utils import parse_ipfs_uri, uri_ipfs, dict_to_influx
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +68,7 @@ class BackendInterface(ABC):
         pass
 
     @abstractmethod
-    async def inquiry_list(self, user_id: int) -> list[BaseInquiry]:
+    async def inquiry_list(self, user_id: int = None) -> list[BaseInquiry]:
         pass
 
     @abstractmethod
@@ -73,13 +76,14 @@ class BackendInterface(ABC):
         pass
 
     @abstractmethod
-    async def nft_list(self, user_id: int = None, offset: int = 0, limit: int = 20) -> tuple[list[str], list[NftListItem]]:
+    async def nft_list(
+        self, user_id: int = None, offset: int = 0, limit: int = 20
+    ) -> tuple[list[str], list[NftListItem]]:
         pass
 
     @abstractmethod
     async def nft_get(self, address: str = None) -> tuple[PetMemoryNft, PetsCollection]:
         pass
-
 
 
 class BotApp:
@@ -96,6 +100,7 @@ class BotApp:
         admin_group_id: int = None,
         backend: BackendInterface = None,
         torrent_file_size_limit=None,
+        node_id: str = "undefined"
     ):
         self.bot_id = token.split(":")[0]
         self.bot = _Bot(token=token, app=self, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
@@ -108,6 +113,8 @@ class BotApp:
         self.admin_group_id = admin_group_id
         self.backend = backend
         self.torrent_file_size_limit = torrent_file_size_limit
+        self.stats = MeasurementStore("NFTorrentBotApp", StatisticMeasurement)
+        self.node_id = node_id
 
     def get_getgems_link(self, collection: str, nft_address: str) -> str:
         return urljoin(self.getgems_authority, f"/collection/{collection}/{nft_address}")
@@ -148,6 +155,16 @@ class BotApp:
     def get_tonviewer_link(self, nft_address: str):
         return urljoin(self.tonviewer_authority, f"/{nft_address}")
 
+    def get_bot_state(self):
+        return (self.stats.as_list() +
+                self.backend.stats.as_list() +
+                self.backend.stats_db.as_list())
+
+    def get_measurements(self, timestamp: int) -> list[str]:
+        return (self.stats.as_influx(timestamp) +
+                self.backend.stats.as_influx(timestamp) +
+                self.backend.stats_db.as_influx(timestamp))
+
 
 class _Bot(Bot):
     def __init__(self, token: str, app: BotApp, **kwargs):
@@ -163,4 +180,4 @@ class MessageDesc:
     reply_markup: ReplyMarkupUnion = None
 
 
-__all__ = ["BotApp", "BackendInterface", "BaseInquiry", "MAX_CAPTION_LENGTH", "bot_stats"]
+__all__ = ["BotApp", "BackendInterface", "BaseInquiry", "MAX_CAPTION_LENGTH"]

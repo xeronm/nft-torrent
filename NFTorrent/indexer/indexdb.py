@@ -6,7 +6,6 @@ import math
 import pickle
 import random
 import time
-
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import (
@@ -22,23 +21,17 @@ from pytonlib import TonlibException
 from sqlalchemy.exc import NoResultFound, SQLAlchemyError
 from sqlmodel import Session, SQLModel, create_engine, delete, select, update
 
-from NFTorrent.bot import BotApp, services, StatisticsMiddleware
+from NFTorrent.bot import BotApp, StatisticsMiddleware, services
 from NFTorrent.bot.handlers import routers
 from NFTorrent.cache import BaseCacheManager, DisabledCacheManager
 from NFTorrent.dbmodels import NftTaskQueue, NftTaskType, PetMemoryNft, PetsCollection, TgUser
+from NFTorrent.imageutils import convert_image
 from NFTorrent.ipfs import IpfsRpcManager
 from NFTorrent.models import CollectionData, NftItemData
-from NFTorrent.modelsbase import (
-    CollectionConfig,
-    CollectionInstance,
-    MeasurementStore,
-    StatisticMeasurement,
-    StatisticNoTags
-)
+from NFTorrent.modelsbase import CollectionConfig, CollectionInstance, MeasurementStore, StatisticNoTags
 from NFTorrent.settings import IndexDbSettings
-from NFTorrent.tonlib import TonlibManager, TonlibRequestError, TonlibContractIsNotNft
+from NFTorrent.tonlib import TonlibContractIsNotNft, TonlibManager, TonlibRequestError
 from NFTorrent.utils import parse_ipfs_uri, uri_ipfs, uri_supported
-from NFTorrent.imageutils import convert_image
 
 logger = logging.getLogger(__name__)
 task_queue_logger = logging.getLogger("NFTorrent.TaskQueue")
@@ -87,6 +80,7 @@ class CollectionTaskData:
     collection_data: CollectionData = None
     instance: PetsCollection = None
     meas: CollectionMeasurement = None
+
 
 class EtcdLockError(Exception):
     pass
@@ -149,9 +143,7 @@ class EtcdPoolLock:
                 await asyncio.sleep(self.lock_ttl / 2)
                 await self.refresh()
             except Exception as E:
-                logger.warning(
-                    'etcd lock "%s", refresh error - %s: %s', self.lock_name, type(E).__name__, E
-                )
+                logger.warning('etcd lock "%s", refresh error - %s: %s', self.lock_name, type(E).__name__, E)
 
 
 class IndexDb:
@@ -167,6 +159,7 @@ class IndexDb:
         self,
         settings: IndexDbSettings,
         bot_app: BotApp = None,
+        bot_polling: bool = True,
         num_workers: int = None,
         restart_timeout: int = None,
         cache_manager: BaseCacheManager | None = None,
@@ -224,29 +217,32 @@ class IndexDb:
         self.dp = None
         self.dp_active = False
         if self.bot_app:
-            self.tasks["bot_polling"] = self.loop.create_task(self.bot_polling())
-            self.dp = Dispatcher(storage=MemoryStorage())
-            self.dp.include_routers(*routers)
+            self.tasks["check_dbstats"] = self.loop.create_task(self.bot_app.backend.check_dbstats())
+            if bot_polling:
+                self.tasks["bot_polling"] = self.loop.create_task(self.bot_polling())
+                self.dp = Dispatcher(storage=MemoryStorage())
+                self.dp.include_routers(*routers)
 
-            self.dp_stats = MeasurementStore("NFTorrentBotDp", StatisticMeasurement)
-            self.dp.message.middleware(StatisticsMiddleware(stats_store=self.dp_stats))
-            self.dp.callback_query.middleware(StatisticsMiddleware(stats_store=self.dp_stats))
+                self.dp.message.middleware(StatisticsMiddleware(stats_store=self.bot_app.stats))
+                self.dp.callback_query.middleware(StatisticsMiddleware(stats_store=self.bot_app.stats))
 
-            logger.warning(
-                "Bot task intialized... bot_id: %s",
-                self.bot_app.bot_id,
-            )
+                logger.warning(
+                    "Bot polling task intialized... bot_id: %s",
+                    self.bot_app.bot_id,
+                )
+            else:
+                logger.warning("Bot poling task not started, since bot_polling: %s", bot_polling)
 
             if self.settings.task_queue_bulk_size:
                 self.tasks["nft_task_processor"] = self.loop.create_task(self.nft_task_processor())
             else:
                 logger.warning(
-                    "NFT scheduled task processor not started, cause task_queue_bulk_size: %d",
+                    "NFT scheduled task processor not started, since task_queue_bulk_size: %s",
                     self.settings.task_queue_bulk_size,
                 )
         else:
             logger.warning(
-                "Bot poling task not started, BotApp not provided",
+                "BotApp not provided, NFT scheduled task processor and Bot polling task won`t start.",
             )
 
         # running tasks
@@ -262,7 +258,7 @@ class IndexDb:
         if self.dp:
             try:
                 await self.dp.stop_polling()
-            except:
+            except Exception:
                 pass
         await self.tg_user_queue.join()
         for task in self.indexer_tasks.values():
@@ -328,13 +324,19 @@ class IndexDb:
                         if pooling in done and pooling.exception():
                             meas.dp_task_failures += 1
                             exc = pooling.exception()
-                            logger.warning("Bot polling task: polling terminated with error - %s: %s", type(exc).__name__, exc)
+                            logger.warning(
+                                "Bot polling task: polling terminated with error - %s: %s", type(exc).__name__, exc
+                            )
                         else:
                             logger.warning("Bot polling task: polling exited")
                         if refresh in done and refresh.exception():
                             meas.dp_lock_failures += 1
                             exc = refresh.exception()
-                            logger.warning("Bot polling task: lock refresh task terminated with error - %s: %s", type(exc).__name__, exc)
+                            logger.warning(
+                                "Bot polling task: lock refresh task terminated with error - %s: %s",
+                                type(exc).__name__,
+                                exc,
+                            )
                     finally:
                         self.dp_active = False
                         meas.dp_active = 0
@@ -419,10 +421,7 @@ class IndexDb:
         nft = None
         with Session(self.dbengine) as session:
             try:
-                nft = session.exec(
-                    select(PetMemoryNft)
-                    .where(PetMemoryNft.address == address)
-                ).one()
+                nft = session.exec(select(PetMemoryNft).where(PetMemoryNft.address == address)).one()
                 session.expunge(nft)
             except NoResultFound:
                 pass
@@ -452,8 +451,14 @@ class IndexDb:
     async def nft_update_nft_data(self, address: str, nft_data: NftItemData = None):
         # TODO: Shoud rewrite to queue and bulk operations
         nft = await self.nft_get(address)
+        if nft is not None:
+            if uri_ipfs(nft.image):
+                prev_cid, _, _ = parse_ipfs_uri(nft.image)
+
         if nft_data is None:
             if nft is not None:
+                if prev_cid:
+                    await self.ipfs.nft_unlink(prev_cid, nft.address)
                 cdata = self.collections_id.get(nft.collection_id)
                 cdata.meas.nft_sync_deletes += 1
                 nft.deleted_time = datetime.datetime.now(datetime.timezone.utc)
@@ -477,6 +482,9 @@ class IndexDb:
         if nft._nft_image_updated:
             if uri_ipfs(nft.image):
                 cid, _, _ = parse_ipfs_uri(nft.image)
+                if prev_cid != cid:
+                    await self.ipfs.nft_unlink(prev_cid, nft.address)
+
             if cid:
                 torrent_info = await self.ipfs.get_cid_info(cid)
                 nft.torrent_info = pickle.dumps(torrent_info)
@@ -510,9 +518,9 @@ class IndexDb:
                 nft_data = None
                 try:
                     nft_data = await self.tonlib.get_nft_data(nft.address, skip_verification=True)
-                except TonlibContractIsNotNft as E:
+                except TonlibContractIsNotNft:
                     account_state = await self.tonlib.generic_get_account_state(nft.address)
-                    if (account_state['account_state']['@type'] != "uninited.accountState"):
+                    if account_state["account_state"]["@type"] != "uninited.accountState":
                         raise
 
                 if nft_data is None:
@@ -638,7 +646,14 @@ class IndexDb:
                     if task.task_type in [NftTaskType.NOTIFY_UPDATED, NftTaskType.NOTIFY_TRANSFERED]:
                         coldata.meas.nft_notif_updates += 1
                         await services.nft.nft_preview(self.bot_app, nft, collection, user)
-                        await services.nft.notify_nft_updated(self.bot_app, nft, collection, user, keyboard=True, transfered=(task.task_type == NftTaskType.NOTIFY_TRANSFERED))
+                        await services.nft.notify_nft_updated(
+                            self.bot_app,
+                            nft,
+                            collection,
+                            user,
+                            keyboard=True,
+                            transfered=(task.task_type == NftTaskType.NOTIFY_TRANSFERED),
+                        )
 
                     task_queue_logger.info(
                         "nft task done - task_id: %s, type: %d, collection: %s, index: %d, nft: %s",
@@ -732,7 +747,6 @@ class IndexDb:
 
         data.meas.last_checked = int(time.time())
 
-
     async def nft_indexer(self, data: CollectionTaskData):
         address = data.nft_collection.b64url
         logger.warning("[%s]: Indexer task entering main loop", address)
@@ -754,7 +768,12 @@ class IndexDb:
                         done, pending = await asyncio.wait([cycle, refresh], return_when=asyncio.FIRST_COMPLETED)
                         if refresh in done and refresh.exception():
                             exc = refresh.exception()
-                            logger.warning("[%s]: lock refresh task terminated with error - %s: %s", address, type(exc).__name__, exc)
+                            logger.warning(
+                                "[%s]: lock refresh task terminated with error - %s: %s",
+                                address,
+                                type(exc).__name__,
+                                exc,
+                            )
                         if cycle in done and cycle.exception():
                             raise cycle.exception()
                     finally:
@@ -1006,13 +1025,19 @@ class IndexDb:
     def get_indexdb_state(self):
         return {
             "collections": [
-                {"config": x.nft_collection, "blockchain": x.collection_data} for x in self.collections.values()
+                {"address": x.nft_collection.b64url, "blockchain": x.collection_data} for x in self.collections.values()
             ],
-            "stats": self.stats.as_list() + self.stats_coll.as_list() + (self.bot_app.backend.stats.as_list() if self.bot_app else []),
+            "stats": self.stats.as_list()
+            + self.stats_coll.as_list()
+            + self.bot_app.get_bot_state() if self.bot_app else [],
         }
 
     def get_measurements(self, timestamp: int) -> list[str]:
-        return self.stats.as_influx(timestamp) + self.stats_coll.as_influx(timestamp)
+        return (
+            self.stats.as_influx(timestamp)
+            + self.stats_coll.as_influx(timestamp)
+            + self.bot_app.get_measurements(timestamp) if self.bot_app else []
+        )
 
     def sync_collection_query(self, limit: int = 100, offset: int = None, **kwargs):
         with Session(self.dbengine) as session:
@@ -1050,7 +1075,9 @@ class IndexDb:
             x0 = p0 = segment_size * n
             x1 = p1 = p0 + segment_size
 
-            select_stmt = select(PetMemoryNft).where((PetMemoryNft.error_time.is_(None) & PetMemoryNft.deleted_time.is_(None)))
+            select_stmt = select(PetMemoryNft).where(
+                PetMemoryNft.error_time.is_(None) & PetMemoryNft.deleted_time.is_(None)
+            )
             for col, value in kwargs.items():
                 if value is not None:
                     select_stmt = select_stmt.where(getattr(PetMemoryNft, col) == value)

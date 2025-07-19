@@ -1,1 +1,1 @@
-from . import nft
+from . import nft  # noqa: F401

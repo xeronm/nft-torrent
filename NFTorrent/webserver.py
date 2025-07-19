@@ -1,11 +1,11 @@
 import asyncio
 import io
-import os
 import logging
 import logging.config
+import os
 import time
-from typing import Any
 from dataclasses import asdict
+from typing import Any
 from urllib.parse import urljoin
 
 from fastapi import Request, status
@@ -16,18 +16,32 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Stre
 from NFTorrent.auth import ContractAPIKeyCookie, NodeJWTBearer
 from NFTorrent.bot import Backend, BotApp
 from NFTorrent.cache import DisabledCacheManager
+from NFTorrent.imageutils import generate_cover
 from NFTorrent.indexer import IndexDb
 from NFTorrent.ipfs import IpfsRpcManager
 from NFTorrent.models import HealthCheckResult, NftContentState, torrent_digest
 from NFTorrent.modelsbase import CollectionConfig
 from NFTorrent.settings import Settings
-from NFTorrent.tonlib import TonlibManager, TonlibContractIsNotNft
+from NFTorrent.tonlib import TonlibContractIsNotNft, TonlibManager
 from NFTorrent.utils import dict_to_influx, guess_type, parse_ipfs_uri, uri_ipfs, uri_supported
-from NFTorrent.imageutils import generate_cover
 
 logger = logging.getLogger(__name__)
 
-SPECIES_LOGO = ["Other", "Dog", "Cat", "Hamster", "Rabbit", "Parrot", "Fish", "Turtle", "Reptile", "Horse", "Hendehog", "Mouse" ]
+SPECIES_LOGO = [
+    "Other",
+    "Dog",
+    "Cat",
+    "Hamster",
+    "Rabbit",
+    "Parrot",
+    "Fish",
+    "Turtle",
+    "Reptile",
+    "Horse",
+    "Hendehog",
+    "Mouse",
+]
+
 
 class Server:
 
@@ -120,6 +134,7 @@ class Server:
             self.indexer = IndexDb(
                 self.settings.indexdb,
                 bot_app=self.bot_app,
+                bot_polling=self.settings.webserver.bot_polling,
                 cache_manager=cache_manager,
                 loop=loop,
                 tonlib=self.tonlib,
@@ -191,9 +206,6 @@ class Server:
             measurements += self.ipfs.get_measurements(timestamp)
         if self.indexer is not None:
             measurements += self.indexer.get_measurements(timestamp)
-        if self.bot_app is not None:
-            measurements += self.indexer.dp_stats.as_influx(timestamp)
-            measurements += self.bot_app.backend.stats.as_influx(timestamp)
         return measurements
 
     async def get_nft_content(self, request: Request, address: str, query: str = None):
@@ -252,14 +264,15 @@ class Server:
         nft_collection = self.collection_config.get_collection(nft_data.collection_address)
         if nft_collection.item_cover:
             kwargs = asdict(nft_collection.item_cover)
-            species_name = SPECIES_LOGO[nft_content.imm_data.species] if nft_content.imm_data.species < len(SPECIES_LOGO) else SPECIES_LOGO[0]
-            baseimage = os.path.join(kwargs.pop('baseimage_path'), f"{species_name}.webp")
+            species_name = (
+                SPECIES_LOGO[nft_content.imm_data.species]
+                if nft_content.imm_data.species < len(SPECIES_LOGO)
+                else SPECIES_LOGO[0]
+            )
+            baseimage = os.path.join(kwargs.pop("baseimage_path"), f"{species_name}.webp")
             image = generate_cover(
-                baseimage=baseimage,
-                title=nft_content.title(),
-                subtitle=nft_content.subtitle(),
-                format="webp",
-                **kwargs)
+                baseimage=baseimage, title=nft_content.title(), subtitle=nft_content.subtitle(), format="webp", **kwargs
+            )
             return StreamingResponse(
                 io.BytesIO(image),
                 media_type="image/webp",
@@ -295,7 +308,7 @@ class Server:
         except TonlibContractIsNotNft:
             nft_data = None
             account_state = await self.tonlib.generic_get_account_state(address)
-            if (account_state['account_state']['@type'] == "uninited.accountState"):
+            if account_state["account_state"]["@type"] == "uninited.accountState":
                 # looks as if NFT was destroyed
                 await self.indexer.nft_update_nft_data(address)
                 return
@@ -308,12 +321,8 @@ class Server:
                 cid, _, _ = parse_ipfs_uri(image)
                 if cid:
                     pin_status = await self.ipfs.cid_pin_status(cid=cid)
-                    if (
-                        nft_content.storage_due_time() > (pin_status.expires if pin_status else time.time())
-                    ):
-                        self.loop.create_task(
-                            self.ipfs.confirm_content(address, old_cid=None, cid=cid)
-                        )
+                    if nft_content.storage_due_time() > (pin_status.expires if pin_status else time.time()):
+                        self.loop.create_task(self.ipfs.confirm_content(address, old_cid=None, cid=cid))
             await self.indexer.nft_update_nft_data(address, nft_data)
 
     async def get_nft_cid_info(self, address: str, digest: str = None):

@@ -1,5 +1,5 @@
-from . import inquiry, nft
+from . import admin, inquiry, nft
 
-routers = [inquiry.router, nft.router]
+routers = [inquiry.router, nft.router, admin.router]
 
 __all__ = ["routers"]

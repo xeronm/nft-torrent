@@ -1,4 +1,3 @@
-import base64
 import datetime
 import logging
 import secrets
@@ -7,7 +6,7 @@ from functools import partial
 from aiogram import F, Router
 from aiogram.filters import Command, CommandObject
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, LinkPreviewOptions, Message, InputMediaPhoto
+from aiogram.types import CallbackQuery, InputMediaPhoto, LinkPreviewOptions, Message
 from babel.dates import format_datetime
 
 from NFTorrent.modelsbase import TonAddress
@@ -23,7 +22,7 @@ router = Router()
 
 
 def random_inquiry_id():
-    return base64.urlsafe_b64encode(secrets.token_bytes(15)).decode()
+    return secrets.token_urlsafe(15).replace("-", "_")[:16]
 
 
 @router.message(Command("get_id"))
@@ -45,9 +44,10 @@ async def context_lost(callback: CallbackQuery):
     await callback.bot.edit_message_reply_markup(
         chat_id=callback.message.chat.id, message_id=callback.message.message_id, reply_markup=None
     )
-    await callback.answer(
-        _("⚠️ Your Inquiry session has timed out. Please start a new one with /inquiry."), show_alert=False,
+    await callback.message.answer(
+        _("⚠️ Your Inquiry session has expired. Please start a new one with /inquiry."),
     )
+    await callback.answer()
 
 
 async def callback_validate_inquiry(inquiry: BaseInquiry, callback: CallbackQuery, verify_blocked: bool = True):
@@ -56,12 +56,12 @@ async def callback_validate_inquiry(inquiry: BaseInquiry, callback: CallbackQuer
         await callback.bot.edit_message_reply_markup(
             chat_id=callback.message.chat.id, message_id=callback.message.message_id, reply_markup=None
         )
-        # await callback.message.answer(
-        #     _("⚠️ This inquiry has already been <b>closed</b> and cannot be updated."),
-        # )
-        await callback.answer(
-            _("⚠️ This inquiry has already been closed and cannot be updated."), show_alert=False,
+        await callback.message.answer(
+            _("⚠️ The inquiry #R{inquiry_num:06d} has already been closed and cannot be updated.").format(
+                inquiry_num=inquiry.id
+            ),
         )
+        await callback.answer()
         return False
 
     curr_time = datetime.datetime.now(datetime.timezone.utc)
@@ -89,13 +89,14 @@ async def callback_validate_inquiry(inquiry: BaseInquiry, callback: CallbackQuer
 #
 @router.callback_query(InquiryReplyCallback.filter(F.user_id == 0))
 async def user_reply_inquiry(callback: CallbackQuery, callback_data: InquiryReplyCallback, state: FSMContext):
-    _ = partial(gettext, callback_data.lang)
+    _ = partial(gettext, callback.from_user.language_code)
     bot: _Bot = callback.bot
     try:
         inquiry = await bot.app.backend.inquiry_get(inquiry_id=callback_data.inquiry_id)
     except Exception as E:
         logger.warning(
-            "Inquiry get error, user_id: %s, username: %s - %s: %s",
+            "Inquiry get error, inquiry_id: %s, user_id: %s, username: %s - %s: %s",
+            callback_data.inquiry_id,
             callback.from_user.id,
             callback.from_user.username,
             type(E).__name__,
@@ -186,10 +187,10 @@ async def user_get_reply(message: Message, state: FSMContext):
             await bot.send_message(
                 bot.app.admin_group_id,
                 _(
-                    "📩 Inquiry #R{inquiry_num:06d} from user @{username} has received a <b>Reply</b> from the user with the following message\n"
+                    "📩 Inquiry #R{inquiry_num:06d} from user @{username} has received a <b>Reply</b> from the user with the following message\n\n{message}"
                 ).format(inquiry_num=inquiry.id, username=inquiry.username, message=message.text),
                 reply_markup=inquiry_admin_kb(
-                    inquiry_id=inquiry_id, message_id=message.message_id, user=message.from_user, gettext=_
+                    inquiry_id=inquiry_id, message_id=message.message_id, user_id=message.from_user.id, gettext=_
                 ),
                 link_preview_options=LinkPreviewOptions(is_disabled=True),
             )
@@ -229,7 +230,7 @@ async def admin_reply_inquiry(callback: CallbackQuery, callback_data: InquiryRep
         )
         return
 
-    _ = partial(gettext, callback_data.lang)
+    _ = partial(gettext, callback.from_user.language_code)
 
     bot: _Bot = callback.bot
     try:
@@ -266,7 +267,6 @@ async def admin_reply_inquiry(callback: CallbackQuery, callback_data: InquiryRep
         user_id=callback_data.user_id,
         message_id=callback_data.message_id,
         callback_message_id=callback.message.message_id,
-        lang=callback_data.lang,
     )
     await callback.message.reply(
         _(
@@ -276,7 +276,7 @@ async def admin_reply_inquiry(callback: CallbackQuery, callback_data: InquiryRep
             inquiry_num=inquiry.id,
             username=inquiry.username,
             action_message=action_message,
-            lang=callback_data.lang.upper(),
+            lang=inquiry.language.upper(),
         ),
     )
     await callback.answer()
@@ -304,7 +304,7 @@ async def admin_get_reply(message: Message, state: FSMContext):
     user_id = data["user_id"]
     message_id = data["message_id"]
     inquiry_id = data["inquiry_id"]
-    _ = partial(gettext, data["lang"])
+    _ = partial(gettext, message.from_user.language_code)
     try:
         inquiry = None
         try:
@@ -423,7 +423,7 @@ async def start_inquiry(message: Message, state: FSMContext):
             " • Message\n"
             " • NFT address (optional)\n"
             " • Screenshot (optional)\n\n"
-        ),
+        ).format(inquiry_id=inquiry_id),
         reply_markup=new_inquiry_kb(inquiry_id=inquiry_id, gettext=_),
     )
     await message.answer(
@@ -468,12 +468,13 @@ async def get_address(message: Message, state: FSMContext):
         address = TonAddress(message.text.strip())
     except Exception:
         await message.answer(
-            _("The input you provided is not a valid TON address. Please send a valid <b>NFT address</b>, or proceed to the /next step."),
+            _(
+                "The input you provided is not a valid TON address. Please send a valid <b>NFT address</b>, or proceed to the /next step."
+            ),
         )
         return
     await state.update_data(nft_address=address.b64url)
     await query_screenshot(message, state)
-
 
 
 @router.message(InquiryForm.screenshot, F.photo)
@@ -484,7 +485,9 @@ async def get_screenshot(message: Message, state: FSMContext):
     images.append(message.photo[-1].file_id)
     await state.update_data(images=images)
     await message.answer(
-        _("Got {count} images. You can optionally add another <b>Screenshot</b> or simply proceed to the /next step.").format(count=len(images)),
+        _(
+            "Got {count} images. You can optionally add another <b>Screenshot</b> or simply proceed to the /next step."
+        ).format(count=len(images)),
     )
 
 
@@ -550,29 +553,25 @@ async def submit_inquiry(callback: CallbackQuery, callback_data: InquiryCallback
     address = data.get("nft_address")
     nft_info = ""
     if address:
-        nft_info = (
-            f'NFT: <code>{address}</code> - <a href="{bot.app.get_tonviewer_link(address)}">Tonviewer</a>\n\n'
-        )
-    caption = _("🆕 Inquiry #R{inquiry_num:06d} from user @{username}:\n\n<b>{subject}</b>").format(inquiry_num=inquiry_num, username=callback.from_user.username, subject=subject)
-    inquiry_body = (
-        "{caption}\n\n{nft_info}{message}"
-    ).format(caption=caption, nft_info=nft_info, message=message)
+        nft_info = f'NFT: <code>{address}</code> - <a href="{bot.app.get_tonviewer_link(address)}">Tonviewer</a>\n\n'
+    caption = _("🆕 Inquiry #R{inquiry_num:06d} from user @{username}:\n\n<b>{subject}</b>").format(
+        inquiry_num=inquiry_num, username=callback.from_user.username, subject=subject
+    )
+    inquiry_body = f"{caption}\n\n{nft_info}{message}"
 
     # Send to admin channel
     if images:
-        media = [InputMediaPhoto(
-                    media=file_id,
-                    caption=caption if i == 0 and caption else None,
-                    parse_mode="HTML"
-                )
-                for i, file_id in enumerate(images)]
+        media = [
+            InputMediaPhoto(media=file_id, caption=caption if i == 0 and caption else None, parse_mode="HTML")
+            for i, file_id in enumerate(images)
+        ]
         await bot.send_media_group(chat_id=bot.app.admin_group_id, media=media)
 
     admin_message = await bot.send_message(
         bot.app.admin_group_id,
         inquiry_body,
         reply_markup=inquiry_admin_kb(
-            inquiry_id=inquiry_id, message_id=callback.message.message_id, user=callback.from_user, gettext=_
+            inquiry_id=inquiry_id, message_id=callback.message.message_id, user_id=callback.from_user.id, gettext=_
         ),
         link_preview_options=LinkPreviewOptions(is_disabled=True),
     )

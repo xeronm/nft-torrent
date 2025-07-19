@@ -9,9 +9,10 @@ from babel.dates import format_date
 from NFTorrent.dbmodels import PetMemoryNft, PetsCollection, TgUser
 from NFTorrent.models import NftContentInfo
 from NFTorrent.translations import gettext
+from NFTorrent.utils import uri_supported
 
 from ..keyboards.nft import main_nft_kb
-from ..main import BotApp, MAX_CAPTION_LENGTH
+from ..main import MAX_CAPTION_LENGTH, BotApp
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +56,12 @@ async def notify_nft_minted(
 
 
 async def notify_nft_updated(
-    app: BotApp, nft: PetMemoryNft, collection: PetsCollection, user: TgUser, keyboard: bool = False, transfered: bool = True
+    app: BotApp,
+    nft: PetMemoryNft,
+    collection: PetsCollection,
+    user: TgUser,
+    keyboard: bool = False,
+    transfered: bool = True,
 ):
     _ = partial(gettext, user.language)
 
@@ -71,7 +77,8 @@ async def notify_nft_updated(
 
     message = (
         (
-            _("✨ You've just received an memorial NFT transferred from another owner\n\n") if transfered
+            _("✨ You've just received an memorial NFT transferred from another owner\n\n")
+            if transfered
             else _("✨ You have just updated memorial NFT\n\n")
         )
         + _('<code>{nft_address}</code> - <a href="{tonviewer_link}">Tonviewer</a>\n\n{storage_due_time}')
@@ -128,7 +135,8 @@ async def nft_preview(
             ]
         else:
             media_urls = [app.get_petsmem_content_link(nft.address, digest=torrent_info.digest)]
-    elif nft.image or nft.image_data:
+    # elif (nft.image and uri_supported(nft.image)) or nft.image_data:
+    else:
         media_urls = [app.get_petsmem_content_link(nft.address)]
 
     try:

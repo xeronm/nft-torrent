@@ -6,8 +6,24 @@ from tonpy.types import CellSlice
 from ..modelsbase import BaseNftContent
 from .encoders import bcd2c_to_string, date_mask_to_string, flatten_snake_cell
 
-
-SPECIES = ["Other", "Dog", "Cat", "Hamster/Guinea Pig", "Rabbit", "Parrot", "Fish", "Turtle", "Reptile", "Horse/Pony", "Reserved", "Reserved", "Reserved", "Reserved", "Reserved", "Reserved", ]
+SPECIES = [
+    "Other",
+    "Dog",
+    "Cat",
+    "Hamster/Guinea Pig",
+    "Rabbit",
+    "Parrot",
+    "Fish",
+    "Turtle",
+    "Reptile",
+    "Horse/Pony",
+    "Reserved",
+    "Reserved",
+    "Reserved",
+    "Reserved",
+    "Reserved",
+    "Reserved",
+]
 
 
 @dataclass
@@ -175,7 +191,7 @@ class PetsCollectionInfo:
 
     @classmethod
     def from_tvm(cls, stack: list):
-        if len(stack) not in  [8, 9]:
+        if len(stack) not in [8, 9]:
             raise ValueError(f"Invalid PetsCollectionInfo response length: {len(stack)}")
 
         minter = None

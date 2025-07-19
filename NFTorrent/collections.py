@@ -26,8 +26,7 @@ config = CollectionConfig(
                 "description": "Transform your memories into living digital artifacts — timeless, immutable and authentic, powered by blockchain technology. Share your story with those who'll truly understand, inspire others, and preserve what matters most in a world where nothing truly disappears.\nBecause some stories are too precious to remain just another photo in your smartphone gallery.",
                 "attributes": [],
             },
-            nft_samples={
-            },
+            nft_samples={},
         ),
     ],
 )
