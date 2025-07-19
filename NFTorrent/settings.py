@@ -68,6 +68,7 @@ class WebServerSettings:
     remote_api_root: str = None
     public_addr: str = None
     twa_domains: list[str] = None
+    bot_polling: bool = True
     bot_token: str = None
     bot_admin_group_id: int = None
     allow_origins: list[str] = None
@@ -88,6 +89,7 @@ class WebServerSettings:
         obj.public_addr = os.environ.get("HTTP_PUBLIC_ADDR", "127.0.0.1")
         obj.jwt_secret = _value_from_file(os.environ.get("HTTP_API_JWT_SECRET", None))
         obj.jwt_algorithm = os.environ.get("HTTP_API_JWT_ALGORITHM", "HS256")
+        obj.bot_polling = strtobool(os.environ.get("HTTP_TWA_BOT_POLL", "true"))
         obj.bot_token = _value_from_file(os.environ.get("HTTP_TWA_BOT_TOKEN", None))
         obj.bot_admin_group_id = os.environ.get("HTTP_TWA_BOT_ADMIN_GROUP_ID")
         if obj.bot_admin_group_id:

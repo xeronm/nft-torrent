@@ -8,7 +8,6 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from NFTorrent.bot import Backend, BotApp, StatisticsMiddleware
 from NFTorrent.bot.handlers import routers
 from NFTorrent.cache import MemoryCacheManager, MemoryCacheSettings
-from NFTorrent.modelsbase import MeasurementStore, StatisticMeasurement
 
 token = os.environ["CI_BOT_TOKEN"]
 dbpassword = os.environ["CI_DATABASE_PASSWORD"]
@@ -29,14 +28,13 @@ def main():
 
         dp = Dispatcher(storage=MemoryStorage())
 
-        stats = MeasurementStore("NFTorrentBotDp", StatisticMeasurement)
         dp.include_routers(*routers)
-        dp.message.middleware(StatisticsMiddleware(stats_store=stats))
-        dp.callback_query.middleware(StatisticsMiddleware(stats_store=stats))
+        dp.message.middleware(StatisticsMiddleware(stats_store=bot.stats))
+        dp.callback_query.middleware(StatisticsMiddleware(stats_store=bot.stats))
 
         await dp.start_polling(bot.bot)
 
-        print(stats.as_influx(time.time()))
+        print(bot.stats.as_influx(time.time()))
         print(bot.backend.stats.as_influx(time.time()))
 
     print("Starting test Bot...")

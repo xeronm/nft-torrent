@@ -3,13 +3,12 @@ import datetime
 import json
 import logging
 import time
-from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlencode, urljoin
 
 import aiohttp
-from fastapi import HTTPException, UploadFile, status
 from dateutil.parser import isoparse
+from fastapi import HTTPException, UploadFile, status
 
 from NFTorrent import exceptions, models
 from NFTorrent.cache import BaseCacheManager, DisabledCacheManager
@@ -103,9 +102,15 @@ class IpfsRpcManager:
         self.cluster.close()
 
     def setup_cache(self):
-        self.get_cid_file = with_stats(key="cached_get_cid_file", stats=self.stats)(self.cache_manager.cached(expire=15)(self.get_cid_file))
-        self.get_cid_info = with_stats(key="cached_get_cid_info", stats=self.stats)(self.cache_manager.cached(expire=60)(self.get_cid_info))
-        self.cid_pin_status = with_stats(key="cached_cid_pin_status", stats=self.stats)(self.cache_manager.cached(expire=30)(self.cid_pin_status))
+        self.get_cid_file = with_stats(key="cached_get_cid_file", stats=self.stats)(
+            self.cache_manager.cached(expire=15)(self.get_cid_file)
+        )
+        self.get_cid_info = with_stats(key="cached_get_cid_info", stats=self.stats)(
+            self.cache_manager.cached(expire=60)(self.get_cid_info)
+        )
+        self.cid_pin_status = with_stats(key="cached_cid_pin_status", stats=self.stats)(
+            self.cache_manager.cached(expire=30)(self.cid_pin_status)
+        )
 
     async def check_ipfs_alive(self):
         logger.warning("[check_ipfs_alive]: Entering main loop")
@@ -145,7 +150,6 @@ class IpfsRpcManager:
         if raise_error and not cid:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
         return cid, nft_content
-
 
     async def call_rpc_method(
         self,
@@ -213,9 +217,7 @@ class IpfsRpcManager:
         name = name or ""
         if self.settings.cluster_rpc_uri:
             expire_at_str = (
-                datetime.datetime.fromtimestamp(expire_at, tz=datetime.timezone.utc).isoformat()
-                if expire_at
-                else ""
+                datetime.datetime.fromtimestamp(expire_at, tz=datetime.timezone.utc).isoformat() if expire_at else ""
             )
             query_params = {
                 "mode": "recursive",
@@ -357,9 +359,7 @@ class IpfsRpcManager:
         content = models.NftContentInfo(
             hash=_content["Hash"],
             size=0,
-            files=[
-                models.NftContentFile(name=x["Name"], size=x["Size"], hash=x["Hash"]) for x in _content["Links"]
-            ],
+            files=[models.NftContentFile(name=x["Name"], size=x["Size"], hash=x["Hash"]) for x in _content["Links"]],
         )
         content.size = sum([x.size for x in content.files])
         content.make_digest()

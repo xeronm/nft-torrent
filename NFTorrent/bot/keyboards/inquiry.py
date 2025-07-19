@@ -1,4 +1,4 @@
-from aiogram.types import InlineKeyboardButton, User
+from aiogram.types import InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardMarkup
 
 from ..states.inquiry import InquiryAction, InquiryCallback, InquiryReplyCallback
@@ -41,15 +41,14 @@ def inquiry_user_kb(inquiry_id: int = None, message_id: int = None, gettext=None
     return InlineKeyboardMarkup(inline_keyboard=[row1])
 
 
-def inquiry_admin_kb(inquiry_id: int = None, user: User = None, message_id: int = None, gettext=None):
+def inquiry_admin_kb(inquiry_id: int = None, user_id: int = None, message_id: int = None, gettext=None):
     _ = gettext or (lambda x: x)
     row1 = [
         InlineKeyboardButton(
             text=_("Reply"),
             callback_data=InquiryReplyCallback(
                 inquiry_id=inquiry_id,
-                user_id=user.id,
-                lang=user.language_code,
+                user_id=user_id,
                 message_id=message_id,
                 action=InquiryAction.Reply.value,
             ).pack(),
@@ -58,8 +57,7 @@ def inquiry_admin_kb(inquiry_id: int = None, user: User = None, message_id: int 
             text=_("Close"),
             callback_data=InquiryReplyCallback(
                 inquiry_id=inquiry_id,
-                user_id=user.id,
-                lang=user.language_code,
+                user_id=user_id,
                 message_id=message_id,
                 action=InquiryAction.Close.value,
             ).pack(),
@@ -68,8 +66,7 @@ def inquiry_admin_kb(inquiry_id: int = None, user: User = None, message_id: int 
             text=_("Block"),
             callback_data=InquiryReplyCallback(
                 inquiry_id=inquiry_id,
-                user_id=user.id,
-                lang=user.language_code,
+                user_id=user_id,
                 message_id=message_id,
                 action=InquiryAction.BlockUser.value,
             ).pack(),

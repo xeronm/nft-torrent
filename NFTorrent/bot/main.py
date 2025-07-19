@@ -12,9 +12,12 @@ from aiogram.enums import ParseMode
 from aiogram.types import ReplyMarkupUnion, User
 from pydantic import BaseModel
 
-from NFTorrent.utils import parse_ipfs_uri, uri_ipfs
 from NFTorrent.dbmodels import PetMemoryNft, PetsCollection
-
+from NFTorrent.modelsbase import (
+    MeasurementStore,
+    StatisticMeasurement,
+)
+from NFTorrent.utils import parse_ipfs_uri, uri_ipfs
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +68,7 @@ class BackendInterface(ABC):
         pass
 
     @abstractmethod
-    async def inquiry_list(self, user_id: int) -> list[BaseInquiry]:
+    async def inquiry_list(self, user_id: int = None) -> list[BaseInquiry]:
         pass
 
     @abstractmethod
@@ -73,13 +76,14 @@ class BackendInterface(ABC):
         pass
 
     @abstractmethod
-    async def nft_list(self, user_id: int = None, offset: int = 0, limit: int = 20) -> tuple[list[str], list[NftListItem]]:
+    async def nft_list(
+        self, user_id: int = None, offset: int = 0, limit: int = 20
+    ) -> tuple[list[str], list[NftListItem]]:
         pass
 
     @abstractmethod
     async def nft_get(self, address: str = None) -> tuple[PetMemoryNft, PetsCollection]:
         pass
-
 
 
 class BotApp:
@@ -108,6 +112,7 @@ class BotApp:
         self.admin_group_id = admin_group_id
         self.backend = backend
         self.torrent_file_size_limit = torrent_file_size_limit
+        self.stats = MeasurementStore("NFTorrentBotApp", StatisticMeasurement)
 
     def get_getgems_link(self, collection: str, nft_address: str) -> str:
         return urljoin(self.getgems_authority, f"/collection/{collection}/{nft_address}")
@@ -163,4 +168,4 @@ class MessageDesc:
     reply_markup: ReplyMarkupUnion = None
 
 
-__all__ = ["BotApp", "BackendInterface", "BaseInquiry", "MAX_CAPTION_LENGTH", "bot_stats"]
+__all__ = ["BotApp", "BackendInterface", "BaseInquiry", "MAX_CAPTION_LENGTH"]

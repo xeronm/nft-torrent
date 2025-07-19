@@ -1,12 +1,11 @@
 import asyncio
 import os
 
-from NFTorrent.imageutils import convert_image
-
 import aiohttp
 
-print(os.getcwd())
+from NFTorrent.imageutils import convert_image
 
+print(os.getcwd())
 
 
 def convert_file(filename: str):

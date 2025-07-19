@@ -13,7 +13,6 @@ class InquiryReplyCallback(CallbackData, prefix="inquiry"):
     inquiry_id: str
     user_id: int
     message_id: int
-    lang: str
     action: str
 
 

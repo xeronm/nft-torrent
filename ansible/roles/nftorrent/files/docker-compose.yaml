@@ -92,6 +92,7 @@ services:
       # HTTP_API_ROOT_PATH: ${HTTP_API_ROOT_PATH}
       HTTP_API_JWT_SECRET: file:/run/secrets/jwt_key
       HTTP_TWA_BOT_TOKEN: file:/run/secrets/bot_token
+      HTTP_TWA_BOT_POLL: ${HTTP_TWA_BOT_POLL}
       HTTP_TWA_BOT_ADMIN_GROUP_ID: ${HTTP_TWA_BOT_ADMIN_GROUP_ID}
       HTTP_TWA_DOMAINS: localhost:9000,${HTTP_TWA_DOMAINS}
       HTTP_ALLOW_ORIGINS: ${HTTP_ALLOW_ORIGINS}

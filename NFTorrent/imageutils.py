@@ -1,6 +1,7 @@
 import io
 import math
 from functools import lru_cache
+
 from PIL import Image, ImageDraw, ImageFont
 
 
@@ -31,6 +32,7 @@ def convert_image(buffer: bytes, size: int, format: str) -> bytes:
     img.save(bufferOut, format)
     return bufferOut.getvalue()
 
+
 @lru_cache(maxsize=10)
 def load_background(filename: str):
     return Image.open(filename).convert("RGBA")
@@ -44,20 +46,22 @@ def load_font(font: str, size: int = 24):
     )
 
 
-def generate_cover(baseimage: str = None,
-                   title: str = None,
-                   subtitle: str = None,
-                   format: str = "png",
-                   font: str = None,
-                   title_size: int = 96,
-                   subtitle_font: str = None,
-                   subtitle_size: int = 48,
-                   color: ImageDraw._Ink = "black",
-                   rect_padding: tuple[int, int] = (20, 10),
-                   rect_margin: tuple[int, int] = (20, None),
-                   rect_fill: ImageDraw._Ink = "white",
-                   rect_radius: int = 16,
-                   offset_top: float = 0.875):
+def generate_cover(
+    baseimage: str = None,
+    title: str = None,
+    subtitle: str = None,
+    format: str = "png",
+    font: str = None,
+    title_size: int = 96,
+    subtitle_font: str = None,
+    subtitle_size: int = 48,
+    color: ImageDraw._Ink = "black",
+    rect_padding: tuple[int, int] = (20, 10),
+    rect_margin: tuple[int, int] = (20, None),
+    rect_fill: ImageDraw._Ink = "white",
+    rect_radius: int = 16,
+    offset_top: float = 0.875,
+):
     img = load_background(baseimage).copy()
     image_width = img.size[0]
     draw = ImageDraw.Draw(img)
@@ -65,38 +69,38 @@ def generate_cover(baseimage: str = None,
     font_factor = 1
 
     bbox_title = title_font.getbbox(title)
-    if bbox_title[2] > image_width - 2*rect_margin[0]:
+    if bbox_title[2] > image_width - 2 * rect_margin[0]:
         # Try to reduce font
         font_factor = 0.8
-        title_font = load_font(font, size=int(title_size*font_factor))
+        title_font = load_font(font, size=int(title_size * font_factor))
         bbox_title = title_font.getbbox(title)
 
     title_height, title_width = bbox_title[3], bbox_title[2]
     py = int((img.height - title_height) * offset_top)
     px = (img.width - title_width) // 2
-    bbox = (px, py, px+title_width, py+title_height)
+    bbox = (px, py, px + title_width, py + title_height)
 
     if subtitle:
-        sub_font = load_font(subtitle_font or font, size=int(subtitle_size*font_factor))
+        sub_font = load_font(subtitle_font or font, size=int(subtitle_size * font_factor))
         bbox_sub = sub_font.getbbox(subtitle)
-        if bbox_sub[2] > image_width - 2*rect_margin[0]:
+        if bbox_sub[2] > image_width - 2 * rect_margin[0]:
             # Try to reduce font
-            font_factor = font_factor*0.8
-            sub_font = load_font(subtitle_font or font, size=int(subtitle_size*font_factor))
+            font_factor = font_factor * 0.8
+            sub_font = load_font(subtitle_font or font, size=int(subtitle_size * font_factor))
             bbox_sub = sub_font.getbbox(subtitle)
 
         sub_height, sub_width = bbox_sub[3], bbox_sub[2]
         px1 = (img.width - sub_width) // 2
         py1 = py + title_height + int(sub_height * 0.2)
-        bbox = (min(px, px1), py, max(px+title_width, px1+sub_width), py1+sub_height)
+        bbox = (min(px, px1), py, max(px + title_width, px1 + sub_width), py1 + sub_height)
 
     if rect_fill:
-        font_shift = bbox_title[1]//2
+        font_shift = bbox_title[1] // 2
         rect = (
-            max(bbox[0]-rect_padding[0], rect_margin[0]),
-            bbox[1]+font_shift-rect_padding[1],
-            min(bbox[2]+rect_padding[0], image_width-rect_margin[0]),
-            bbox[3]+font_shift+rect_padding[1]
+            max(bbox[0] - rect_padding[0], rect_margin[0]),
+            bbox[1] + font_shift - rect_padding[1],
+            min(bbox[2] + rect_padding[0], image_width - rect_margin[0]),
+            bbox[3] + font_shift + rect_padding[1],
         )
         draw.rounded_rectangle(rect, radius=rect_radius, fill=rect_fill, outline=None, width=0)
 
@@ -107,5 +111,6 @@ def generate_cover(baseimage: str = None,
     bufferOut = io.BytesIO()
     img.save(bufferOut, format)
     return bufferOut.getvalue()
+
 
 __all__ = ["convert_image", "generate_cover"]
