@@ -5,6 +5,7 @@ import logging
 import time
 from typing import Any
 from urllib.parse import urlencode, urljoin
+from dataclasses import dataclass
 
 import aiohttp
 from dateutil.parser import isoparse
@@ -12,7 +13,7 @@ from fastapi import HTTPException, UploadFile, status
 
 from NFTorrent import exceptions, models
 from NFTorrent.cache import BaseCacheManager, DisabledCacheManager
-from NFTorrent.modelsbase import MeasurementStore, StatisticMeasurement, with_stats
+from NFTorrent.modelsbase import MeasurementStore, StatisticMeasurement, StatisticNoTags, with_stats
 from NFTorrent.settings import IpfsSettings
 from NFTorrent.tonlib import TonlibManager
 from NFTorrent.utils import dict_to_influx, parse_ipfs_uri
@@ -272,12 +273,41 @@ class IpfsRpcManager:
                 redundancy=len(pin_status["allocations"]),
                 expires=int(pin_status["metadata"].get("expires", "0")),
                 created=int(isoparse(pin_status["created"]).timestamp()),
+                nft_address=pin_status["metadata"].get("nft"),
                 userdata=userdata,
             )
         except IpfsRpcHttpException as E:
             if E.status_code != status.HTTP_404_NOT_FOUND:
                 raise
         return None
+
+    @with_stats()
+    async def pin_list(self) -> models.NftContentPin:
+        allocations = await self.call_rpc_method("pin_list", self.cluster.get, "allocations", json=False, text=True)
+        pins = []
+        for item in allocations.split('\n'):
+            item = item.strip()
+            if not item:
+                continue
+
+            _item = json.loads(item)
+            if not _item["metadata"]:
+                _item["metadata"] = {}
+            userdata = _item["metadata"].get("userdata", None)
+            if userdata:
+                userdata = json.loads(userdata)
+
+            pins.append(
+                models.NftContentPin(
+                    redundancy=len(_item["allocations"]),
+                    expires=int(_item["metadata"].get("expires", "0")),
+                    created=int(isoparse(_item["timestamp"]).timestamp()),
+                    nft_address=_item["metadata"].get("nft"),
+                    cid=_item["cid"],
+                    userdata=userdata,
+                ))
+
+        return pins
 
     @with_stats()
     async def confirm_content(self, address: str, old_cid: str, cid: str, userdata: Any = None):
@@ -478,7 +508,6 @@ class IpfsRpcManager:
                     )
                     self.loop.create_task(self.confirm_content(address, cid, new_cid, userdata=userdata))
                 else:
-                    self.stats["create_confirm"] += 1
                     logger.warning(
                         "Created CID has already been confirmed, NFT: %s, cid: %s",
                         address,
@@ -498,3 +527,10 @@ class IpfsRpcManager:
             raise
 
         return content
+
+    @with_stats()
+    async def nft_unlink(self, cid: str, address: str):
+        pin = await self.cid_pin_status(cid)
+        if pin and pin.nft_address == address:
+            await self.cid_unpin(cid)
+

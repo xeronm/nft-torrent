@@ -217,6 +217,7 @@ class IndexDb:
         self.dp = None
         self.dp_active = False
         if self.bot_app:
+            self.tasks["check_dbstats"] = self.loop.create_task(self.bot_app.backend.check_dbstats())
             if bot_polling:
                 self.tasks["bot_polling"] = self.loop.create_task(self.bot_polling())
                 self.dp = Dispatcher(storage=MemoryStorage())
@@ -450,8 +451,14 @@ class IndexDb:
     async def nft_update_nft_data(self, address: str, nft_data: NftItemData = None):
         # TODO: Shoud rewrite to queue and bulk operations
         nft = await self.nft_get(address)
+        if nft is not None:
+            if uri_ipfs(nft.image):
+                prev_cid, _, _ = parse_ipfs_uri(nft.image)
+
         if nft_data is None:
             if nft is not None:
+                if prev_cid:
+                    await self.ipfs.nft_unlink(prev_cid, nft.address)
                 cdata = self.collections_id.get(nft.collection_id)
                 cdata.meas.nft_sync_deletes += 1
                 nft.deleted_time = datetime.datetime.now(datetime.timezone.utc)
@@ -475,6 +482,9 @@ class IndexDb:
         if nft._nft_image_updated:
             if uri_ipfs(nft.image):
                 cid, _, _ = parse_ipfs_uri(nft.image)
+                if prev_cid != cid:
+                    await self.ipfs.nft_unlink(prev_cid, nft.address)
+
             if cid:
                 torrent_info = await self.ipfs.get_cid_info(cid)
                 nft.torrent_info = pickle.dumps(torrent_info)
@@ -1015,22 +1025,18 @@ class IndexDb:
     def get_indexdb_state(self):
         return {
             "collections": [
-                {"config": x.nft_collection, "blockchain": x.collection_data} for x in self.collections.values()
+                {"address": x.nft_collection.b64url, "blockchain": x.collection_data} for x in self.collections.values()
             ],
             "stats": self.stats.as_list()
             + self.stats_coll.as_list()
-            + (self.bot_app.stats.as_list() + self.bot_app.backend.stats.as_list() if self.bot_app else []),
+            + self.bot_app.get_bot_state() if self.bot_app else [],
         }
 
     def get_measurements(self, timestamp: int) -> list[str]:
         return (
             self.stats.as_influx(timestamp)
             + self.stats_coll.as_influx(timestamp)
-            + (
-                self.bot_app.stats.as_influx(timestamp) + self.bot_app.backend.stats.as_influx(timestamp)
-                if self.bot_app
-                else []
-            )
+            + self.bot_app.get_measurements(timestamp) if self.bot_app else []
         )
 
     def sync_collection_query(self, limit: int = 100, offset: int = None, **kwargs):

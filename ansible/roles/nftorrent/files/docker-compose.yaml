@@ -41,7 +41,7 @@ services:
       sh -c 'export CLUSTER_SECRET=$(cat /run/secrets/ipfs_secret) &&
              exec /usr/local/bin/entrypoint.sh daemon'
     environment:
-      CLUSTER_PEERNAME: ${IPFS_CLUSTER_PEERNAME}
+      CLUSTER_PEERNAME: ${NODE_ID}
       CLUSTER_IPFSHTTP_NODEMULTIADDRESS: /dns4/ipfs/tcp/5001
       CLUSTER_IPFSPROXY_NODEMULTIADDRESS: /dns4/ipfs/tcp/5001
       CLUSTER_CRDT_TRUSTEDPEERS: '*'
@@ -90,9 +90,10 @@ services:
       INDEXDB_ETCD_CERT: /run/secrets/tls_cert
       INDEXDB_ETCD_KEY: /run/secrets/tls_key
       # HTTP_API_ROOT_PATH: ${HTTP_API_ROOT_PATH}
+      HTTP_NODE_ID: ${NODE_ID}
       HTTP_API_JWT_SECRET: file:/run/secrets/jwt_key
       HTTP_TWA_BOT_TOKEN: file:/run/secrets/bot_token
-      HTTP_TWA_BOT_POLL: ${HTTP_TWA_BOT_POLL}
+      HTTP_TWA_BOT_POLL: 1
       HTTP_TWA_BOT_ADMIN_GROUP_ID: ${HTTP_TWA_BOT_ADMIN_GROUP_ID}
       HTTP_TWA_DOMAINS: localhost:9000,${HTTP_TWA_DOMAINS}
       HTTP_ALLOW_ORIGINS: ${HTTP_ALLOW_ORIGINS}

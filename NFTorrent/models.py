@@ -30,6 +30,10 @@ class NftMethod(BaseModel):
             raise ValueError("Ivalid TON contract address format") from E
 
 
+class IpfsCidMethod(BaseModel):
+    cid: str = Path(description="IPFS CID")
+
+
 class NftContentMethod(NftMethod):
     q: str | None = Query(description="NFT content query", default=None)
 
@@ -237,6 +241,8 @@ class NftContentPin(BaseModel):
     created: int = None
     expires: int = None
     userdata: Any | None = None
+    cid: str | None = None
+    nft_address: str | None = None
 
 
 def torrent_digest(hash: str, filename: str = None) -> str:

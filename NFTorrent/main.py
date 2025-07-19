@@ -189,6 +189,37 @@ async def get_ipfs_state():
     return ws.ipfs.get_cached_node_state()
 
 
+@app.get(
+    "/api/v1/ipfs/pins",
+    dependencies=[Depends(ws.jwt_bearer)],  # noqa: B008
+    tags=["ipfs"],
+    response_model=list[models.NftContentPin]
+)
+@wrap_result
+async def get_ipfs_cid_pin():
+    """
+    Get IPFS pin list.
+    """
+    return await ws.ipfs.pin_list()
+
+
+@app.get(
+    "/api/v1/ipfs/cid/{cid}/pin",
+    dependencies=[Depends(ws.jwt_bearer)],  # noqa: B008
+    tags=["ipfs"],
+    response_model=models.NftContentPin
+)
+@wrap_result
+async def get_ipfs_cid_pin(request: models.IpfsCidMethod = Depends()):
+    """
+    Get IPFS CID pin status.
+    """
+    return await ws.ipfs.cid_pin_status(request.cid)
+
+
+
+
+
 if ws.settings.indexdb.enabled:
 
     @app.get(

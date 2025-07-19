@@ -30,9 +30,12 @@ async def stats(message: Message, command: CommandObject, state: FSMContext):
         return
     bot: _Bot = message.bot
     await message.answer(
-        text=("Bot statistics: <pre>{bot_stats}</pre>\n\n" "DB statistics: <pre>{db_stats}</pre>").format(
-            bot_stats="\n".join(bot.app.stats.as_influx()),
-            db_stats=await bot.app.backend.dbstats(),
+        text=("Running node: <code>{node_id}</code>\n\nBot statistics: <pre>{bot_stats}</pre>\n").format(
+            node_id=bot.app.node_id,
+            bot_stats="\n".join(
+                bot.app.backend.stats_db.as_influx() +
+                bot.app.stats.as_influx()
+            ),
         ),
         disable_notification=True,
     )
