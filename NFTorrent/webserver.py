@@ -130,6 +130,7 @@ class Server:
                     backend=Backend(loop=loop, url=self.settings.indexdb.database_url, cache_manager=cache_manager),
                     admin_group_id=self.settings.webserver.bot_admin_group_id,
                     torrent_file_size_limit=self.settings.ipfs.file_size_limit,
+                    node_id=self.settings.webserver.node_id
                 )
             self.indexer = IndexDb(
                 self.settings.indexdb,
@@ -187,6 +188,7 @@ class Server:
             bot = self.indexer.dp_active
 
         return HealthCheckResult(
+            node_id=self.settings.webserver.node_id,
             tonlib=bool(tonlib_state),
             storage=bool(stotage_state),
             indexdb=bool(indexer_state),
