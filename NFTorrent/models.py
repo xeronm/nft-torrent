@@ -143,6 +143,7 @@ class Account(BaseModel):
 
 
 class HealthCheckResult(BaseModel):
+    node_id: str
     load: float
     redundancy: bool
     tonlib: bool | None
