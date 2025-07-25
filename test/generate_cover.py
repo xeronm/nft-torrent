@@ -11,7 +11,7 @@ SPECIES_LOGO = [
     "Turtle",
     "Reptile",
     "Horse",
-    "Hendehog",
+    "Hedgehog",
     "Mouse",
 ]
 

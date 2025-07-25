@@ -75,21 +75,22 @@ class MeasurementStore(defaultdict):
         return [
             {
                 "measurement": self.name,
-                "tags": asdict(k if is_dataclass(k) else self.default_tag_factory(k)),
+                "tags": asdict(k if is_dataclass(k) else self.default_tag_factory(k)) if k != StatisticNoTags else None,
                 "fields": asdict(v),
                 "timestamp": _timestamp,
             }
             for k, v in self.items()
         ]
 
+    def tag_set(self, k: Any):
+        if k == StatisticNoTags:
+            return ""
+        else:
+            return "," + dataclass_to_influx(k if is_dataclass(k) else self.default_tag_factory(k))
+
     def as_influx(self, timestamp=None):
         timestamp = timestamp or self.get_timestamp()
-        return sorted(
-            [
-                f"{self.name},{dataclass_to_influx(k if is_dataclass(k) else self.default_tag_factory(k))} {dataclass_to_influx(v)} {timestamp}"
-                for k, v in self.items()
-            ]
-        )
+        return sorted([f"{self.name}{self.tag_set(k)} {dataclass_to_influx(v)} {timestamp}" for k, v in self.items()])
 
 
 def with_stats(key: Any = None, stats: MeasurementStore = None, stats_attr: str = "stats"):

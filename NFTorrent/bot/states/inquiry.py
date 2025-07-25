@@ -19,7 +19,9 @@ class InquiryReplyCallback(CallbackData, prefix="inquiry"):
 class InquiryAction(Enum):
     Cancel = "cancel"
     Submit = "submit"
+    NextStep = "next"
     Reply = "reply"
+    ReplyCancel = "replyCancel"
     Close = "close"
     BlockUser = "block"
 

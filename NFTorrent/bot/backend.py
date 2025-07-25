@@ -1,19 +1,18 @@
 import asyncio
 import datetime
 import logging
-from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 
 from aiogram.types import User
 from sqlalchemy import distinct, func
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from NFTorrent.cache import BaseCacheManager
-from NFTorrent.dbmodels import PetMemoryNft, PetsCollection, TgUser, UserInquiry, NftTaskQueue
+from NFTorrent.dbmodels import NftTaskQueue, PetMemoryNft, PetsCollection, TgUser, UserInquiry
 from NFTorrent.modelsbase import MeasurementStore, StatisticMeasurement, StatisticNoTags, with_stats
 
 from .main import BackendForbidden, BackendInterface, BaseInquiry, NftListItem
-
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +55,7 @@ class Backend(BackendInterface):
         while True:
             try:
                 try:
-                    self.stats_db[StatisticNoTags()] = await self.dbstats()
+                    self.stats_db[StatisticNoTags] = await self.dbstats()
                 except Exception as E:
                     logger.warning(
                         "[check_dbstats]: Failed to get node state - %s: %s",
@@ -71,9 +70,9 @@ class Backend(BackendInterface):
             except (Exception, BaseException):
                 logger.exception(
                     "[check_dbstats]: Unhandled exception, sleep for %d sec",
-                    self.check_dbstats_timeout*5,
+                    self.check_dbstats_timeout * 5,
                 )
-                await asyncio.sleep(self.check_dbstats_timeout*5)
+                await asyncio.sleep(self.check_dbstats_timeout * 5)
 
     def setup_cache(self):
         self.dbstats = with_stats(key="cached_dbstats", stats=self.stats)(
@@ -287,7 +286,9 @@ class Backend(BackendInterface):
                 )
             ).one()
 
-            return DbStats(users=users[0], wallets=users[1], inquiries=inquiries, nfts=nfts, tasks=tasks[0], task_errors=tasks[1])
+            return DbStats(
+                users=users[0], wallets=users[1], inquiries=inquiries, nfts=nfts, tasks=tasks[0], task_errors=tasks[1]
+            )
 
     @with_stats()
     async def dbstats(self) -> DbStats:
@@ -295,4 +296,3 @@ class Backend(BackendInterface):
             return await self.loop.run_in_executor(self.threadpool_executor, self.sync_dbstats)
         else:
             return self.sync_dbstats()
-

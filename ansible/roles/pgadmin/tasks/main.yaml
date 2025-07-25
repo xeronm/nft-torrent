@@ -1,0 +1,46 @@
+- name: PGAdmin root "~/pgadmin"
+  file:
+    path: "/home/{{ oam.user }}/pgadmin"
+    state: directory
+    owner: "{{ oam.user }}"
+    group: "{{ oam.group }}"
+    mode: '0755'
+  tags: pgadmin
+
+- name: PGAdmin docker-compose
+  copy:
+    src: ./docker-compose.yaml
+    dest: "/home/{{ oam.user }}/pgadmin/docker-compose.yaml"
+    owner: "{{ oam.user }}"
+    group: "{{ oam.group }}"
+    mode: '0640'
+  notify: restart PGAdmin
+  tags: pgadmin
+
+- name: PGAdmin docker-compose environment
+  template:
+    src: ./env.j2
+    dest: "/home/{{ oam.user }}/pgadmin/.env"
+    owner: "{{ oam.user }}"
+    group: "{{ oam.group }}"
+    mode: '0600'
+  notify: restart PGAdmin
+  tags: pgadmin
+
+- name: PGAdmin docker service
+  community.docker.docker_compose_v2:
+    project_name: pgadmin
+    project_src: "/home/{{ oam.user }}/pgadmin"
+    state: present
+  tags: pgadmin
+
+- name: PGAdmin Nginx is configured
+  template:
+    src: ./etc/nginx/conf.d/pgadmin.conf
+    dest: /etc/nginx/conf.d/pgadmin.conf
+    owner: root
+    group: root
+    mode: 0644
+  notify:
+    - restart nginx
+  tags: pgadmin

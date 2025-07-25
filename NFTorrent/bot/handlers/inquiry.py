@@ -12,7 +12,7 @@ from babel.dates import format_datetime
 from NFTorrent.modelsbase import TonAddress
 from NFTorrent.translations import gettext
 
-from ..keyboards.inquiry import inquiry_admin_kb, inquiry_user_kb, new_inquiry_kb
+from ..keyboards.inquiry import inquiry_admin_kb, inquiry_reply_kb, inquiry_user_kb, new_inquiry_kb
 from ..main import BaseInquiry, _Bot
 from ..states.inquiry import InquiryAction, InquiryCallback, InquiryForm, InquiryReplyCallback, InquiryReplyForm
 
@@ -84,6 +84,22 @@ async def callback_validate_inquiry(inquiry: BaseInquiry, callback: CallbackQuer
     return True
 
 
+@router.callback_query(InquiryReplyCallback.filter(F.action == InquiryAction.Cancel.value))
+async def user_reply_cancel(callback: CallbackQuery, callback_data: InquiryReplyCallback, state: FSMContext):
+    _ = partial(gettext, callback.from_user.language_code)
+    inquiry_id = (await state.get_data()).get("inquiry_id")
+    if callback_data.inquiry_id == inquiry_id:
+        await callback.message.answer(
+            _("Reply has been cancelled."),
+        )
+        await state.clear()
+
+    await callback.bot.edit_message_reply_markup(
+        chat_id=callback.message.chat.id, message_id=callback.message.message_id, reply_markup=None
+    )
+    await callback.answer()
+
+
 #
 # User InquiryReplyForm
 #
@@ -136,20 +152,13 @@ async def user_reply_inquiry(callback: CallbackQuery, callback_data: InquiryRepl
         callback_message_id=callback.message.message_id,
     )
     await callback.message.reply(
-        _(
-            "Type your <b>{action_message}</b> or /cancel.\n" "It will be added to your Inquiry #R{inquiry_num:06d}."
-        ).format(
+        _("Type your <b>{action_message}</b> to your Inquiry #R{inquiry_num:06d}.").format(
             inquiry_num=inquiry.id,
             action_message=action_message,
         ),
-        # reply_markup=inquiry_reply_kb(gettext=_),
+        reply_markup=inquiry_reply_kb(inquiry_id=callback_data.inquiry_id, gettext=_),
     )
     await callback.answer()
-
-
-@router.message(InquiryReplyForm.user_reply, Command("cancel"))
-async def user_cancel_reply(message: Message, state: FSMContext):
-    await state.clear()
 
 
 @router.message(InquiryReplyForm.user_reply)
@@ -270,21 +279,16 @@ async def admin_reply_inquiry(callback: CallbackQuery, callback_data: InquiryRep
     )
     await callback.message.reply(
         _(
-            "Type your <b>{action_message}</b> to Inquiry #R{inquiry_num:06d} or /cancel, language - <b>{lang}</b>.\n"
-            "It will be delivered to the user @{username}."
+            "Type your <b>{action_message}</b> to user's @{username} Inquiry #R{inquiry_num:06d} or cancel\nLanguage - <b>{lang}</b>.\n"
         ).format(
             inquiry_num=inquiry.id,
             username=inquiry.username,
             action_message=action_message,
             lang=inquiry.language.upper(),
         ),
+        reply_markup=inquiry_reply_kb(inquiry_id=callback_data.inquiry_id, gettext=_),
     )
     await callback.answer()
-
-
-@router.message(InquiryReplyForm.admin_reply, Command("cancel"))
-async def admin_cancel_reply(message: Message, state: FSMContext):
-    await state.clear()
 
 
 @router.message(InquiryReplyForm.admin_reply)
@@ -400,6 +404,18 @@ async def cancel_inquiry(callback: CallbackQuery, callback_data: InquiryCallback
     await state.clear()
 
 
+@router.callback_query(InquiryForm.nft_address, InquiryCallback.filter(F.action == InquiryAction.NextStep.value))
+async def next_address(callback: CallbackQuery, callback_data: InquiryCallback, state: FSMContext):
+    await _query_screenshot(callback.message, state)
+    await callback.answer()
+
+
+@router.callback_query(InquiryForm.screenshot, InquiryCallback.filter(F.action == InquiryAction.NextStep.value))
+async def next_screenshot(callback: CallbackQuery, callback_data: InquiryCallback, state: FSMContext):
+    await _query_submit_inquiry(callback.message, state)
+    await callback.answer()
+
+
 @router.message(Command("inquiry"), F.chat.type == "private")
 async def start_inquiry(message: Message, state: FSMContext):
     _ = partial(gettext, message.from_user.language_code)
@@ -423,11 +439,9 @@ async def start_inquiry(message: Message, state: FSMContext):
             " • Message\n"
             " • NFT address (optional)\n"
             " • Screenshot (optional)\n\n"
-        ).format(inquiry_id=inquiry_id),
+        ).format(inquiry_id=inquiry_id)
+        + _("<b>Step 1/5</b>: Enter your inquiry <b>Subject</b>"),
         reply_markup=new_inquiry_kb(inquiry_id=inquiry_id, gettext=_),
-    )
-    await message.answer(
-        text=_("Enter your inquiry <b>Subject</b>:"),
     )
     await state.set_state(InquiryForm.subject)
 
@@ -435,9 +449,11 @@ async def start_inquiry(message: Message, state: FSMContext):
 @router.message(InquiryForm.subject)
 async def get_subject(message: Message, state: FSMContext):
     _ = partial(gettext, message.from_user.language_code)
+    data = await state.get_data()
     await state.update_data(subject=message.text)
     await message.answer(
-        _("Enter your inquiry <b>Message</b>:"),
+        _("<b>Step 2/5</b>: Enter your inquiry <b>Message</b>"),
+        reply_markup=new_inquiry_kb(inquiry_id=data["inquiry_id"], gettext=_),
     )
     await state.set_state(InquiryForm.message)
 
@@ -445,18 +461,23 @@ async def get_subject(message: Message, state: FSMContext):
 @router.message(InquiryForm.message)
 async def get_message(message: Message, state: FSMContext):
     _ = partial(gettext, message.from_user.language_code)
+    data = await state.get_data()
     await state.update_data(message=message.text)
     await message.answer(
-        _("You can optionally provide an <b>NFT address</b>, or simply go to the /next step."),
+        _("<b>Step 3/5</b>: You can optionally provide an <b>NFT address</b>, or go to the next step."),
+        reply_markup=new_inquiry_kb(inquiry_id=data["inquiry_id"], next_btn=True, gettext=_),
     )
     await state.set_state(InquiryForm.nft_address)
 
 
-@router.message(InquiryForm.nft_address, Command("next"))
-async def query_screenshot(message: Message, state: FSMContext):
+async def _query_screenshot(message: Message, state: FSMContext):
     _ = partial(gettext, message.from_user.language_code)
+    data = await state.get_data()
     await message.answer(
-        _("You can optionally add a <b>Screenshot</b> to describe your inquiry, or simply proceed to the /next step."),
+        _(
+            "<b>Step 4/5</b>: You can optionally add a <b>Screenshot</b> to describe your inquiry, or go to the next step."
+        ),
+        reply_markup=new_inquiry_kb(inquiry_id=data["inquiry_id"], next_btn=True, gettext=_),
     )
     await state.set_state(InquiryForm.screenshot)
 
@@ -468,13 +489,11 @@ async def get_address(message: Message, state: FSMContext):
         address = TonAddress(message.text.strip())
     except Exception:
         await message.answer(
-            _(
-                "The input you provided is not a valid TON address. Please send a valid <b>NFT address</b>, or proceed to the /next step."
-            ),
+            _("The input you provided is not a valid TON address. Please send a valid <b>NFT address</b>"),
         )
         return
     await state.update_data(nft_address=address.b64url)
-    await query_screenshot(message, state)
+    await _query_screenshot(message, state)
 
 
 @router.message(InquiryForm.screenshot, F.photo)
@@ -486,17 +505,17 @@ async def get_screenshot(message: Message, state: FSMContext):
     await state.update_data(images=images)
     await message.answer(
         _(
-            "Got {count} images. You can optionally add another <b>Screenshot</b> or simply proceed to the /next step."
+            "<b>Step 4/5</b>: Got <b>{count}</b> image(s). You can optionally add another <b>Screenshot</b>, or go to the next step."
         ).format(count=len(images)),
+        reply_markup=new_inquiry_kb(inquiry_id=data["inquiry_id"], next_btn=True, gettext=_),
     )
 
 
-@router.message(InquiryForm.screenshot, Command("next"))
-async def get_submit_inquiry(message: Message, state: FSMContext):
+async def _query_submit_inquiry(message: Message, state: FSMContext):
     _ = partial(gettext, message.from_user.language_code)
     data = await state.get_data()
     await message.answer(
-        _("Do you want to submit your Inquiry <b>{subject}</b>?").format(subject=data["subject"]),
+        _("<b>Step 5/5</b>: Do you want to submit your Inquiry <b>{subject}</b>?").format(subject=data["subject"]),
         reply_markup=new_inquiry_kb(submit_btn=True, inquiry_id=data["inquiry_id"], gettext=_),
     )
 

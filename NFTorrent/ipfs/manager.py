@@ -5,7 +5,6 @@ import logging
 import time
 from typing import Any
 from urllib.parse import urlencode, urljoin
-from dataclasses import dataclass
 
 import aiohttp
 from dateutil.parser import isoparse
@@ -13,7 +12,7 @@ from fastapi import HTTPException, UploadFile, status
 
 from NFTorrent import exceptions, models
 from NFTorrent.cache import BaseCacheManager, DisabledCacheManager
-from NFTorrent.modelsbase import MeasurementStore, StatisticMeasurement, StatisticNoTags, with_stats
+from NFTorrent.modelsbase import MeasurementStore, StatisticMeasurement, with_stats
 from NFTorrent.settings import IpfsSettings
 from NFTorrent.tonlib import TonlibManager
 from NFTorrent.utils import dict_to_influx, parse_ipfs_uri
@@ -285,7 +284,7 @@ class IpfsRpcManager:
     async def pin_list(self) -> models.NftContentPin:
         allocations = await self.call_rpc_method("pin_list", self.cluster.get, "allocations", json=False, text=True)
         pins = []
-        for item in allocations.split('\n'):
+        for item in allocations.split("\n"):
             item = item.strip()
             if not item:
                 continue
@@ -305,7 +304,8 @@ class IpfsRpcManager:
                     nft_address=_item["metadata"].get("nft"),
                     cid=_item["cid"],
                     userdata=userdata,
-                ))
+                )
+            )
 
         return pins
 
@@ -533,4 +533,3 @@ class IpfsRpcManager:
         pin = await self.cid_pin_status(cid)
         if pin and pin.nft_address == address:
             await self.cid_unpin(cid)
-

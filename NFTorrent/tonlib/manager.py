@@ -169,10 +169,10 @@ class TonlibManager:
         # mid-term
         self.raw_get_account_state = self.cache_manager.cached(expire=15)(self.raw_get_account_state)
         self.generic_get_account_state = self.cache_manager.cached(expire=15)(self.generic_get_account_state)
-        self.get_nft_data = self.cache_manager.cached(expire=60)(self.get_nft_data)
-        self.get_collection_data = self.cache_manager.cached(expire=60)(self.get_collection_data)
+        self.get_nft_data = self.cache_manager.cached(expire=15)(self.get_nft_data)
+        self.get_collection_data = self.cache_manager.cached(expire=30)(self.get_collection_data)
         # long-term
-        self.get_nft_item_address = self.cache_manager.cached(expire=600)(self.get_nft_item_address)
+        self.get_nft_item_address = self.cache_manager.cached(expire=300)(self.get_nft_item_address)
 
     def terminate_worker(self, ls_index: int, timeout: float = 0):
         wctl = self.workers[ls_index]

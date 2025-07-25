@@ -38,7 +38,7 @@ SPECIES_LOGO = [
     "Turtle",
     "Reptile",
     "Horse",
-    "Hendehog",
+    "Hedgehog",
     "Mouse",
 ]
 
@@ -130,7 +130,7 @@ class Server:
                     backend=Backend(loop=loop, url=self.settings.indexdb.database_url, cache_manager=cache_manager),
                     admin_group_id=self.settings.webserver.bot_admin_group_id,
                     torrent_file_size_limit=self.settings.ipfs.file_size_limit,
-                    node_id=self.settings.webserver.node_id
+                    node_id=self.settings.webserver.node_id,
                 )
             self.indexer = IndexDb(
                 self.settings.indexdb,
@@ -175,7 +175,7 @@ class Server:
             ipfs_state = self.ipfs.get_cached_node_state()
             if ipfs_state is not None:
                 load = ipfs_state["storage"]["RepoSize"] * 100 / ipfs_state["storage"]["StorageMax"]
-                redundancy = len(ipfs_state["cluster_peers"]) >= self.settings.ipfs.min_redundancy
+                redundancy = len(ipfs_state["cluster_peers"]) / self.settings.ipfs.min_redundancy
                 stotage_state = ipfs_state["peers"] >= self.ipfs.settings.min_peers_count
         if self.indexer is not None:
             indexer_state = self.indexer.get_indexdb_state()
@@ -192,16 +192,17 @@ class Server:
             tonlib=bool(tonlib_state),
             storage=bool(stotage_state),
             indexdb=bool(indexer_state),
-            redundancy=bool(redundancy),
+            redundancy=round(redundancy, 2),
             bot=bot,
             load=round(load, 2),
         )
 
     def get_measurements(self, timestamp: int):
         hc = self.get_healthcheck()
-        _stats = hc.dict()
+        _stats = hc.model_dump()
         _stats["start_time"] = self.start_time
-        measurements = [f"NFTorrentServer {dict_to_influx(_stats)} {timestamp}"]
+        node_id = _stats.pop("node_id")
+        measurements = [f"NFTorrentServer,node={node_id} {dict_to_influx(_stats)} {timestamp}"]
         if self.tonlib is not None:
             measurements += self.tonlib.get_measurements(timestamp)
         if self.ipfs is not None:
