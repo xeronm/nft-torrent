@@ -17,7 +17,7 @@ from NFTorrent.modelsbase import (
     MeasurementStore,
     StatisticMeasurement,
 )
-from NFTorrent.utils import parse_ipfs_uri, uri_ipfs, dict_to_influx
+from NFTorrent.utils import parse_ipfs_uri, uri_ipfs
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +100,7 @@ class BotApp:
         admin_group_id: int = None,
         backend: BackendInterface = None,
         torrent_file_size_limit=None,
-        node_id: str = "undefined"
+        node_id: str = "undefined",
     ):
         self.bot_id = token.split(":")[0]
         self.bot = _Bot(token=token, app=self, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
@@ -156,14 +156,14 @@ class BotApp:
         return urljoin(self.tonviewer_authority, f"/{nft_address}")
 
     def get_bot_state(self):
-        return (self.stats.as_list() +
-                self.backend.stats.as_list() +
-                self.backend.stats_db.as_list())
+        return self.stats.as_list() + self.backend.stats.as_list() + self.backend.stats_db.as_list()
 
     def get_measurements(self, timestamp: int) -> list[str]:
-        return (self.stats.as_influx(timestamp) +
-                self.backend.stats.as_influx(timestamp) +
-                self.backend.stats_db.as_influx(timestamp))
+        return (
+            self.stats.as_influx(timestamp)
+            + self.backend.stats.as_influx(timestamp)
+            + self.backend.stats_db.as_influx(timestamp)
+        )
 
 
 class _Bot(Bot):

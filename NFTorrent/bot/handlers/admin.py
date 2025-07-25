@@ -32,10 +32,7 @@ async def stats(message: Message, command: CommandObject, state: FSMContext):
     await message.answer(
         text=("Running node: <code>{node_id}</code>\n\nBot statistics: <pre>{bot_stats}</pre>\n").format(
             node_id=bot.app.node_id,
-            bot_stats="\n".join(
-                bot.app.backend.stats_db.as_influx() +
-                bot.app.stats.as_influx()
-            ),
+            bot_stats="\n".join(bot.app.backend.stats_db.as_influx() + bot.app.stats.as_influx()),
         ),
         disable_notification=True,
     )
@@ -88,7 +85,13 @@ async def _inquiry_list(user: User, message: Message, offset: int = 0, edit: boo
     ).format(from_index=offset + 1, to_index=offset + len(inquiries))
     if edit:
         await message.edit_text(
-            text if len(inquiries) else _("There are no opened inquiries starting from position {from_index}").format(from_index=offset + 1),
+            (
+                text
+                if len(inquiries)
+                else _("There are no opened inquiries starting from position {from_index}").format(
+                    from_index=offset + 1
+                )
+            ),
             reply_markup=builder.as_markup(),
         )
     else:

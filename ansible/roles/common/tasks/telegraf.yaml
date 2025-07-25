@@ -50,13 +50,26 @@
     state: present
   tags: telegraf
 
-- name: '"telegraf" is configured'
+- name: '"telegraf" influxdb is configured'
   template:
-    src: "./etc/telegraf/telegraf.conf.j2"
+    src: "./etc/telegraf/telegraf-influxdb.conf"
     dest: /etc/telegraf/telegraf.conf
     owner: telegraf
     group: telegraf
     mode: 0600
+  when: oam.telegraf.influxdb is defined
+  notify:
+    - restart telegraf
+  tags: telegraf
+
+- name: '"telegraf" VM is configured'
+  template:
+    src: "./etc/telegraf/telegraf-vm.conf"
+    dest: /etc/telegraf/telegraf.conf
+    owner: telegraf
+    group: telegraf
+    mode: 0600
+  when: oam.telegraf.vm is defined
   notify:
     - restart telegraf
   tags: telegraf

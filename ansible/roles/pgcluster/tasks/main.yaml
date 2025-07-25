@@ -1,14 +1,66 @@
+# Global Vars
 - name: Build etcd peer list
   set_fact:
     etcd_client_peer_list: >-
       {% for host in groups[inventory_group] %}{{ hostvars[host]['ansible_host'] }}:2379{% if not loop.last %},{% endif %}{% endfor %}
-  tags: pgcluster
+  tags:
+    - pgcluster
+    - etcd
 
 - name: Build etcd initial-cluster string
   set_fact:
     etcd_initial_cluster: >-
       {% for host in groups[inventory_group] %}{{ hostvars[host]['inventory_hostname'] }}=https://{{ hostvars[host]['ansible_host'] }}:2380{% if not loop.last %},{% endif %}{% endfor %}
+  tags:
+    - pgcluster
+    - etcd
+
+#
+- name: Ensure Patroni ports are restricted to cluster hosts (public zone, rich rules)
+  firewalld:
+    zone: public
+    permanent: true
+    immediate: true
+    state: enabled
+    rich_rule: >
+      rule family="ipv4"
+      source address="{{ hostvars[item_host].ansible_host }}"
+      port protocol="tcp" port="{{ item_port }}"
+      accept
+  loop: "{{ groups[inventory_group] | product(patroni_ports) | list }}"
+  loop_control:
+    loop_var: combo
+    label: "{{ combo.0 }} → {{ combo.1 }}"
+  vars:
+    item_host: "{{ combo.0 }}"
+    item_port: "{{ combo.1 }}"
+  when: hostvars[item_host].ansible_host is defined
+  notify: Reload firewalld
   tags: pgcluster
+
+- name: Ensure etcd ports are restricted to cluster hosts (public zone, rich rules)
+  firewalld:
+    zone: public
+    permanent: true
+    immediate: true
+    state: enabled
+    rich_rule: >
+      rule family="ipv4"
+      source address="{{ hostvars[item_host].ansible_host }}"
+      port protocol="tcp" port="{{ item_port }}"
+      accept
+  loop: "{{ groups[inventory_group] | product(etcd_ports) | list }}"
+  loop_control:
+    loop_var: combo
+    label: "{{ combo.0 }} → {{ combo.1 }}"
+  vars:
+    item_host: "{{ combo.0 }}"
+    item_port: "{{ combo.1 }}"
+  when: hostvars[item_host].ansible_host is defined
+  notify: Reload firewalld
+  tags:
+    - pgcluster
+    - etcd
 
 - name: Import PGDG GPG key
   rpm_key:
@@ -64,7 +116,9 @@
     - "{{ etcd_data_dir }}"
     - "{{ postgres_data_dir }}"
     - /var/run/pgbouncer/
-  tags: pgcluster
+  tags:
+    - pgcluster
+    - etcd
 
 - name: "Download etcd-v{{ etcd_version }} archive if not already present"
   ansible.builtin.get_url:
@@ -72,7 +126,9 @@
     dest: "/usr/local/src/etcd/etcd-v{{ etcd_version }}-linux-amd64.tar.gz"
     mode: '0644'
     force: no
-  tags: pgcluster
+  tags:
+    - pgcluster
+    - etcd
 
 - name: Unpack etcd binaries to temporary path
   ansible.builtin.unarchive:
@@ -80,7 +136,9 @@
     dest: "/tmp"
     remote_src: yes
     creates: "/tmp/etcd-v{{ etcd_version }}-linux-amd64"
-  tags: pgcluster
+  tags:
+    - pgcluster
+    - etcd
 
 - name: Copy etcd binary if changed
   ansible.builtin.copy:
@@ -90,7 +148,9 @@
     group: root
     mode: '0755'
     remote_src: yes
-  tags: pgcluster
+  tags:
+    - pgcluster
+    - etcd
 
 - name: Copy etcdctl binary if changed
   ansible.builtin.copy:
@@ -100,7 +160,9 @@
     group: root
     mode: '0755'
     remote_src: yes
-  tags: pgcluster
+  tags:
+    - pgcluster
+    - etcd
 
 - name: Install Patroni via pip
   pip:
@@ -147,7 +209,9 @@
     - Restart etcd
     - Restart Patroni
     - Restart PgBouncer
-  tags: pgcluster
+  tags:
+    - pgcluster
+    - etcd
 
 - name: Generate private key and CSR for PG-Cluster services
   community.crypto.openssl_csr:
@@ -185,7 +249,9 @@
     - Restart etcd
     - Restart Patroni
     - Restart PgBouncer
-  tags: pgcluster
+  tags:
+    - pgcluster
+    - etcd
 
 - name: Deploy systemd unit for etcd
   template:
@@ -194,7 +260,9 @@
   notify:
     - Reload systemd
     - Restart etcd
-  tags: pgcluster
+  tags:
+    - pgcluster
+    - etcd
 
 - name: Deploy systemd unit for etcd-dbshrink
   template:
@@ -203,7 +271,9 @@
   notify:
     - Reload systemd
     - Restart etcd-dbshrink
-  tags: pgcluster
+  tags:
+    - pgcluster
+    - etcd
 
 - name: Deploy systemd timer for etcd-dbshrink
   copy:
@@ -212,7 +282,9 @@
   notify:
     - Reload systemd
     - Restart etcd-dbshrink
-  tags: pgcluster
+  tags:
+    - pgcluster
+    - etcd
 
 - name: Deploy etcd scripts (dbshrink.sh)
   copy:
@@ -221,7 +293,20 @@
     owner: postgres
     group: postgres
     mode: '0750'
-  tags: pgcluster
+  tags:
+    - pgcluster
+    - etcd
+
+- name: Deploy etcd scripts (etcdctl.sh)
+  template:
+    src: ./etc/etcd/etcdctl.sh
+    dest: /etc/etcd/etcdctl.sh
+    owner: postgres
+    group: postgres
+    mode: '0750'
+  tags:
+    - pgcluster
+    - etcd
 
 - name: Deploy systemd unit for Patroni
   copy:
@@ -284,57 +369,21 @@
   notify: Restart PgBouncer
   tags: pgcluster
 
-- name: Ensure Patroni ports are restricted to cluster hosts (public zone, rich rules)
-  firewalld:
-    zone: public
-    permanent: true
-    immediate: true
-    state: enabled
-    rich_rule: >
-      rule family="ipv4"
-      source address="{{ hostvars[item_host].ansible_host }}"
-      port protocol="tcp" port="{{ item_port }}"
-      accept
-  loop: "{{ groups[inventory_group] | product(patroni_ports) | list }}"
-  loop_control:
-    loop_var: combo
-    label: "{{ combo.0 }} → {{ combo.1 }}"
-  vars:
-    item_host: "{{ combo.0 }}"
-    item_port: "{{ combo.1 }}"
-  when: hostvars[item_host].ansible_host is defined
-  notify: Reload firewalld
-  tags: pgcluster
+- name: Enable and start etcd
+  systemd:
+    name: etcd
+    enabled: true
+    state: started
+  tags:
+    - pgcluster
+    - etcd
 
-- name: Ensure etcd ports are restricted to cluster hosts (public zone, rich rules)
-  firewalld:
-    zone: public
-    permanent: true
-    immediate: true
-    state: enabled
-    rich_rule: >
-      rule family="ipv4"
-      source address="{{ hostvars[item_host].ansible_host }}"
-      port protocol="tcp" port="{{ item_port }}"
-      accept
-  loop: "{{ groups[inventory_group] | product(etcd_ports) | list }}"
-  loop_control:
-    loop_var: combo
-    label: "{{ combo.0 }} → {{ combo.1 }}"
-  vars:
-    item_host: "{{ combo.0 }}"
-    item_port: "{{ combo.1 }}"
-  when: hostvars[item_host].ansible_host is defined
-  notify: Reload firewalld
-  tags: pgcluster
-
-- name: Enable and start services
+- name: Enable and start pgcluster services
   systemd:
     name: "{{ item }}"
     enabled: true
     state: started
   loop:
-    - etcd
     - patroni
     - pgbouncer
   tags: pgcluster

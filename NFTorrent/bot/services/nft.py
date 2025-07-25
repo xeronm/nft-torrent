@@ -9,7 +9,6 @@ from babel.dates import format_date
 from NFTorrent.dbmodels import PetMemoryNft, PetsCollection, TgUser
 from NFTorrent.models import NftContentInfo
 from NFTorrent.translations import gettext
-from NFTorrent.utils import uri_supported
 
 from ..keyboards.nft import main_nft_kb
 from ..main import MAX_CAPTION_LENGTH, BotApp
@@ -115,13 +114,13 @@ async def nft_preview(
 
     description = "\n".join([f"  {x}" for x in nft.description.split("\n")])
     message = (
-        f"<b>{nft.name}</b> <i>({nft.birth_date} ~ {nft.death_date})</i>\n\n"
-        f"{description}\n\n"
+        f"<b>{nft.name}</b> ({nft.birth_date} ~ {nft.death_date})\n\n"
+        f"{description}\n\n<code>{nft.address}</code>\n\n"
         f'<a href="{app.get_bot_miniapp_link(nft.address)}">Mini App</a>'
         f' • <a href="{app.get_petsmem_link(nft.address)}">Web App</a>'
         f' • <a href="{app.get_getgems_link(collection.address, nft.address)}">Getgems</a>'
         f' • <a href="{app.get_tonviewer_link(nft.address)}">Tonviewer</a>'
-        f"{ipfslink} • <code>{nft.address}</code>\n"
+        f"{ipfslink}"
     )
     torrent_info = None
     media_urls = []

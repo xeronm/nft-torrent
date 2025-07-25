@@ -4,7 +4,7 @@ from aiogram.utils.keyboard import InlineKeyboardMarkup
 from ..states.inquiry import InquiryAction, InquiryCallback, InquiryReplyCallback
 
 
-def new_inquiry_kb(submit_btn: bool = False, inquiry_id: str = None, gettext=None):
+def new_inquiry_kb(submit_btn: bool = False, next_btn: bool = False, inquiry_id: str = None, gettext=None):
     _ = gettext or (lambda x: x)
     row1 = [
         InlineKeyboardButton(
@@ -19,6 +19,26 @@ def new_inquiry_kb(submit_btn: bool = False, inquiry_id: str = None, gettext=Non
                 callback_data=InquiryCallback(inquiry_id=inquiry_id, action=InquiryAction.Submit.value).pack(),
             )
         )
+    if next_btn:
+        row1.append(
+            InlineKeyboardButton(
+                text=_("Next"),
+                callback_data=InquiryCallback(inquiry_id=inquiry_id, action=InquiryAction.NextStep.value).pack(),
+            )
+        )
+    return InlineKeyboardMarkup(inline_keyboard=[row1])
+
+
+def inquiry_reply_kb(inquiry_id: int = None, gettext=None):
+    _ = gettext or (lambda x: x)
+    row1 = [
+        InlineKeyboardButton(
+            text=_("Cancel reply"),
+            callback_data=InquiryReplyCallback(
+                inquiry_id=inquiry_id, message_id=0, user_id=0, action=InquiryAction.Cancel.value
+            ).pack(),
+        )
+    ]
     return InlineKeyboardMarkup(inline_keyboard=[row1])
 
 
@@ -28,13 +48,13 @@ def inquiry_user_kb(inquiry_id: int = None, message_id: int = None, gettext=None
         InlineKeyboardButton(
             text=_("Reply"),
             callback_data=InquiryReplyCallback(
-                inquiry_id=inquiry_id, message_id=message_id, user_id=0, lang="", action=InquiryAction.Reply.value
+                inquiry_id=inquiry_id, message_id=message_id, user_id=0, action=InquiryAction.Reply.value
             ).pack(),
         ),
         InlineKeyboardButton(
             text=_("Close"),
             callback_data=InquiryReplyCallback(
-                inquiry_id=inquiry_id, message_id=message_id, user_id=0, lang="", action=InquiryAction.Close.value
+                inquiry_id=inquiry_id, message_id=message_id, user_id=0, action=InquiryAction.Close.value
             ).pack(),
         ),
     ]

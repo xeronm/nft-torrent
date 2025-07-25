@@ -286,7 +286,7 @@ class IndexDb:
         country: str = None,
         language: str = None,
     ):
-        self.stats[StatisticNoTags()].tg_user_queue_adds += 1
+        self.stats[StatisticNoTags].tg_user_queue_adds += 1
         self.tg_user_queue.put_nowait(
             TgUser(
                 owner=owner,
@@ -301,7 +301,7 @@ class IndexDb:
     async def bot_polling(self):
         logger.warning("Bot polling task entering main loop")
         lock_name = f"bot:{self.bot_app.bot_id}"
-        meas: IndexerMeasurement = self.stats[StatisticNoTags()]
+        meas: IndexerMeasurement = self.stats[StatisticNoTags]
 
         while True:
             try:
@@ -894,8 +894,8 @@ class IndexDb:
                     errors += 1
                     pass
             session.commit()
-            self.stats[StatisticNoTags()].tg_user_creates += creates
-            self.stats[StatisticNoTags()].tg_user_create_errors += errors
+            self.stats[StatisticNoTags].tg_user_creates += creates
+            self.stats[StatisticNoTags].tg_user_create_errors += errors
             logger.info("TgUser Queue: Writren %d User records, errors: %s", creates, errors)
 
     async def process_tg_queue(self, maxsize: int = 100):
@@ -909,7 +909,7 @@ class IndexDb:
                 bulk.append(item)
 
         logger.info("TgUser Queue: Read %d unique User records", len(bulk))
-        self.stats[StatisticNoTags()].tg_user_queue_gets += len(bulk)
+        self.stats[StatisticNoTags].tg_user_queue_gets += len(bulk)
         if len(bulk):
             await self.loop.run_in_executor(self.threadpool_executor, self.sync_tg_user_bulk_upsert, bulk)
 
@@ -1027,16 +1027,18 @@ class IndexDb:
             "collections": [
                 {"address": x.nft_collection.b64url, "blockchain": x.collection_data} for x in self.collections.values()
             ],
-            "stats": self.stats.as_list()
-            + self.stats_coll.as_list()
-            + self.bot_app.get_bot_state() if self.bot_app else [],
+            "stats": (
+                self.stats.as_list() + self.stats_coll.as_list() + self.bot_app.get_bot_state() if self.bot_app else []
+            ),
         }
 
     def get_measurements(self, timestamp: int) -> list[str]:
         return (
             self.stats.as_influx(timestamp)
             + self.stats_coll.as_influx(timestamp)
-            + self.bot_app.get_measurements(timestamp) if self.bot_app else []
+            + self.bot_app.get_measurements(timestamp)
+            if self.bot_app
+            else []
         )
 
     def sync_collection_query(self, limit: int = 100, offset: int = None, **kwargs):

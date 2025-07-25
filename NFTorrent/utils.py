@@ -1,3 +1,4 @@
+import re
 from dataclasses import fields
 from mimetypes import guess_type as _guess_type
 from mimetypes import types_map
@@ -11,6 +12,10 @@ if ".webp" not in types_map:
 def guess_type(url: str, strict: bool = True, default_type: str = None, default_encoding: str = None):
     mime_type, encodings = _guess_type(url, strict=strict)
     return mime_type or default_type, encodings or default_encoding
+
+
+def influx_escape_value(value: str) -> str:
+    return re.sub(r"([ ,=])", r"\\\1", value)
 
 
 def dataclass_to_influx(instance, excludes: list[str] = None):
@@ -28,7 +33,7 @@ def dataclass_to_influx(instance, excludes: list[str] = None):
         if issubclass(_field.type, str):
             if not isinstance(value, str):
                 value = str(value)
-            value = '"' + value.replace('"', '\\"') + '"'
+            value = influx_escape_value(value)
         kv.append(f"{_field.name}={value}")
     return ",".join(kv)
 
@@ -44,7 +49,7 @@ def dict_to_influx(instance: dict):
         elif isinstance(v, bool):
             value = int(value)
         elif isinstance(v, str):
-            value = '"' + value.replace('"', '\\"') + '"'
+            value = influx_escape_value(value)
         kv.append(f"{k}={value}")
     return ",".join(kv)
 

@@ -22,7 +22,7 @@ ExecStart=/usr/local/bin/etcd \
   --advertise-client-urls=https://{{ ansible_host }}:2379 \
   --initial-cluster-token=patroni-cluster \
   --initial-cluster={{ etcd_initial_cluster }} \
-  --initial-cluster-state=new \
+  --initial-cluster-state={{ etcd.cluster_state | default('new') }} \
   --client-cert-auth \
   --cert-file=/etc/ssl/pgcluster/server.crt \
   --key-file=/etc/ssl/pgcluster/server.key \
