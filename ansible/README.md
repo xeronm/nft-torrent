@@ -94,6 +94,7 @@ curl -i https://www.petsmem.site/ --resolve www.petsmem.site:443:45.144.222.100
 sudo pip3 install ansible
 sudo git clone https://github.com/xeronm/nft-torrent.git /root
 sudo mkdir -p /root/nft-torrent/ansible/inventory
+sudo mkdir -p /root/nft-torrent/ansible/group_vars
 ```
 
 2. Setup inventory
@@ -157,7 +158,7 @@ deploy_hook = /root/nft-torrent/ansible/deploy_pushcert.sh
 4. Test hook
 
 ```sh
-sudo /root/nft-torrent/ansible/deploy_pushcert.sh
+sudo RENEWED_LINEAGE=/etc/letsencrypt/live/<domain> /root/nft-torrent/ansible/deploy_pushcert.sh
 ```
 
 ### Appendix A. SELinux enabling
