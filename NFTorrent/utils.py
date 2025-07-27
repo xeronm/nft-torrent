@@ -33,7 +33,7 @@ def dataclass_to_influx(instance, excludes: list[str] = None):
         if issubclass(_field.type, str):
             if not isinstance(value, str):
                 value = str(value)
-            value = influx_escape_value(value)
+            value = influx_escape_value(value) or "null"
         kv.append(f"{_field.name}={value}")
     return ",".join(kv)
 
@@ -49,7 +49,7 @@ def dict_to_influx(instance: dict):
         elif isinstance(v, bool):
             value = int(value)
         elif isinstance(v, str):
-            value = influx_escape_value(value)
+            value = influx_escape_value(value) or "null"
         kv.append(f"{k}={value}")
     return ",".join(kv)
 

@@ -22,11 +22,13 @@ openssl req -x509 -new -nodes -key ca.key -sha256 -days 3650 -out ca.crt -subj "
 #### Setup Inventory
 
 ```yaml
-# ./inventory/production.yaml
+# ./inventory/main.yaml
 nftorrents:
   hosts:
-    n01.s.petsmem.site:
-      ansible_host: 80.249.146.167
+    n01-ru-petsmem:
+      ansible_host: 45.144.222.100
+    n01-eu-petsmem:
+      ansible_host: 45.139.77.63
 ```
 
 #### Setup Group Variables
@@ -73,7 +75,7 @@ website:
 
 ### Deploy
 ```sh
-ansible-playbook -i ./inventory/production.yaml nftorrents.yaml
+ansible-playbook -i ./inventory nftorrents.yaml
 ```
 
 Check Geo-routing
@@ -84,29 +86,79 @@ curl -i https://www.petsmem.site/ --resolve www.petsmem.site:443:45.144.222.100
 
 ### Certificates Master-host Setup
 
-Configure Master-Host and obtain ceritificate
+#### Setup ansible on Master-host
 
-Setup properly:
-  - DNS Credentials `/etc/letsencrypt/<plugin>.ini`;
+1. Clone repo
+
+```sh
+sudo pip3 install ansible
+sudo git clone https://github.com/xeronm/nft-torrent.git /root
+sudo mkdir -p /root/nft-torrent/ansible/inventory
+```
+
+2. Setup inventory
+
+```yaml
+# /root/nft-torrent/ansible/inventory/main.yaml
+nftorrents:
+  hosts:
+    n01-ru-petsmem:
+      ansible_host: 45.144.222.100
+    n01-eu-petsmem:
+      ansible_host: 45.139.77.63
+```
+
+```yaml
+# /root/nft-torrent/ansible/group_vars/nftorrents.yaml
+geoip:
+  account_id: <account>
+  license_key: <key>
+  db_url: https://download.maxmind.com/geoip/databases/GeoLite2-Country/download?suffix=tar.gz
+  sha_url: https://download.maxmind.com/geoip/databases/GeoLite2-Country/download?suffix=tar.gz.sha256
+  local_path: ./geoipdb
+  local_db: ./geoipdb/GeoLite2-Country.mmdb.tar.gz
+```
+
+3. Add SSH private key for deploy
+
+```sh
+sudo vi ~/.ssh/certbot_ansible_key
+sudo chmod 0600 ~/.ssh/certbot_ansible_key
+```
+
+4. Test connection
+
+```sh
+sudo ansible -i ./nft-torrent/ansible/inventory all -m ansible.builtin.ping --private-key ~/.ssh/certbot_ansible_key
+```
+
+#### Configure Master-Host and obtain ceritificate
+
+1. Setup DNS Credentials `/etc/letsencrypt/<plugin>.ini`;
 
 ```ini
 dns_username=<username>
 dns_password=<password>
 ```
 
-  - Deploy hook `/etc/letsencrypt/renewal/<domain>`;
+2. Obtain certificate for the first time
+```sh
+sudo pip3 install certbot certbot-regru
+sudo certbot certonly -a dns -d <domain> -d *.<domain> --dns-propagation-seconds 300
+sudo certbot renew --dry-run
+```
+
+3. Setup Deploy hook `/etc/letsencrypt/renewal/<domain>`;
 
 ```conf
-...
 deploy_hook = /root/nft-torrent/ansible/deploy_pushcert.sh
 ```
 
-```sh
-pip3 install ansible certbot certbot-regru
-certbot certonly -a dns -d <domain> -d *.<domain> --dns-propagation-seconds 300
-certbot renew --dry-run
-```
+4. Test hook
 
+```sh
+sudo /root/nft-torrent/ansible/deploy_pushcert.sh
+```
 
 ### Appendix A. SELinux enabling
 
@@ -132,3 +184,28 @@ Note: If you are switching from a disabled or permissive state to enforcing, you
 ### Appendix C. PG Cluster operations
 
 1. Patroni status - `patronictl -c /etc/patroni/patroni.yaml list`
+
+
+### Appendix D. Enabling swap
+
+1. Create and enable swapfile
+
+```sh
+sudo dd if=/dev/zero of=/swapfile count=1024 bs=1MiB
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+```
+
+2. Add to `/etc/fstab` for persistense
+
+```
+/swapfile   swap    swap    sw  0   0
+```
+
+3. Edit `sysctl.conf`
+
+```
+vm.swappiness = 10
+vm.vfs_cache_pressure = 80
+```
