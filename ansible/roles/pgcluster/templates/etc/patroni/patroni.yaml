@@ -44,6 +44,11 @@ postgresql:
     wal_receiver_timeout: 10s
     synchronous_commit: remote_apply
     synchronous_standby_names: 'ANY 1 (*)'
+    shared_buffers: 256MB
+    work_mem: 8MB
+    maintenance_work_mem: 16MB
+    effective_cache_size: 512MB
+    max_connections: 30
   callbacks:
     on_role_change: /etc/pgbouncer/update_leader.sh
     on_start: /etc/pgbouncer/update_leader.sh
