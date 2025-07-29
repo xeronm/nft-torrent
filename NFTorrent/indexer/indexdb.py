@@ -105,7 +105,7 @@ class EtcdPoolLock:
 
     def __enter__(self):
         if not self.etcd_clients:
-            return self
+            raise EtcdLockError("No etcd clients")
 
         for etcd in self.etcd_clients:
             try:
@@ -113,7 +113,7 @@ class EtcdPoolLock:
                 lock = etcd.lock(name=self.lock_name, ttl=self.lock_ttl)
                 if lock.acquire():
                     self._lock = lock
-                    logger.info('etcd lock "%s" acquired', self.lock_name)
+                    logger.info('etcd lock "%s" acquired uuid=%s', self.lock_name, self._lock.uuid)
                     return self
             except etcd3.Etcd3Exception as E:
                 logger.info('etcd lock "%s", peer: %s error - %s: %s', self.lock_name, etcd._url, type(E).__name__, E)
@@ -134,16 +134,27 @@ class EtcdPoolLock:
         await self.loop.run_in_executor(self.threadpool_executor, self.__exit__)
 
     async def refresh(self):
-        if self._lock is not None:
-            return await self.loop.run_in_executor(self.threadpool_executor, self._lock.refresh)
+        if self._lock is None:
+            raise EtcdLockError("Lock is not acquired")
+        lease_info = await self.loop.run_in_executor(self.threadpool_executor, self._lock.refresh)
+        if not lease_info or lease_info[0].TTL is None or lease_info[0].TTL <= 0:
+            raise EtcdLockError("Lock refresh failed")
+        return lease_info[0]
+
+    async def lease_info(self):
+        if self._lock is None:
+            raise EtcdLockError("Lock is not acquired")
+        return await self.loop.run_in_executor(self.threadpool_executor, self._lock.lease._get_lease_info)
 
     async def refresh_loop(self):
-        while True:
-            try:
-                await asyncio.sleep(self.lock_ttl / 2)
-                await self.refresh()
-            except Exception as E:
-                logger.warning('etcd lock "%s", refresh error - %s: %s', self.lock_name, type(E).__name__, E)
+        try:
+            ttl = (await self.lease_info()).TTL
+            while True:
+                await asyncio.sleep(ttl * 0.75)
+                ttl = (await self.refresh()).TTL
+        except Exception as E:
+            logger.warning('etcd lock "%s", refresh error - %s: %s', self.lock_name, type(E).__name__, E)
+            raise
 
 
 class IndexDb:

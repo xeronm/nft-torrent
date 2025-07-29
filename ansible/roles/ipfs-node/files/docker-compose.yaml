@@ -1,0 +1,54 @@
+services:
+
+  ipfs:
+    image: ipfs/kubo:release
+    restart: unless-stopped
+    user: 9001:9001
+    ports:
+      - 4001:4001
+      - 4001:4001/udp
+      - "127.0.0.1:5001:5001"
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./ipfs-db:/data/ipfs
+    networks:
+      - internal
+
+  ipfs-cluster:
+    image: ipfs/ipfs-cluster:latest
+    restart: unless-stopped
+    depends_on:
+      - ipfs
+    entrypoint: >
+      sh -c 'export CLUSTER_SECRET=$(cat /run/secrets/ipfs_secret) &&
+             exec /usr/local/bin/entrypoint.sh daemon'
+    environment:
+      CLUSTER_PEERNAME: ${NODE_ID}
+      CLUSTER_IPFSHTTP_NODEMULTIADDRESS: /dns4/ipfs/tcp/5001
+      CLUSTER_IPFSPROXY_NODEMULTIADDRESS: /dns4/ipfs/tcp/5001
+      CLUSTER_CRDT_TRUSTEDPEERS: '*'
+      CLUSTER_RESTAPI_HTTPLISTENMULTIADDRESS: /ip4/0.0.0.0/tcp/9094
+      CLUSTER_IPFSPROXY_LISTENMULTIADDRESS: /ip4/0.0.0.0/tcp/9095
+      CLUSTER_MONITORPINGINTERVAL: 2s # Speed up peer discovery
+    secrets:
+      - ipfs_secret
+    ports:
+      - "127.0.0.1:9094:9094"
+      - "127.0.0.1:9095:9095"
+      - "9096:9096" # Cluster swarm endpoint
+    volumes:
+      - ./cluster-db:/data/ipfs-cluster
+    networks:
+      - internal
+    healthcheck:
+      test: ipfs-cluster-ctl --enc=json health metrics ping
+      interval: 15s
+      timeout: 3s
+      retries: 5
+
+secrets:
+  ipfs_secret:
+    file: ./private/ipfs_cluster.key
+networks:
+  internal:
+
