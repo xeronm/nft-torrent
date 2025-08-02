@@ -2,12 +2,12 @@
 set -euo pipefail
 
 # Пути к CA и выходным файлам
-CA_KEY=./inventory/certs/pgcluster/ca.key
-CA_CERT=./inventory/certs/pgcluster/ca.crt
+CA_KEY=./files/certs/pgcluster/ca.key
+CA_CERT=./files/certs/pgcluster/ca.crt
 
-CLIENT_KEY=./inventory/certs/pgcluster/client.key
-CLIENT_CSR=./inventory/certs/pgcluster/client.csr
-CLIENT_CERT=./inventory/certs/pgcluster/client.crt
+CLIENT_KEY=./files/certs/pgcluster/client.key
+CLIENT_CSR=./files/certs/pgcluster/client.csr
+CLIENT_CERT=./files/certs/pgcluster/client.crt
 
 EXTFILE=/tmp/client-ext.cnf
 

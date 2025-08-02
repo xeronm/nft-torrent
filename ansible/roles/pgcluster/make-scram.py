@@ -10,7 +10,7 @@ def hi(password: bytes, salt: bytes, iterations: int) -> bytes:
 
 def generate_scram_sha256(username: str, password: str, iterations: int = 4096):
     salt = os.urandom(16)
-    salted_password = hi(password.encode(), salt, iterations)
+    salted_password = hi(password.encode('utf-8'), salt, iterations)
 
     client_key = hmac.new(salted_password, b"Client Key", hashlib.sha256).digest()
     stored_key = hashlib.sha256(client_key).digest()

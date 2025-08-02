@@ -1,3 +1,6 @@
+- name: PgBouncer update_leader.sh
+  ansible.builtin.command: /etc/pgbouncer/update_leader.sh ansible
+
 - name: Reload systemd
   command: systemctl daemon-reload
 
@@ -33,3 +36,8 @@
   service:
     name: firewalld
     state: reloaded
+
+- name: restart telegraf
+  service:
+    name: telegraf
+    state: restarted

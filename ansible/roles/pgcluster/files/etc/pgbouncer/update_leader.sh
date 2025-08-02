@@ -1,11 +1,21 @@
 #!/usr/bin/bash
 set -euo pipefail
 
-CALLBACK="$1"
-ROLE="$2"
-CLUSTER_ID="$3"
+if [ $# -lt 1 ]; then
+  echo "usage: ./update_leader.sh <CALLBACK> [<ROLE> <CLUSTER_ID>]" >&2
+  exit 1
+fi
 
-logger -t patroni-callback "$CALLBACK: PostgreSQL role changed to: $ROLE, cluster: $CLUSTER_ID"
+CALLBACK="$1"
+
+if [ $# -gt 2 ]; then
+  ROLE="$2"
+  CLUSTER_ID="$3"
+  logger -t patroni-callback "$CALLBACK: PostgreSQL role changed to: $ROLE, cluster: $CLUSTER_ID"
+else
+  logger -t patroni-callback "$CALLBACK"
+fi;
+
 
 PATRONI_CONFIG="/etc/patroni/patroni.yaml"
 PGBOUNCER_CONFIG="/etc/pgbouncer/pgbouncer.ini"

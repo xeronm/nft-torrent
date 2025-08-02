@@ -20,7 +20,7 @@
 
 - name: 'SSL Public Bootstrap Ceritificate'
   copy:
-    src: "{{ inventory_dir }}/certs/{{ item }}/fullchain.pem"
+    src: "./certs/{{ item }}/fullchain.pem"
     dest: "/etc/pki/tls/certs/{{ item }}/fullchain.pem"
     owner: root
     group: root
@@ -32,7 +32,7 @@
 
 - name: 'SSL Private Ceritificate Key'
   copy:
-    src: "{{ inventory_dir }}/certs/{{ item }}/privkey.pem"
+    src: "./certs/{{ item }}/privkey.pem"
     dest: "/etc/pki/tls/private/{{ item }}/privkey.pem"
     owner: root
     group: root
