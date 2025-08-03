@@ -1,0 +1,1 @@
+1. IndexDB: transfer all BE methods to `./bot/backend.py` and  Move `./bot/backend.py` to IndexDB

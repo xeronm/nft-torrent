@@ -115,7 +115,6 @@
     - /etc/etcd
     - "{{ etcd_data_dir }}"
     - "{{ postgres_data_dir }}"
-    - /var/run/pgbouncer/
   tags:
     - pgcluster
     - etcd
@@ -181,7 +180,7 @@
 
 - name: Copy CA public certificate for PG-Cluster
   copy:
-    src: "{{ inventory_dir }}/certs/pgcluster/ca.crt"
+    src: "./certs/pgcluster/ca.crt"
     dest: /etc/ssl/pgcluster/ca.crt
     owner: root
     group: root
@@ -190,7 +189,7 @@
 
 - name: Copy CA private key for PG-Cluster
   copy:
-    src: "{{ inventory_dir }}/certs/pgcluster/ca.key"
+    src: "./certs/pgcluster/ca.key"
     dest: /etc/ssl/pgcluster/ca.key
     owner: root
     group: root
@@ -231,7 +230,7 @@
       - CA:FALSE
     owner: postgres
     group: postgres
-    mode: "0600"
+    mode: "0640"
   tags: pgcluster
 
 - name: Sign certificate using local CA
@@ -324,7 +323,9 @@
   notify:
     - Reload systemd
     - Restart PgBouncer
-  tags: pgcluster
+  tags:
+    - pgbouncer
+    - pgcluster
 
 - name: Deploy Patroni config
   template:
@@ -343,8 +344,12 @@
     owner: postgres
     group: postgres
     mode: '0644'
-  notify: Restart PgBouncer
-  tags: pgcluster
+  notify:
+    - PgBouncer update_leader.sh
+    - Restart PgBouncer
+  tags:
+    - pgbouncer
+    - pgcluster
 
 - name: Deploy PgBouncer OnRoleChange hook (update_leader.sh)
   copy:
@@ -353,8 +358,11 @@
     owner: postgres
     group: postgres
     mode: '0750'
-  notify: Restart Patroni
-  tags: pgcluster
+  notify:
+    - PgBouncer update_leader.sh
+  tags:
+    - pgbouncer
+    - pgcluster
 
 - name: Generate PgBouncer userlist.txt
   copy:
@@ -367,7 +375,9 @@
     group: postgres
     mode: '0600'
   notify: Restart PgBouncer
-  tags: pgcluster
+  tags:
+    - pgbouncer
+    - pgcluster
 
 - name: Enable and start etcd
   systemd:
@@ -388,3 +398,44 @@
     - pgbouncer
   tags: pgcluster
 
+- name: Copy etcd Client public certificate for PG-Cluster
+  copy:
+    src: "./certs/pgcluster/client.crt"
+    dest: /etc/telegraf/etcd-client.crt
+    owner: telegraf
+    group: telegraf
+    mode: '0644'
+  tags: nftorrent
+
+- name: Copy etcd Client puprivate key for PG-Cluster
+  copy:
+    src: "./certs/pgcluster/client.key"
+    dest: /etc/telegraf/etcd-client.key
+    owner: telegraf
+    group: telegraf
+    mode: '0600'
+  tags: nftorrent
+
+- name: Add user 'telegraf' to group 'postgres'
+  ansible.builtin.user:
+    name: telegraf
+    groups: postgres
+    append: true
+  notify:
+    - restart telegraf
+  tags:
+    - pgcluster
+    - telegraf
+
+- name: pgcluster Telegraf is configured
+  copy:
+    src: ./etc/telegraf/telegraf.d/pgcluster.conf
+    dest: /etc/telegraf/telegraf.d/pgcluster.conf
+    owner: root
+    group: root
+    mode: 0644
+  notify:
+    - restart telegraf
+  tags:
+    - pgcluster
+    - telegraf

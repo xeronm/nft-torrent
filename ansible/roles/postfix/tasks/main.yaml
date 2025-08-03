@@ -1,0 +1,197 @@
+- name: Check if CRB repo is enabled
+  ansible.builtin.command: dnf repolist enabled
+  register: enabled_repos
+  changed_when: false
+  tags:
+    - postfix
+    - dkim
+
+- name: Enable CRB repository if not already enabled
+  ansible.builtin.command: dnf config-manager --set-enabled crb
+  when: "'crb' not in enabled_repos.stdout"
+  tags:
+    - postfix
+    - dkim
+
+- name: EPEL Release
+  package:
+    name:
+      - epel-release
+    state: present
+  tags:
+    - postfix
+    - dkim
+
+- name: DKIM package
+  package:
+    name:
+      - epel-release
+      - opendkim
+      - opendkim-tools
+    state: present
+  tags:
+    - postfix
+    - dkim
+
+- name: DKIM key directory exists
+  file:
+    path: "/etc/opendkim/keys/{{ opendkim.domain }}"
+    state: directory
+    owner: opendkim
+    group: opendkim
+    mode: '0750'
+  tags:
+    - postfix
+    - dkim
+
+- name: DKIM private key
+  copy:
+    src: "./certs/opendkim/{{ opendkim.domain }}/{{ opendkim.selector }}.private"
+    dest: "/etc/opendkim/keys/{{ opendkim.domain }}/{{ opendkim.selector }}.private"
+    owner: opendkim
+    group: opendkim
+    mode: 0600
+  notify:
+    - restart opendkim
+  tags:
+    - postfix
+    - dkim
+
+- name: '"opendkim" service'
+  include_role:
+    name: common
+    tasks_from: service
+    apply:
+      tags:
+        - postfix
+        - dkim
+  vars:
+    service:
+      name: opendkim
+      package:
+        - opendkim
+      params: "{{ opendkim.service_params }}"
+  tags:
+    - postfix
+    - dkim
+
+- name: '"opendkim" configuration files'
+  template:
+    src: "./opendkim/{{ item }}.j2"
+    dest: "/etc/opendkim/{{ item }}"
+    owner: opendkim
+    group: opendkim
+    mode: 0640
+  loop:
+    - opendkim.conf
+    - KeyTable
+    - SigningTable
+    - TrustedHosts
+  notify:
+    - restart opendkim
+  tags:
+    - postfix
+    - dkim
+
+- name: '"postfix" service'
+  include_role:
+    name: common
+    tasks_from: service
+    apply:
+      tags: postfix
+  vars:
+    service:
+      name: postfix
+      package: postfix
+      params: "{{ postfix.service_params }}"
+  tags: postfix
+
+- name: postfix main configuration
+  template:
+    src: ./postfix/main.cf.j2
+    dest: /etc/postfix/main.cf
+    owner: root
+    group: root
+    mode: 0644
+  notify:
+    - restart postfix
+  tags: postfix
+
+- name: postfix "virtual"
+  copy:
+    content: |
+      {% for item in postfix.virtuals %}
+      {{ item.source }} {{ item.destination }}
+      {% endfor %}
+    dest: /etc/postfix/virtual
+    owner: root
+    group: root
+    mode: 0644
+  register: vvirtual
+  notify:
+    - renew virtual
+    - restart postfix
+  tags: postfix
+
+- name: postfix "vmailbox"
+  copy:
+    content: |
+      {% for item in postfix.vmailboxes %}
+      {{ item.source }} {{ item.destination }}
+      {% endfor %}
+    dest: /etc/postfix/vmailbox
+    owner: root
+    group: root
+    mode: 0644
+  notify:
+    - renew vmailbox
+    - restart postfix
+  tags: postfix
+
+- name: postfix "allowed_relay_recipients"
+  copy:
+    content: |
+      {% for item in postfix.allowed_relay_recipients %}
+      {{ item.destination }} {{ item.action }}
+      {% endfor %}
+    dest: /etc/postfix/allowed_relay_recipients
+    owner: root
+    group: root
+    mode: 0644
+  notify:
+    - renew allowed_relay_recipients
+    - restart postfix
+  tags: postfix
+
+- name: postfix firewall configuration
+  firewalld:
+    service: smtp
+    permanent: true
+    immediate: true
+    state: enabled
+  tags: postfix
+
+
+- name: "RedHat: SMTP Firewall services"
+  firewalld:
+    service: "{{ item }}"
+    permanent: true
+    immediate: true
+    state: enabled
+  loop:
+    - smtp
+    - smtps
+    - submission
+  when: ansible_os_family == "RedHat"
+  tags: postfix
+
+- name: "Debian: SMTP Firewall through UFW"
+  ansible.builtin.ufw:
+    rule: allow
+    name: "{{ item }}"
+  loop:
+    - smtp
+    - smtps
+    - submission
+  when: ansible_os_family == "Debian"
+  tags: postfix

@@ -19,6 +19,13 @@ openssl genrsa -out ca.key 4096
 openssl req -x509 -new -nodes -key ca.key -sha256 -days 3650 -out ca.crt -subj "/CN=Patroni Root CA"
 ```
 
+#### OpenDKIM Certificates
+
+```sh
+opendkim-genkey -b 2048 -h rsa-sha256 -r -s mail -d dtec.pro -v -D ./files/certs/opendkim/
+```
+
+
 #### Setup Inventory
 
 ```yaml

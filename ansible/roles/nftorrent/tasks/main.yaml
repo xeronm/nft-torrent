@@ -46,7 +46,7 @@
 
 - name: Copy CA public certificate for PG-Cluster
   copy:
-    src: "{{ inventory_dir }}/certs/pgcluster/ca.crt"
+    src: "./certs/pgcluster/ca.crt"
     dest: /home/{{ oam.user }}/nft-torrent/private/certs/ca.crt
     owner: root
     group: root
@@ -55,7 +55,7 @@
 
 - name: Copy etcd Client public certificate for PG-Cluster
   copy:
-    src: "{{ inventory_dir }}/certs/pgcluster/client.crt"
+    src: "./certs/pgcluster/client.crt"
     dest: /home/{{ oam.user }}/nft-torrent/private/certs/client.crt
     owner: "{{ oam.user }}"
     group: "{{ oam.group }}"
@@ -64,7 +64,7 @@
 
 - name: Copy etcd Client puprivate key for PG-Cluster
   copy:
-    src: "{{ inventory_dir }}/certs/pgcluster/client.key"
+    src: "./certs/pgcluster/client.key"
     dest: /home/{{ oam.user }}/nft-torrent/private/certs/client.key
     owner: "{{ oam.user }}"
     group: "{{ oam.group }}"

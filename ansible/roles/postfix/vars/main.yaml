@@ -1,0 +1,22 @@
+opendkim:
+  trusted_hosts: []
+  domain: "{{ mail_domain }}"
+  selector: mail
+  service_params:
+    - { name: Restart, value: on-failure }
+    - { name: RestartSec, value: 20s }
+postfix:
+  mynetworks: 172.16.1.0/24
+  mydomain: "{{ mail_domain }}"
+  myhostname: "mail.{{ mail_domain }}"
+  mynetworks: "{{ postfix_mynetworks | default('') }}"
+  virtuals:
+    - { source: "admin@{{ mail_domain }}", destination: "xeronm@gmail.com" }
+    - { source: "support@{{ mail_domain }}", destination: "xeronm@gmail.com" }
+  allowed_relay_recipients:
+    - { destination: 'xeronm@gmail.com', action: 'OK' }
+    - { destination: 'noobel@mail.ru', action: 'OK' }
+  vmailboxes: []
+  service_params:
+    - { name: Restart, value: on-failure }
+    - { name: RestartSec, value: 20s }
