@@ -1,0 +1,18 @@
+- name: restart opendkim
+  service:
+    name: opendkim
+    state: restarted
+
+- name: renew virtual
+  ansible.builtin.command: postmap /etc/postfix/virtual
+
+- name: renew vmailbox
+  ansible.builtin.command: postmap /etc/postfix/vmailbox
+
+- name: renew allowed_relay_recipients
+  ansible.builtin.command: postmap /etc/postfix/allowed_relay_recipients
+
+- name: restart postfix
+  service:
+    name: postfix
+    state: restarted

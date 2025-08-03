@@ -115,7 +115,6 @@
     - /etc/etcd
     - "{{ etcd_data_dir }}"
     - "{{ postgres_data_dir }}"
-    - /var/run/pgbouncer/
   tags:
     - pgcluster
     - etcd

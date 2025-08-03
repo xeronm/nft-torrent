@@ -212,7 +212,6 @@ class IndexDb:
 
         logger.warning("Initializing database...")
         self.dbengine = create_engine(self.settings.database_url)
-        SQLModel.metadata.create_all(self.dbengine)
 
         logger.warning("Starting... workers: %d", self.num_workers)
         self.threadpool_executor = ThreadPoolExecutor(max_workers=max(32, self.num_workers))
@@ -222,7 +221,7 @@ class IndexDb:
         self.collections: dict[str, CollectionTaskData] = {}
         self.collections_id: dict[int, CollectionTaskData] = {}
         self.tasks = {
-            "event_processor": self.loop.create_task(self.event_processor()),
+            "initialize_db": self.loop.create_task(self.initialize_db()),
         }
 
         self.dp = None
@@ -230,7 +229,6 @@ class IndexDb:
         if self.bot_app:
             self.tasks["check_dbstats"] = self.loop.create_task(self.bot_app.backend.check_dbstats())
             if bot_polling:
-                self.tasks["bot_polling"] = self.loop.create_task(self.bot_polling())
                 self.dp = Dispatcher(storage=MemoryStorage())
                 self.dp.include_routers(*routers)
 
@@ -242,13 +240,13 @@ class IndexDb:
                     self.bot_app.bot_id,
                 )
             else:
-                logger.warning("Bot poling task not started, since bot_polling: %s", bot_polling)
+                logger.warning("Bot poling task won`t start, since bot_polling: %s", bot_polling)
 
             if self.settings.task_queue_bulk_size:
                 self.tasks["nft_task_processor"] = self.loop.create_task(self.nft_task_processor())
             else:
                 logger.warning(
-                    "NFT scheduled task processor not started, since task_queue_bulk_size: %s",
+                    "NFT scheduled task processor won`t start, since task_queue_bulk_size: %s",
                     self.settings.task_queue_bulk_size,
                 )
         else:
@@ -256,58 +254,187 @@ class IndexDb:
                 "BotApp not provided, NFT scheduled task processor and Bot polling task won`t start.",
             )
 
-        # running tasks
+    async def run_post_dbinit_task(self):
+        self.tasks["event_processor"] = self.loop.create_task(self.event_processor())
+        if self.bot_app:
+            self.tasks["check_dbstats"] = self.loop.create_task(self.bot_app.backend.check_dbstats())
+        if self.dp:
+            self.tasks["bot_polling"] = self.loop.create_task(self.bot_polling())
+
         for c in self.collection_config.collections:
-            data = CollectionTaskData(c, instance=self.sync_collection_upsert(c))
+            instance = await self.loop.run_in_executor(self.threadpool_executor, self.sync_collection_upsert, c)
+            data = CollectionTaskData(c, instance=instance)
             data.meas = self.stats_coll[StatisticTags(c.b64url)]
             self.collections[c.b64url] = data
             self.indexer_tasks[c.b64url] = self.loop.create_task(self.nft_indexer(data))
-            data.instance = self.sync_collection_upsert(c)
             self.collections_id[data.instance.id] = data
 
-    async def shutdown(self):
-        if self.dp:
+    async def initialize_db(self):
+        while True:
             try:
-                await self.dp.stop_polling()
-            except Exception:
-                pass
-        await self.tg_user_queue.join()
-        for task in self.indexer_tasks.values():
-            task.cancel()
-        await asyncio.wait(self.indexer_tasks.values())
+                await self.loop.run_in_executor(self.threadpool_executor, SQLModel.metadata.create_all, self.dbengine)
+                break
+            except SQLAlchemyError as E:
+                logger.warning("DB initialization error: %s - %s", type(E).__name__, str(E))
+                await asyncio.sleep(self.restart_timeout)
+            except asyncio.CancelledError:
+                logger.info("Initialize DB task was cancelled")
+                return
+            except (Exception, BaseException):
+                logger.exception("Initialize DB got unhandled exception, sleep for %d sec", self.restart_timeout)
+                await asyncio.sleep(self.restart_timeout)
+        logger.info('DB initialization completed, continue startup')
+        await self.run_post_dbinit_task()
 
-        for task in self.tasks.values():
-            task.cancel()
-        await asyncio.wait(self.tasks.values())
+    async def event_processor(self):
+        logger.warning("Event Processor task entering main loop")
+        while True:
+            try:
+                await asyncio.sleep(self.task_queue_timeout_sec)
 
-        self.threadpool_executor.shutdown()
+                await self.process_tg_queue(maxsize=100)
 
-    def setup_cache(self):
-        self.nft_get = self.cache_manager.cached(expire=15)(self.nft_get)
-        self.nft_list = self.cache_manager.cached(expire=15)(self.nft_list)
-        self.collection_query = self.cache_manager.cached(expire=60)(self.collection_query)
-        self.collection_random_feed = self.cache_manager.cached(expire=300)(self.collection_random_feed)
+            except asyncio.CancelledError:
+                logger.info("Event Processor task was cancelled")
+                return
+            except (Exception, BaseException):
+                logger.exception("Event Processor task got unhandled exception, sleep for %d sec", self.restart_timeout)
+                await asyncio.sleep(self.restart_timeout)
 
-    async def register_tg_user(
-        self,
-        owner: str,
-        user_id: int,
-        username: str = None,
-        is_premium: bool = False,
-        country: str = None,
-        language: str = None,
-    ):
-        self.stats[StatisticNoTags].tg_user_queue_adds += 1
-        self.tg_user_queue.put_nowait(
-            TgUser(
-                owner=owner,
-                user_id=user_id,
-                username=username[:40] if username else None,
-                is_premium=is_premium,
-                country=(country or "")[:2].lower(),
-                language=(language or "")[:2].lower(),
-            )
-        )
+    async def nft_task_processor(self):
+        logger.warning("NFT scheduled task processor task entering main loop")
+        while True:
+            try:
+                await asyncio.sleep(self.task_queue_timeout_sec)
+
+                tasks, nfts, tgusers = await self.loop.run_in_executor(
+                    self.threadpool_executor, self.sync_nft_task_get, self.settings.task_queue_bulk_size
+                )
+                if not len(tasks):
+                    continue
+
+                nfts_to_update = [
+                    nfts[t.pet_memory_nft_id]
+                    for t in tasks
+                    if t.pet_memory_nft_id in nfts and t.task_type in [NftTaskType.NOTIFY_DUE_DATE, NftTaskType.SYNC]
+                ]
+                nft_updates, nft_tasks = await self.nft_update(nfts_to_update)
+
+                for task in tasks:
+                    coldata = self.collections_id.get(task.collection_id)
+                    coldata.meas.task_processed += 1
+                    collection = coldata.instance
+                    logger.info(
+                        "Process task task_id: %s, type: %d, collection: %s, index: %d",
+                        task.id,
+                        task.task_type,
+                        collection.address,
+                        task.index,
+                    )
+
+                    nft = nfts.get(task.pet_memory_nft_id)
+                    if nft is None:
+                        task_queue_logger.warning(
+                            "nft task skipped (nft not found) - task_id: %s, type: %d, collection: %s, index: %d",
+                            task.id,
+                            task.task_type,
+                            collection.address,
+                            task.index,
+                        )
+                        continue
+
+                    if getattr(nft, "_nft_update_error", None) is not None:
+                        task_queue_logger.warning(
+                            "nft task skipped (nft update error) - task_id: %s, type: %d, collection: %s, index: %d - %s: %s",
+                            task.id,
+                            task.task_type,
+                            collection.address,
+                            task.index,
+                            type(nft._nft_update_error).__name__,
+                            nft._nft_update_error,
+                        )
+                        continue
+
+                    user = tgusers.get(nft.owner)
+                    if user is None:
+                        task_queue_logger.warning(
+                            "nft task skipped (user not found) - task_id: %s, type: %d, collection: %s, index: %d, nft: %s",
+                            task.id,
+                            task.task_type,
+                            collection.address,
+                            task.index,
+                            nft.address,
+                        )
+                        continue
+
+                    if task.task_type == NftTaskType.NOTIFY_DUE_DATE:
+                        curr_time = datetime.datetime.now(datetime.timezone.utc)
+                        due_time = datetime.datetime.fromtimestamp(nft.fee_due_time, tz=datetime.timezone.utc)
+                        if (
+                            nft.last_notified
+                            and nft.last_notified > curr_time - (self.warn_offset - self.expired_offset) / 2
+                        ):
+                            task_queue_logger.warning(
+                                "nft task skipped (frequent due date notification) - task_id: %s, type: %d, collection: %s, index: %d, nft: %s",
+                                task.id,
+                                task.task_type,
+                                collection.address,
+                                task.index,
+                                nft.address,
+                            )
+                            continue
+                        elif due_time > curr_time + self.warn_offset:
+                            task_queue_logger.warning(
+                                "nft task skipped (due date greater than warn_offset) - task_id: %s, type: %d, collection: %s, index: %d, nft: %s",
+                                task.id,
+                                task.task_type,
+                                collection.address,
+                                task.index,
+                                nft.address,
+                            )
+                            continue
+                        else:
+                            coldata.meas.nft_notif_storage += 1
+                            await services.nft.notify_nft_storage_warning(
+                                self.bot_app, nft, collection, user, keyboard=True
+                            )
+                            nft.last_notified = curr_time
+                    if task.task_type == NftTaskType.NOTIFY_MINT:
+                        coldata.meas.nft_notif_mints += 1
+                        await services.nft.nft_preview(self.bot_app, nft, collection, user)
+                        await services.nft.notify_nft_minted(self.bot_app, nft, collection, user, keyboard=True)
+                    if task.task_type in [NftTaskType.NOTIFY_UPDATED, NftTaskType.NOTIFY_TRANSFERED]:
+                        coldata.meas.nft_notif_updates += 1
+                        await services.nft.nft_preview(self.bot_app, nft, collection, user)
+                        await services.nft.notify_nft_updated(
+                            self.bot_app,
+                            nft,
+                            collection,
+                            user,
+                            keyboard=True,
+                            transfered=(task.task_type == NftTaskType.NOTIFY_TRANSFERED),
+                        )
+
+                    task_queue_logger.info(
+                        "nft task done - task_id: %s, type: %d, collection: %s, index: %d, nft: %s",
+                        task.id,
+                        task.task_type,
+                        collection.address,
+                        task.index,
+                        nft.address,
+                    )
+
+                await self.loop.run_in_executor(
+                    self.threadpool_executor, self.sync_collection_nft_bulk_update, nft_updates, tasks, nft_tasks
+                )
+            except asyncio.CancelledError:
+                logger.info("NFT scheduled processor task was cancelled")
+                return
+            except (Exception, BaseException):
+                logger.exception(
+                    "NFT scheduled processor task got unhandled exception, sleep for %d sec", self.restart_timeout
+                )
+                await asyncio.sleep(self.restart_timeout)
 
     async def bot_polling(self):
         logger.warning("Bot polling task entering main loop")
@@ -367,20 +494,99 @@ class IndexDb:
                 logger.exception("Bot polling task got unhandled exception, sleep for %d sec", self.restart_timeout)
                 await asyncio.sleep(self.restart_timeout)
 
-    async def event_processor(self):
-        logger.warning("Event Processor task entering main loop")
+    async def nft_indexer(self, data: CollectionTaskData):
+        address = data.nft_collection.b64url
+        logger.warning("[%s]: Indexer task entering main loop", address)
         while True:
             try:
-                await asyncio.sleep(self.task_queue_timeout_sec)
+                await asyncio.sleep(self.settings.indexer_timeout)
+                if self.tonlib is None:
+                    continue
+                if sum([1 for x in self.tonlib.get_workers_state().values() if x["is_sync"]]) == 0:
+                    logger.warning("[%s]: No active Tonlib workers", address)
+                    continue
 
-                await self.process_tg_queue(maxsize=100)
+                async with EtcdPoolLock(
+                    f"indexer:{address}", self.etcd_clients, self.threadpool_executor, self.etcd_lock_ttl_sec
+                ) as lock:
+                    cycle = asyncio.create_task(self._nft_indexer_cycle(data))
+                    refresh = asyncio.create_task(lock.refresh_loop())
+                    try:
+                        done, pending = await asyncio.wait([cycle, refresh], return_when=asyncio.FIRST_COMPLETED)
+                        if refresh in done and refresh.exception():
+                            exc = refresh.exception()
+                            logger.warning(
+                                "[%s]: lock refresh task terminated with error - %s: %s",
+                                address,
+                                type(exc).__name__,
+                                exc,
+                            )
+                        if cycle in done and cycle.exception():
+                            raise cycle.exception()
+                    finally:
+                        cycle.cancel()
+                        refresh.cancel()
+                        await asyncio.gather(cycle, refresh, return_exceptions=True)
 
+            except (TonlibException, asyncio.TimeoutError, EtcdLockError) as E:
+                logger.warning(
+                    "[%s]: Got error - %s: %s",
+                    address,
+                    type(E).__name__,
+                    E,
+                )
             except asyncio.CancelledError:
-                logger.info("Event Processor task was cancelled")
+                logger.info("[%s]: Indexer task was cancelled", address)
                 return
             except (Exception, BaseException):
-                logger.exception("Event Processor task got unhandled exception, sleep for %d sec", self.restart_timeout)
+                logger.exception(
+                    "[%s]: Indexer task got unhandled exception, sleep for %d sec", address, self.restart_timeout
+                )
                 await asyncio.sleep(self.restart_timeout)
+
+    async def shutdown(self):
+        if self.dp:
+            try:
+                await self.dp.stop_polling()
+            except Exception:
+                pass
+        await self.tg_user_queue.join()
+        for task in self.indexer_tasks.values():
+            task.cancel()
+        await asyncio.wait(self.indexer_tasks.values())
+
+        for task in self.tasks.values():
+            task.cancel()
+        await asyncio.wait(self.tasks.values())
+
+        self.threadpool_executor.shutdown()
+
+    def setup_cache(self):
+        self.nft_get = self.cache_manager.cached(expire=15)(self.nft_get)
+        self.nft_list = self.cache_manager.cached(expire=15)(self.nft_list)
+        self.collection_query = self.cache_manager.cached(expire=60)(self.collection_query)
+        self.collection_random_feed = self.cache_manager.cached(expire=300)(self.collection_random_feed)
+
+    async def register_tg_user(
+        self,
+        owner: str,
+        user_id: int,
+        username: str = None,
+        is_premium: bool = False,
+        country: str = None,
+        language: str = None,
+    ):
+        self.stats[StatisticNoTags].tg_user_queue_adds += 1
+        self.tg_user_queue.put_nowait(
+            TgUser(
+                owner=owner,
+                user_id=user_id,
+                username=username[:40] if username else None,
+                is_premium=is_premium,
+                country=(country or "")[:2].lower(),
+                language=(language or "")[:2].lower(),
+            )
+        )
 
     def _nft_update(self, nft: PetMemoryNft, new_nft: PetMemoryNft, nft_notifs: list[NftTaskQueue]):
         curr_time = datetime.datetime.now(datetime.timezone.utc)
@@ -552,141 +758,6 @@ class IndexDb:
         await self.collection_nft_make_icons([x for x in nft_updates if x._nft_image_updated])
         return nft_updates, nft_notifs
 
-    async def nft_task_processor(self):
-        logger.warning("NFT scheduled task processor task entering main loop")
-        while True:
-            try:
-                await asyncio.sleep(self.task_queue_timeout_sec)
-
-                tasks, nfts, tgusers = await self.loop.run_in_executor(
-                    self.threadpool_executor, self.sync_nft_task_get, self.settings.task_queue_bulk_size
-                )
-                if not len(tasks):
-                    continue
-
-                nfts_to_update = [
-                    nfts[t.pet_memory_nft_id]
-                    for t in tasks
-                    if t.pet_memory_nft_id in nfts and t.task_type in [NftTaskType.NOTIFY_DUE_DATE, NftTaskType.SYNC]
-                ]
-                nft_updates, nft_tasks = await self.nft_update(nfts_to_update)
-
-                for task in tasks:
-                    coldata = self.collections_id.get(task.collection_id)
-                    coldata.meas.task_processed += 1
-                    collection = coldata.instance
-                    logger.info(
-                        "Process task task_id: %s, type: %d, collection: %s, index: %d",
-                        task.id,
-                        task.task_type,
-                        collection.address,
-                        task.index,
-                    )
-
-                    nft = nfts.get(task.pet_memory_nft_id)
-                    if nft is None:
-                        task_queue_logger.warning(
-                            "nft task skipped (nft not found) - task_id: %s, type: %d, collection: %s, index: %d",
-                            task.id,
-                            task.task_type,
-                            collection.address,
-                            task.index,
-                        )
-                        continue
-
-                    if getattr(nft, "_nft_update_error", None) is not None:
-                        task_queue_logger.warning(
-                            "nft task skipped (nft update error) - task_id: %s, type: %d, collection: %s, index: %d - %s: %s",
-                            task.id,
-                            task.task_type,
-                            collection.address,
-                            task.index,
-                            type(nft._nft_update_error).__name__,
-                            nft._nft_update_error,
-                        )
-                        continue
-
-                    user = tgusers.get(nft.owner)
-                    if user is None:
-                        task_queue_logger.warning(
-                            "nft task skipped (user not found) - task_id: %s, type: %d, collection: %s, index: %d, nft: %s",
-                            task.id,
-                            task.task_type,
-                            collection.address,
-                            task.index,
-                            nft.address,
-                        )
-                        continue
-
-                    if task.task_type == NftTaskType.NOTIFY_DUE_DATE:
-                        curr_time = datetime.datetime.now(datetime.timezone.utc)
-                        due_time = datetime.datetime.fromtimestamp(nft.fee_due_time, tz=datetime.timezone.utc)
-                        if (
-                            nft.last_notified
-                            and nft.last_notified > curr_time - (self.warn_offset - self.expired_offset) / 2
-                        ):
-                            task_queue_logger.warning(
-                                "nft task skipped (frequent due date notification) - task_id: %s, type: %d, collection: %s, index: %d, nft: %s",
-                                task.id,
-                                task.task_type,
-                                collection.address,
-                                task.index,
-                                nft.address,
-                            )
-                            continue
-                        elif due_time > curr_time + self.warn_offset:
-                            task_queue_logger.warning(
-                                "nft task skipped (due date greater than warn_offset) - task_id: %s, type: %d, collection: %s, index: %d, nft: %s",
-                                task.id,
-                                task.task_type,
-                                collection.address,
-                                task.index,
-                                nft.address,
-                            )
-                            continue
-                        else:
-                            coldata.meas.nft_notif_storage += 1
-                            await services.nft.notify_nft_storage_warning(
-                                self.bot_app, nft, collection, user, keyboard=True
-                            )
-                            nft.last_notified = curr_time
-                    if task.task_type == NftTaskType.NOTIFY_MINT:
-                        coldata.meas.nft_notif_mints += 1
-                        await services.nft.nft_preview(self.bot_app, nft, collection, user)
-                        await services.nft.notify_nft_minted(self.bot_app, nft, collection, user, keyboard=True)
-                    if task.task_type in [NftTaskType.NOTIFY_UPDATED, NftTaskType.NOTIFY_TRANSFERED]:
-                        coldata.meas.nft_notif_updates += 1
-                        await services.nft.nft_preview(self.bot_app, nft, collection, user)
-                        await services.nft.notify_nft_updated(
-                            self.bot_app,
-                            nft,
-                            collection,
-                            user,
-                            keyboard=True,
-                            transfered=(task.task_type == NftTaskType.NOTIFY_TRANSFERED),
-                        )
-
-                    task_queue_logger.info(
-                        "nft task done - task_id: %s, type: %d, collection: %s, index: %d, nft: %s",
-                        task.id,
-                        task.task_type,
-                        collection.address,
-                        task.index,
-                        nft.address,
-                    )
-
-                await self.loop.run_in_executor(
-                    self.threadpool_executor, self.sync_collection_nft_bulk_update, nft_updates, tasks, nft_tasks
-                )
-            except asyncio.CancelledError:
-                logger.info("NFT scheduled processor task was cancelled")
-                return
-            except (Exception, BaseException):
-                logger.exception(
-                    "NFT scheduled processor task got unhandled exception, sleep for %d sec", self.restart_timeout
-                )
-                await asyncio.sleep(self.restart_timeout)
-
     async def _nft_indexer_cycle(self, data: CollectionTaskData):
         address = data.nft_collection.b64url
         logger.info("[%s]: Updating collection info...", address)
@@ -757,56 +828,6 @@ class IndexDb:
                 data.meas.db_next_index = data.instance.index
 
         data.meas.last_checked = int(time.time())
-
-    async def nft_indexer(self, data: CollectionTaskData):
-        address = data.nft_collection.b64url
-        logger.warning("[%s]: Indexer task entering main loop", address)
-        while True:
-            try:
-                await asyncio.sleep(self.settings.indexer_timeout)
-                if self.tonlib is None:
-                    continue
-                if sum([1 for x in self.tonlib.get_workers_state().values() if x["is_sync"]]) == 0:
-                    logger.warning("[%s]: No active Tonlib workers", address)
-                    continue
-
-                async with EtcdPoolLock(
-                    f"indexer:{address}", self.etcd_clients, self.threadpool_executor, self.etcd_lock_ttl_sec
-                ) as lock:
-                    cycle = asyncio.create_task(self._nft_indexer_cycle(data))
-                    refresh = asyncio.create_task(lock.refresh_loop())
-                    try:
-                        done, pending = await asyncio.wait([cycle, refresh], return_when=asyncio.FIRST_COMPLETED)
-                        if refresh in done and refresh.exception():
-                            exc = refresh.exception()
-                            logger.warning(
-                                "[%s]: lock refresh task terminated with error - %s: %s",
-                                address,
-                                type(exc).__name__,
-                                exc,
-                            )
-                        if cycle in done and cycle.exception():
-                            raise cycle.exception()
-                    finally:
-                        cycle.cancel()
-                        refresh.cancel()
-                        await asyncio.gather(cycle, refresh, return_exceptions=True)
-
-            except (TonlibException, asyncio.TimeoutError, EtcdLockError) as E:
-                logger.warning(
-                    "[%s]: Got error - %s: %s",
-                    address,
-                    type(E).__name__,
-                    E,
-                )
-            except asyncio.CancelledError:
-                logger.info("[%s]: Indexer task was cancelled", address)
-                return
-            except (Exception, BaseException):
-                logger.exception(
-                    "[%s]: Indexer task got unhandled exception, sleep for %d sec", address, self.restart_timeout
-                )
-                await asyncio.sleep(self.restart_timeout)
 
     async def collection_nft_make_icon(self, instance: PetMemoryNft):
         buffer = None

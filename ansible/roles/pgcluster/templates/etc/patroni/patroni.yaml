@@ -21,6 +21,8 @@ postgresql:
   connect_address: {{ ansible_host }}:5432
   data_dir: {{ postgres_data_dir }}
   bin_dir: /usr/pgsql-{{ postgres_version }}/bin
+  synchronous_mode: true
+  synchronous_mode_strict: false
   authentication:
     replication:
       username: replicator
@@ -42,7 +44,7 @@ postgresql:
     wal_keep_size: 1024
     wal_sender_timeout: 10s
     wal_receiver_timeout: 10s
-    synchronous_commit: remote_apply
+    synchronous_commit: on
     synchronous_standby_names: 'ANY 1 (*)'
     shared_buffers: 192MB
     work_mem: 8MB
