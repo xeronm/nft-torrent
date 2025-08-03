@@ -62,7 +62,7 @@ openssl s_client \
 ```
 
 
-### Annex A. Localization
+### Annex B. Localization
 
 ```sh
 pybabel extract -F babel.cfg -o NFTorrent/locales/messages.pot .

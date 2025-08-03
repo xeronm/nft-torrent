@@ -22,7 +22,7 @@ openssl req -x509 -new -nodes -key ca.key -sha256 -days 3650 -out ca.crt -subj "
 #### OpenDKIM Certificates
 
 ```sh
-opendkim-genkey -b 2048 -h rsa-sha256 -r -s mail -d dtec.pro -v -D ./files/certs/opendkim/
+opendkim-genkey -b 2048 -h rsa-sha256 -r -s mail -d petsmem.site -v -D ./files/certs/opendkim/<domain>
 ```
 
 
@@ -216,4 +216,12 @@ sudo swapon /swapfile
 ```
 vm.swappiness = 10
 vm.vfs_cache_pressure = 80
+```
+
+
+### Appendix E. Test mailing system
+
+```sh
+echo "This is test for end user" | mail -s "Test subject" xeronm@gmail.com
+echo "This is test for admin" | mail -s "Test subject" admin@petsmem.site
 ```
