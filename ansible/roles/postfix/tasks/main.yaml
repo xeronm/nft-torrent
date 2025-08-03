@@ -75,7 +75,20 @@
     - postfix
     - dkim
 
-- name: '"opendkim" configuration files'
+- name: '"opendkim" main configuration file'
+  template:
+    src: "./opendkim/opendkim.conf.j2"
+    dest: "/etc/opendkim.conf"
+    owner: opendkim
+    group: opendkim
+    mode: 0640
+  notify:
+    - restart opendkim
+  tags:
+    - postfix
+    - dkim
+
+- name: '"opendkim" additional configuration files'
   template:
     src: "./opendkim/{{ item }}.j2"
     dest: "/etc/opendkim/{{ item }}"
@@ -83,7 +96,6 @@
     group: opendkim
     mode: 0640
   loop:
-    - opendkim.conf
     - KeyTable
     - SigningTable
     - TrustedHosts
@@ -163,15 +175,6 @@
     - restart postfix
   tags: postfix
 
-- name: postfix firewall configuration
-  firewalld:
-    service: smtp
-    permanent: true
-    immediate: true
-    state: enabled
-  tags: postfix
-
-
 - name: "RedHat: SMTP Firewall services"
   firewalld:
     service: "{{ item }}"
@@ -181,7 +184,7 @@
   loop:
     - smtp
     - smtps
-    - submission
+    - smtp-submission
   when: ansible_os_family == "RedHat"
   tags: postfix
 
