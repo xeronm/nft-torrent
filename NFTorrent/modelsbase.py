@@ -214,6 +214,7 @@ class NftItemData:
 @dataclass(frozen=True)
 class NftItemHeader:
     name: str
+    nft_name: str
     address: str
     index: int
     owner_address: str

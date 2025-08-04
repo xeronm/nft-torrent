@@ -15,7 +15,7 @@
       }
     ]
   },
-  "editable": false,
+  "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": 4,
@@ -184,11 +184,11 @@
             "type": "influxdb",
             "uid": "fesxj7huuneo0c"
           },
-          "query": "from(bucket: \"petsmem\")\r\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"cpu\")\r\n  |> filter(fn: (r) => r[\"_field\"] == \"usage_system\" or r[\"_field\"] == \"usage_user\")\r\n  |> filter(fn: (r) => r[\"cpu\"] == \"cpu-total\")\r\n  |> group(columns: [\"host\", \"_field\"])\r\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\r\n  |> yield(name: \"mean\")",
+          "query": "from(bucket: \"petsmem\")\r\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"cpu\")\r\n  |> filter(fn: (r) => r[\"_field\"] == \"usage_idle\")\r\n  |> map(fn: (r) => ({ r with _value: 100.0 - r._value }))\r\n  |> group(columns: [\"_measurement\", \"host\"])\r\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\r\n  |> yield(name: \"mean\")",
           "refId": "A"
         }
       ],
-      "title": "CPU",
+      "title": "CPU: Total",
       "type": "timeseries"
     },
     {
@@ -279,11 +279,11 @@
             "type": "influxdb",
             "uid": "fesxj7huuneo0c"
           },
-          "query": "from(bucket: \"petsmem\")\r\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mem\")\r\n  |> filter(fn: (r) => r[\"_field\"] == \"free\")\r\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\r\n  |> yield(name: \"mean\")",
+          "query": "from(bucket: \"petsmem\")\r\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"mem\")\r\n  |> filter(fn: (r) => r[\"_field\"] == \"used_percent\")\r\n  |> group(columns: [\"_measurement\", \"host\"])\r\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\r\n  |> yield(name: \"mean\")",
           "refId": "A"
         }
       ],
-      "title": "Memory: Free",
+      "title": "Mem: Used",
       "type": "timeseries"
     },
     {
@@ -957,6 +957,81 @@
       "fieldConfig": {
         "defaults": {
           "color": {
+            "mode": "continuous-BlPu"
+          },
+          "fieldMinMax": false,
+          "mappings": [],
+          "thresholds": {
+            "mode": "percentage",
+            "steps": [
+              {
+                "color": "red",
+                "value": 0
+              },
+              {
+                "color": "green",
+                "value": 99
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 0,
+        "y": 17
+      },
+      "id": 23,
+      "options": {
+        "displayMode": "lcd",
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "pluginVersion": "12.1.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "fesxj7huuneo0c"
+          },
+          "hide": false,
+          "query": "from(bucket: \"petsmem\")\r\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"patroni\")\r\n  |> filter(fn: (r) => r[\"_field\"] == \"patroni_postgres_streaming\")\r\n  |> group(columns: [\"host\"])\r\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\r\n  |> yield(name: \"mean\")",
+          "refId": "A"
+        }
+      ],
+      "title": "PG-Cluster: Streaming",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "fesxj7huuneo0c"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
             "mode": "thresholds"
           },
           "fieldMinMax": false,
@@ -987,7 +1062,7 @@
         "h": 3,
         "w": 4,
         "x": 0,
-        "y": 17
+        "y": 20
       },
       "id": 20,
       "options": {
@@ -1028,97 +1103,6 @@
       ],
       "title": "PG-Bouncer: Clients Active",
       "type": "bargauge"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "aesx45o8y8utcb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            }
-          },
-          "mappings": [],
-          "unit": "none"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 4,
-        "x": 0,
-        "y": 20
-      },
-      "id": 21,
-      "options": {
-        "displayLabels": [
-          "percent"
-        ],
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "right",
-          "showLegend": true,
-          "values": [
-            "value"
-          ]
-        },
-        "pieType": "pie",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "12.1.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "aesx45o8y8utcb"
-          },
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT \r\n    count(*) AS count,\r\n    CASE t.species\r\n        WHEN 0 THEN 'Other'\r\n        WHEN 1 THEN 'Dog'\r\n        WHEN 2 THEN 'Cat'\r\n        WHEN 3 THEN 'Hamster/Guinea Pig'\r\n        WHEN 4 THEN 'Rabbit'\r\n        WHEN 5 THEN 'Parrot'\r\n        WHEN 6 THEN 'Fish'\r\n        WHEN 7 THEN 'Turtle'\r\n        WHEN 8 THEN 'Reptile'\r\n        WHEN 9 THEN 'Horse/Pony'\r\n        WHEN 10 THEN 'Reserved'\r\n        WHEN 11 THEN 'Reserved'\r\n        WHEN 12 THEN 'Reserved'\r\n        WHEN 13 THEN 'Reserved'\r\n        WHEN 14 THEN 'Reserved'\r\n        WHEN 15 THEN 'Reserved'\r\n        ELSE 'Unknown'\r\n    END AS species_name\r\nFROM pet_memory_nft t\r\nGROUP BY t.species\r\nORDER BY t.species;",
-          "refId": "A",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          },
-          "table": "pet_memory_nft"
-        }
-      ],
-      "title": "IndexDB: Species",
-      "type": "piechart"
     },
     {
       "datasource": {
@@ -1223,6 +1207,97 @@
       ],
       "title": "PG Cluster",
       "type": "status-history"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aesx45o8y8utcb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": [],
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 4,
+        "x": 0,
+        "y": 23
+      },
+      "id": 21,
+      "options": {
+        "displayLabels": [
+          "percent"
+        ],
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "right",
+          "showLegend": true,
+          "values": [
+            "value"
+          ]
+        },
+        "pieType": "pie",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.1.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aesx45o8y8utcb"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT \r\n    count(*) AS count,\r\n    CASE t.species\r\n        WHEN 0 THEN 'Other'\r\n        WHEN 1 THEN 'Dog'\r\n        WHEN 2 THEN 'Cat'\r\n        WHEN 3 THEN 'Hamster/Guinea Pig'\r\n        WHEN 4 THEN 'Rabbit'\r\n        WHEN 5 THEN 'Parrot'\r\n        WHEN 6 THEN 'Fish'\r\n        WHEN 7 THEN 'Turtle'\r\n        WHEN 8 THEN 'Reptile'\r\n        WHEN 9 THEN 'Horse/Pony'\r\n        WHEN 10 THEN 'Reserved'\r\n        WHEN 11 THEN 'Reserved'\r\n        WHEN 12 THEN 'Reserved'\r\n        WHEN 13 THEN 'Reserved'\r\n        WHEN 14 THEN 'Reserved'\r\n        WHEN 15 THEN 'Reserved'\r\n        ELSE 'Unknown'\r\n    END AS species_name\r\nFROM pet_memory_nft t\r\nGROUP BY t.species\r\nORDER BY t.species;",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          },
+          "table": "pet_memory_nft"
+        }
+      ],
+      "title": "IndexDB: Species",
+      "type": "piechart"
     },
     {
       "datasource": {
@@ -1414,96 +1489,6 @@
     },
     {
       "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "aesx45o8y8utcb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            }
-          },
-          "mappings": []
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 4,
-        "x": 0,
-        "y": 27
-      },
-      "id": 22,
-      "options": {
-        "displayLabels": [
-          "percent"
-        ],
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "right",
-          "showLegend": true,
-          "values": [
-            "value"
-          ]
-        },
-        "pieType": "pie",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "12.1.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "aesx45o8y8utcb"
-          },
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT t.country, count(distinct t.user_id) as count\r\nFROM tg_user t\r\nGROUP BY t.country\r\n",
-          "refId": "A",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          },
-          "table": "pet_memory_nft"
-        }
-      ],
-      "title": "IndexDB: Tg Users",
-      "type": "piechart"
-    },
-    {
-      "datasource": {
         "type": "influxdb",
         "uid": "fesxj7huuneo0c"
       },
@@ -1590,6 +1575,96 @@
       ],
       "title": "NFTorrent: Tonlib",
       "type": "status-history"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "aesx45o8y8utcb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 4,
+        "x": 0,
+        "y": 30
+      },
+      "id": 22,
+      "options": {
+        "displayLabels": [
+          "percent"
+        ],
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "right",
+          "showLegend": true,
+          "values": [
+            "value"
+          ]
+        },
+        "pieType": "pie",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.1.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "aesx45o8y8utcb"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT t.country, count(distinct t.user_id) as count\r\nFROM tg_user t\r\nGROUP BY t.country\r\n",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          },
+          "table": "pet_memory_nft"
+        }
+      ],
+      "title": "IndexDB: Tg Users",
+      "type": "piechart"
     },
     {
       "datasource": {
@@ -1879,5 +1954,5 @@
   "timezone": "browser",
   "title": "NFTorrent: Overview v2",
   "uid": "d23ba080-e50d-4f67-a2b9-492fd2205a07",
-  "version": 10
+  "version": 11
 }

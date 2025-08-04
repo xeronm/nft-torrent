@@ -199,6 +199,8 @@ class NftItemData(BaseModel):
 
 
 class NftItemHeader(BaseModel):
+    name: str
+    nft_name: str
     address: str
     index: int
     owner_address: str
@@ -212,10 +214,18 @@ class NftItemHeader(BaseModel):
 class CollectionItemsMethod(BaseModel):
     lang: str | None = Query(default=None)
     country: str | None = Query(default=None)
+    owner: str | None = Query(default=None)
     species: int | None = Query(default=None)
     limit: int = Query(default=100)
     offset: int = Query(default=0)
     icon_size: str = Query(default="small")
+
+    @validator("owner")
+    def validate_contract_address(cls, v):
+        try:
+            return TonAddress(v).b64url
+        except Exception as E:
+            raise ValueError("Ivalid TON contract address format") from E
 
 
 class NftListMethod(BaseModel):

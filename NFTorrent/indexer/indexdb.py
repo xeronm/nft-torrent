@@ -261,18 +261,21 @@ class IndexDb:
         if self.dp:
             self.tasks["bot_polling"] = self.loop.create_task(self.bot_polling())
 
-        for c in self.collection_config.collections:
-            instance = await self.loop.run_in_executor(self.threadpool_executor, self.sync_collection_upsert, c)
-            data = CollectionTaskData(c, instance=instance)
-            data.meas = self.stats_coll[StatisticTags(c.b64url)]
-            self.collections[c.b64url] = data
-            self.indexer_tasks[c.b64url] = self.loop.create_task(self.nft_indexer(data))
-            self.collections_id[data.instance.id] = data
+        for address, data in self.collections.items():
+            self.indexer_tasks[address] = self.loop.create_task(self.nft_indexer(data))
 
     async def initialize_db(self):
         while True:
             try:
                 await self.loop.run_in_executor(self.threadpool_executor, SQLModel.metadata.create_all, self.dbengine)
+
+                for c in self.collection_config.collections:
+                    instance = await self.loop.run_in_executor(self.threadpool_executor, self.sync_collection_upsert, c.b64url)
+                    data = CollectionTaskData(c, instance=instance)
+                    data.meas = self.stats_coll[StatisticTags(c.b64url)]
+                    self.collections[c.b64url] = data
+                    self.collections_id[data.instance.id] = data
+
                 break
             except SQLAlchemyError as E:
                 logger.warning("DB initialization error: %s - %s", type(E).__name__, str(E))
@@ -283,6 +286,7 @@ class IndexDb:
             except (Exception, BaseException):
                 logger.exception("Initialize DB got unhandled exception, sleep for %d sec", self.restart_timeout)
                 await asyncio.sleep(self.restart_timeout)
+
         logger.info('DB initialization completed, continue startup')
         await self.run_post_dbinit_task()
 
@@ -484,7 +488,7 @@ class IndexDb:
                         await asyncio.gather(pooling, refresh, return_exceptions=True)
 
                 await asyncio.sleep(self.restart_timeout)
-            except EtcdLockError as E:
+            except (EtcdLockError, etcd3.Etcd3Exception) as E:
                 logger.info("Bot polling task: lock error: %s", type(E).__name__)
                 await asyncio.sleep(self.restart_timeout)
             except asyncio.CancelledError:
@@ -528,7 +532,7 @@ class IndexDb:
                         refresh.cancel()
                         await asyncio.gather(cycle, refresh, return_exceptions=True)
 
-            except (TonlibException, asyncio.TimeoutError, EtcdLockError) as E:
+            except (TonlibException, asyncio.TimeoutError, EtcdLockError, SQLAlchemyError) as E:
                 logger.warning(
                     "[%s]: Got error - %s: %s",
                     address,
@@ -763,7 +767,7 @@ class IndexDb:
         logger.info("[%s]: Updating collection info...", address)
         # Refresh data from DB
         data.instance = await self.loop.run_in_executor(
-            self.threadpool_executor, self.sync_collection_upsert, data.nft_collection
+            self.threadpool_executor, self.sync_collection_upsert, data.nft_collection.b64url
         )
         data.meas.db_next_index = data.instance.index
 
@@ -1041,14 +1045,14 @@ class IndexDb:
             session.commit()
             return len(notifs)
 
-    def sync_collection_upsert(self, collection: CollectionInstance) -> PetsCollection:
+    def sync_collection_upsert(self, address: str) -> PetsCollection:
         with Session(self.dbengine) as session:
             try:
-                instance = session.exec(select(PetsCollection).where(PetsCollection.address == collection.b64url)).one()
+                instance = session.exec(select(PetsCollection).where(PetsCollection.address == address)).one()
             except NoResultFound:
                 instance = None
             if instance is None:
-                instance = PetsCollection(address=collection.b64url, index=0)
+                instance = PetsCollection(address=address, index=0)
                 session.add(instance)
                 session.commit()
                 session.refresh(instance)

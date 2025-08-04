@@ -5,7 +5,7 @@ import pickle
 
 from sqlmodel import Field, SQLModel, UniqueConstraint
 
-from .blockchain.models import GeoPoint, NftMutableMetaData, PetMemoryNftContent, PetMemoryNftImmutableData
+from .blockchain.models import GeoPoint, NftMutableMetaData, PetMemoryNftContent, PetMemoryNftImmutableData, SPECIES
 from .modelsbase import NftItemData, NftItemHeader
 
 
@@ -131,17 +131,38 @@ class PetMemoryNft(SQLModel, table=True):
             collection_address=collection_address,
         )
 
+    @property
+    def nft_name(self):
+        nft_name_comp = [
+            self.name,
+            self.species_name or SPECIES[self.species]
+        ]
+
+        if self.country:
+            nft_name_comp.append(self.country)
+        if self.location:
+            nft_name_comp.append(self.location)
+
+        nft_name = ', '.join(nft_name_comp)
+        if self.birth_date != '*' or self.death_date != '*':
+            nft_name += f' ({self.birth_date} ~ {self.death_date})'
+        return nft_name
+
+
     def to_nftheader(self, collection_address: str, icon_size: str = None) -> NftItemHeader:
         icons: dict[str, list[str]] = None
-        if self.icons is not None:
+        if self.icons is not None and icon_size != 'none':
             icons = pickle.loads(self.icons)
             icons = {
                 k: [base64.encodebytes(x) for x in v]
                 for k, v in icons.items()
                 if not icon_size or icon_size == "all" or k == icon_size
             }
+
+
         return NftItemHeader(
-            name=self.name,
+            name=self.nft_name,
+            nft_name=self.nft_name,
             address=self.address,
             index=self.index,
             owner_address=self.owner,
