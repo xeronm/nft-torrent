@@ -555,9 +555,10 @@ class IndexDb:
             except Exception:
                 pass
         await self.tg_user_queue.join()
-        for task in self.indexer_tasks.values():
-            task.cancel()
-        await asyncio.wait(self.indexer_tasks.values())
+        if self.indexer_tasks:
+            for task in self.indexer_tasks.values():
+                task.cancel()
+            await asyncio.wait(self.indexer_tasks.values())
 
         for task in self.tasks.values():
             task.cancel()
