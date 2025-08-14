@@ -673,6 +673,7 @@ class IndexDb:
     async def nft_update_nft_data(self, address: str, nft_data: NftItemData = None):
         # TODO: Shoud rewrite to queue and bulk operations
         nft = await self.nft_get(address)
+        prev_cid = None
         if nft is not None:
             if uri_ipfs(nft.image):
                 prev_cid, _, _ = parse_ipfs_uri(nft.image)

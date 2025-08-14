@@ -17,6 +17,16 @@ Background Color: 🌗 #4e5fd6
 Header Color: 🌗 #4e5fd6
 ```
 
+Registration in TApps
+
+```
+Details
+Link: https://t.me/pets_memorial_bot
+Analytics ID: pets_memorial_ru
+Subtitle: Where Pet Memories Live Forever
+Description: Pets Memorial lets you create a lasting digital tribute to your beloved pet. Turn photos and memories into unique NFTs that preserve their story forever on the blockchain. Share your tribute with others who understand and keep your pet’s memory alive for generations.
+```
+
 ### Menu Button
 
 ```

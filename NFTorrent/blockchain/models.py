@@ -19,7 +19,7 @@ SPECIES = [
     "Horse/Pony",
     "Hedgehog",
     "Mouse/Rat",
-    "Ferret",
+    "Reserved",
     "Reserved",
     "Reserved",
     "Reserved",

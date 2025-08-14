@@ -6,7 +6,7 @@ import pickle
 from sqlmodel import Field, SQLModel, UniqueConstraint
 
 from .blockchain.models import GeoPoint, NftMutableMetaData, PetMemoryNftContent, PetMemoryNftImmutableData, SPECIES
-from .modelsbase import NftItemData, NftItemHeader
+from .modelsbase import NftItemData, NftItemHeader, NftItemContent
 
 
 class PetsCollection(SQLModel, table=True):
@@ -161,13 +161,15 @@ class PetMemoryNft(SQLModel, table=True):
 
 
         return NftItemHeader(
-            name=self.nft_name,
-            nft_name=self.nft_name,
             address=self.address,
             index=self.index,
             owner_address=self.owner,
             collection_address=collection_address,
-            image=self.image,
+            content=NftItemContent(
+                name=self.nft_name,
+                image=self.image,
+                image_data=base64.encodebytes(self.image_data) if not icons and self.image_data else None
+            ),
             icons=icons,
             deleted=self.deleted_time is not None,
         )

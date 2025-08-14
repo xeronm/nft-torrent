@@ -210,15 +210,19 @@ class NftItemData:
     individual_content: BaseNftContent = None
     torrent_digest: str | None = None
 
+@dataclass(frozen=True)
+class NftItemContent:
+    name: str
+    image: str | None = None
+    image_data: str | None = None
+
 
 @dataclass(frozen=True)
 class NftItemHeader:
-    name: str
-    nft_name: str
     address: str
     index: int
     owner_address: str
     collection_address: str = None
-    image: str = None
     icons: dict[str, list[str]] = None
+    content: NftItemContent = None
     deleted: bool = False
