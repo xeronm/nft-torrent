@@ -94,7 +94,7 @@ class BotApp:
         getgems_authority: str = "https://testnet.getgems.io",
         ipfs_authority: str = "https://ipfs.io",
         petsmem_authority: str = "https://petsmem.site",
-        petsmem_content_authority: str = "https://w.petsmem.site",
+        petsmem_content_authority: str = "https://s.petsmem.site",
         tonviewer_authority: str = "https://testnet.tonviewer.com",
         bot_miniapp_authority: str = "https://t.me/pets_memorial_bot/petsmem",
         admin_group_id: int = None,

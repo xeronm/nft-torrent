@@ -198,15 +198,17 @@ class NftItemData(BaseModel):
     torrent_digest: str | None = None
 
 
-class NftItemHeader(BaseModel):
+class NftItemContent(BaseModel):
     name: str
-    nft_name: str
+    image: str | None = None
+    image_data: str | None = None
+
+class NftItemHeader(BaseModel):
     address: str
     index: int
     owner_address: str
     collection_address: str | None = None
-    image: str | None = None
-    image_data: str | None = None
+    content: NftItemContent
     icons: dict[str, list[str]] | None = None
     deleted: bool | None = False
 
@@ -222,6 +224,8 @@ class CollectionItemsMethod(BaseModel):
 
     @validator("owner")
     def validate_contract_address(cls, v):
+        if not v:
+            return None
         try:
             return TonAddress(v).b64url
         except Exception as E:
