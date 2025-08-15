@@ -161,6 +161,15 @@ async def statistics(request: Request) -> str:
     return "\n".join(measurements)
 
 
+@app.get("/api/v1/bootstrap", tags=["bootstrap"], status_code=status.HTTP_204_NO_CONTENT)
+async def bootstrap() -> None:
+    hc = ws.get_healthcheck()
+    if hc.tonlib and hc.storage:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    else:
+        return Response(status_code=status.HTTP_502_BAD_GATEWAY)
+
+
 @app.get(
     "/api/v1/tonlib/state",
     dependencies=[Depends(ws.jwt_bearer)],  # noqa: B008

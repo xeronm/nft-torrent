@@ -210,6 +210,7 @@ class NftItemData:
     individual_content: BaseNftContent = None
     torrent_digest: str | None = None
 
+
 @dataclass(frozen=True)
 class NftItemContent:
     name: str

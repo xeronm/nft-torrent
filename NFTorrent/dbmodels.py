@@ -5,8 +5,8 @@ import pickle
 
 from sqlmodel import Field, SQLModel, UniqueConstraint
 
-from .blockchain.models import GeoPoint, NftMutableMetaData, PetMemoryNftContent, PetMemoryNftImmutableData, SPECIES
-from .modelsbase import NftItemData, NftItemHeader, NftItemContent
+from .blockchain.models import SPECIES, GeoPoint, NftMutableMetaData, PetMemoryNftContent, PetMemoryNftImmutableData
+from .modelsbase import NftItemContent, NftItemData, NftItemHeader
 
 
 class PetsCollection(SQLModel, table=True):
@@ -133,32 +133,27 @@ class PetMemoryNft(SQLModel, table=True):
 
     @property
     def nft_name(self):
-        nft_name_comp = [
-            self.name,
-            self.species_name or SPECIES[self.species]
-        ]
+        nft_name_comp = [self.name, self.species_name or SPECIES[self.species]]
 
         if self.country:
             nft_name_comp.append(self.country)
         if self.location:
             nft_name_comp.append(self.location)
 
-        nft_name = ', '.join(nft_name_comp)
-        if self.birth_date != '*' or self.death_date != '*':
-            nft_name += f' ({self.birth_date} ~ {self.death_date})'
+        nft_name = ", ".join(nft_name_comp)
+        if self.birth_date != "*" or self.death_date != "*":
+            nft_name += f" ({self.birth_date} ~ {self.death_date})"
         return nft_name
-
 
     def to_nftheader(self, collection_address: str, icon_size: str = None) -> NftItemHeader:
         icons: dict[str, list[str]] = None
-        if self.icons is not None and icon_size != 'none':
+        if self.icons is not None and icon_size != "none":
             icons = pickle.loads(self.icons)
             icons = {
                 k: [base64.encodebytes(x) for x in v]
                 for k, v in icons.items()
                 if not icon_size or icon_size == "all" or k == icon_size
             }
-
 
         return NftItemHeader(
             address=self.address,
@@ -168,7 +163,7 @@ class PetMemoryNft(SQLModel, table=True):
             content=NftItemContent(
                 name=self.nft_name,
                 image=self.image,
-                image_data=base64.encodebytes(self.image_data) if not icons and self.image_data else None
+                image_data=base64.encodebytes(self.image_data) if not icons and self.image_data else None,
             ),
             icons=icons,
             deleted=self.deleted_time is not None,
