@@ -270,7 +270,9 @@ class IndexDb:
                 await self.loop.run_in_executor(self.threadpool_executor, SQLModel.metadata.create_all, self.dbengine)
 
                 for c in self.collection_config.collections:
-                    instance = await self.loop.run_in_executor(self.threadpool_executor, self.sync_collection_upsert, c.b64url)
+                    instance = await self.loop.run_in_executor(
+                        self.threadpool_executor, self.sync_collection_upsert, c.b64url
+                    )
                     data = CollectionTaskData(c, instance=instance)
                     data.meas = self.stats_coll[StatisticTags(c.b64url)]
                     self.collections[c.b64url] = data
@@ -287,7 +289,7 @@ class IndexDb:
                 logger.exception("Initialize DB got unhandled exception, sleep for %d sec", self.restart_timeout)
                 await asyncio.sleep(self.restart_timeout)
 
-        logger.info('DB initialization completed, continue startup')
+        logger.info("DB initialization completed, continue startup")
         await self.run_post_dbinit_task()
 
     async def event_processor(self):

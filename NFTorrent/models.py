@@ -152,6 +152,10 @@ class HealthCheckResult(BaseModel):
     bot: bool | None
 
 
+class BootstrapResult(BaseModel):
+    node_id: str
+
+
 class TonProof(BaseModel):
     timestamp: int
     domain: str
@@ -202,6 +206,7 @@ class NftItemContent(BaseModel):
     name: str
     image: str | None = None
     image_data: str | None = None
+
 
 class NftItemHeader(BaseModel):
     address: str

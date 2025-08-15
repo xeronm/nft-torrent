@@ -26,7 +26,7 @@ def main():
             lease_info = await lock.lease_info()
             await asyncio.sleep(5)
             await lock.refresh()
-            print(f'!!! Lock "{lock_name}" refreshed')
+            print(f'!!! Lock "{lock_name}" refreshed: {lease_info}')
             await asyncio.sleep(15)
             await lock.refresh_loop()
 
