@@ -13,6 +13,7 @@ SPECIES_LOGO = [
     "Horse",
     "Hedgehog",
     "Mouse",
+    "Ferret"
 ]
 
 for name in SPECIES_LOGO:
@@ -23,9 +24,9 @@ for name in SPECIES_LOGO:
         title="Marcus",
         subtitle="Nibelung",
         subtitle_font="assets/fonts/Inter_24pt-Regular.ttf",
-        title_size=72,
-        subtitle_size=40,
-        rect_padding=(128, 0),
+        title_size=36,
+        subtitle_size=20,
+        rect_padding=(96, 0),
         rect_fill=(31, 33, 66),
         color="white",
     )
