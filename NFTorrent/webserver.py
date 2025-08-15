@@ -40,6 +40,7 @@ SPECIES_LOGO = [
     "Horse",
     "Hedgehog",
     "Mouse",
+    "Ferret"
 ]
 
 
@@ -225,7 +226,6 @@ class Server:
                 return FileResponse(
                     nft_collection.image,
                     media_type=guess_type(nft_collection.image, default_type="image/webp")[0],
-                    headers={},
                 )
 
         nft_data = await self.tonlib.get_nft_data(address)
