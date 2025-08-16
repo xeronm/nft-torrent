@@ -12,11 +12,11 @@ from fastapi import HTTPException, UploadFile, status
 
 from NFTorrent import exceptions, models
 from NFTorrent.cache import BaseCacheManager, DisabledCacheManager
+from NFTorrent.locks import OperationLock
 from NFTorrent.modelsbase import MeasurementStore, StatisticMeasurement, with_stats
 from NFTorrent.settings import IpfsSettings
 from NFTorrent.tonlib import TonlibManager
 from NFTorrent.utils import dict_to_influx, parse_ipfs_uri
-from NFTorrent.locks import OperationLock
 
 logger = logging.getLogger(__name__)
 

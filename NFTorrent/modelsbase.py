@@ -7,8 +7,8 @@ from typing import Any
 
 from tonpy.types import CellSlice
 
-from NFTorrent.utils import dataclass_to_influx
 from NFTorrent.blockchain.address import parse_address
+from NFTorrent.utils import dataclass_to_influx
 
 
 @dataclass(frozen=True)

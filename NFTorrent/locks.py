@@ -32,4 +32,5 @@ class OperationLock:
             del self.lock_index[self.key]
         self.lock = None
 
-__all__ = ['OperationLock', 'LockShouldWaitError']
+
+__all__ = ["OperationLock", "LockShouldWaitError"]

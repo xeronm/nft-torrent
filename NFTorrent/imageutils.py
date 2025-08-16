@@ -1,7 +1,9 @@
 import io
 import math
 from functools import lru_cache
+
 from PIL import Image, ImageDraw, ImageFont
+
 from .utils import guess_type
 
 

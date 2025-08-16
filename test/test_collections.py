@@ -41,6 +41,54 @@ class TestPetMemoryNftContent(unittest.TestCase):
                 "balance_class_b": 1.65,
                 "fb_mode": 1,
                 "fb_uri": "https://s.petsmem.site/c/",
+                "minter": None
+            },
+        )
+
+        stack2 = [
+            [
+                "cell",
+                {
+                    "bytes": "te6cckEBAQEAJAAAQ4AFLnPmwnbNoHULKyClAwao/XFezTimbOpgQmwTvV33ilDfQtHL",
+                    "object": {
+                        "data": {"b64": "gAUuc+bCds2gdQsrIKUDBqj9cV7NOKZs6mBCbBO9XfeKQA==", "len": 267},
+                        "refs": [],
+                        "special": False,
+                    },
+                },
+            ],
+            ["num", "0x2faf080"],
+            ["num", "0x17d7840"],
+            ["num", "0x2faf080"],
+            ["num", "0x13cf0b7f2"],
+            ["num", "0x52fdf8b2"],
+            ["num", "0xe9f2bf40"],
+            ["num", "0x5"],
+            [
+                "cell",
+                {
+                    "bytes": "te6cckEBAQEAGwAAMmh0dHBzOi8vcy5wZXRzbWVtLnNpdGUvYy///xQz",
+                    "object": {
+                        "data": {"b64": "aHR0cHM6Ly9zLnBldHNtZW0uc2l0ZS9jLw==", "len": 200},
+                        "refs": [],
+                        "special": False,
+                    },
+                },
+            ],
+        ]
+        info2 = PetsCollectionInfo.from_tvm(stack2)
+        self.assertEqual(
+            asdict(info2),
+            {
+                "fee_storage": 0.05,
+                "fee_class_a": 0.025,
+                "fee_class_b": 0.05,
+                "balance": 5.317375986,
+                "balance_class_a": 1.392375986,
+                "balance_class_b": 3.925,
+                "fb_mode": 5,
+                "fb_uri": "https://s.petsmem.site/c/",
+                "minter": "EQApc582E7ZtA6hZWQUoGDVH64r2acUzZ1MCE2Cd6u-8Ug4Y"
             },
         )
 

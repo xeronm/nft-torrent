@@ -16,10 +16,10 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from NFTorrent import __meta__, models
 from NFTorrent.auth import set_cookie
 from NFTorrent.ipfs import IpfsRpcHttpException
+from NFTorrent.locks import LockShouldWaitError
 from NFTorrent.middlewares import StatisticsMiddleware, StatisticsStore
 from NFTorrent.tonlib import TonlibRequestError, TonlibSelectWorkerError
 from NFTorrent.webserver import Server
-from NFTorrent.locks import LockShouldWaitError
 
 ws = Server()
 
@@ -52,7 +52,7 @@ async def shutdown_event():
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request, exc):
     res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc.detail), status=exc.status_code)
-    return JSONResponse(res.dict(exclude_none=True), status_code=res.status)
+    return JSONResponse(res.model_dump(exclude_none=True), status_code=res.status)
 
 
 @app.exception_handler(RequestValidationError)
@@ -63,7 +63,7 @@ async def request_validation_exception_handler(request, exc):
         errors=[{k: v for k, v in err.items() if k != "ctx"} for err in exc.errors()],
         status=status.HTTP_422_UNPROCESSABLE_ENTITY,
     )
-    return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_422_UNPROCESSABLE_ENTITY)
+    return JSONResponse(res.model_dump(exclude_none=True), status_code=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
 
 @app.exception_handler(ValidationError)
@@ -74,61 +74,61 @@ async def validation_exception_handler(request, exc):
         errors=[{k: v for k, v in err.items() if k != "ctx"} for err in exc.errors()],
         status=status.HTTP_422_UNPROCESSABLE_ENTITY,
     )
-    return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_422_UNPROCESSABLE_ENTITY)
+    return JSONResponse(res.model_dump(exclude_none=True), status_code=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
 
 @app.exception_handler(aiohttp.client_exceptions.ClientError)
 async def client_exception_handler(request, exc):
     res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_502_BAD_GATEWAY)
-    return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_502_BAD_GATEWAY)
+    return JSONResponse(res.model_dump(exclude_none=True), status_code=status.HTTP_502_BAD_GATEWAY)
 
 
 @app.exception_handler(aiohttp.client_exceptions.ClientConnectorError)
 async def client_connect_exception_handler(request, exc):
     res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_502_BAD_GATEWAY)
-    return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_502_BAD_GATEWAY)
+    return JSONResponse(res.model_dump(exclude_none=True), status_code=status.HTTP_502_BAD_GATEWAY)
 
 
 @app.exception_handler(asyncio.TimeoutError)
 async def timeout_exception_handler(request, exc):
     res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_504_GATEWAY_TIMEOUT)
-    return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_504_GATEWAY_TIMEOUT)
+    return JSONResponse(res.model_dump(exclude_none=True), status_code=status.HTTP_504_GATEWAY_TIMEOUT)
 
 
 @app.exception_handler(TonlibException)
 async def tonlib_error_result_exception_handler(request, exc):
     res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    return JSONResponse(res.model_dump(exclude_none=True), status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @app.exception_handler(IpfsRpcHttpException)
 async def ipfs_exception_handler(request, exc):
     res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    return JSONResponse(res.model_dump(exclude_none=True), status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @app.exception_handler(TonlibRequestError)
 async def invalid_contract_result_exception_handler(request, exc):
     res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_400_BAD_REQUEST)
-    return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_400_BAD_REQUEST)
+    return JSONResponse(res.model_dump(exclude_none=True), status_code=status.HTTP_400_BAD_REQUEST)
 
 
 @app.exception_handler(TonlibSelectWorkerError)
 async def tonlib_worker_exception_handler(request, exc):
     res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_502_BAD_GATEWAY)
-    return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_502_BAD_GATEWAY)
+    return JSONResponse(res.model_dump(exclude_none=True), status_code=status.HTTP_502_BAD_GATEWAY)
 
 
 @app.exception_handler(LockShouldWaitError)
 async def operation_lock_wait_exception_handler(request, exc):
     res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_400_BAD_REQUEST)
-    return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_400_BAD_REQUEST)
+    return JSONResponse(res.model_dump(exclude_none=True), status_code=status.HTTP_400_BAD_REQUEST)
 
 
 @app.exception_handler(Exception)
 async def fastapi_generic_exception_handler(request, exc):
     res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_503_SERVICE_UNAVAILABLE)
-    return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+    return JSONResponse(res.model_dump(exclude_none=True), status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
 @app.middleware("http")
@@ -270,7 +270,7 @@ async def create_account_auth_session(rawRequest: Request, body: models.AuthData
     """
     payload, token = ws.jwt_session.auth_session(body.account, body.proof)
     response = JSONResponse(
-        models.AuthSession(node=ws.get_healthcheck(), sess=payload).dict(), status_code=status.HTTP_200_OK
+        models.AuthSession(node=ws.get_healthcheck(), sess=payload).model_dump(), status_code=status.HTTP_200_OK
     )
     await ws.register_tg_user(
         owner=payload.sub, userdata=payload.user, country=rawRequest.headers.get("x-country-code")
@@ -339,7 +339,7 @@ if ws.settings.indexdb.enabled:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="valid JWT API key required for this operation"
             )
-        nft_data = await ws.indexer.nft_list(owner=jwt_payload.sub, **request.dict())
+        nft_data = await ws.indexer.nft_list(owner=jwt_payload.sub, **request.model_dump())
         return nft_data
 
 
@@ -375,7 +375,9 @@ async def get_nft_address_information(request: models.NftMethod = Depends()):  #
     return nft_state
 
 
-@app.post("/api/v1/nft/{address}/sync", response_model_exclude_none=True, tags=["nft"], status_code=status.HTTP_204_NO_CONTENT)
+@app.post(
+    "/api/v1/nft/{address}/sync", response_model_exclude_none=True, tags=["nft"], status_code=status.HTTP_204_NO_CONTENT
+)
 async def sync_nft_data(
     rawRequest: Request,
     request: models.NftMethod = Depends(),  # noqa: B008
@@ -479,35 +481,49 @@ if ws.settings.indexdb.enabled:
         response_model_exclude_none=True,
         tags=["collection"],
         # dependencies=[Depends(ws.jwt_session)],  # noqa: B008
+        response_model=list[models.CollectionData],
     )
-    async def list_collections() -> list[models.CollectionData]:
+    @wrap_result
+    async def list_collections():
         """
         List Collections Info.
         """
-        return [
+        result = [
             x.collection_data if x.collection_data else await ws.tonlib.get_collection_data(x.nft_collection.address)
             for x in ws.indexer.collections.values()
         ]
+        return result
 
     @app.get(
         "/api/v1/collection/items",
         response_model_exclude_none=True,
         tags=["collection"],
         dependencies=[Depends(ws.jwt_session)],  # noqa: B008
+        response_model=list[models.NftItemHeader],
     )
+    @wrap_result
     async def list_collection_nft_items(
         request: models.CollectionItemsMethod = Depends(),  # noqa: B008
-    ) -> list[models.NftItemHeader]:
+    ):
         """
         List Collection NFT items.
         """
-        return await ws.indexer.collection_query(**request.dict())
+        return await ws.indexer.collection_query(**request.model_dump())
 
-    @app.get("/api/v1/collection/feed", response_model_exclude_none=True, tags=["collection"])
+    @app.get(
+        "/api/v1/collection/feed",
+        response_model_exclude_none=True,
+        tags=["collection"],
+        response_model=list[models.NftItemHeader],
+    )
+    @wrap_result
     async def collection_random_feed(
         request: models.CollectionItemsMethod = Depends(),  # noqa: B008
-    ) -> list[models.NftItemHeader]:
+    ):
         """
         Collection NFT radnom feed.
         """
-        return await ws.indexer.collection_random_feed(**request.dict())
+        return JSONResponse(
+            await ws.indexer.collection_random_feed(**request.model_dump()),
+            headers={"Cache-Control": "public, max-age=300"},
+        )

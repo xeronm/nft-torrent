@@ -31,7 +31,7 @@ dependencies = [
   "pydantic",
   "python-dateutil",
   "python-multipart",
-  "tonpy",
+  "tonpy>=0.0.0.1.3a0",
   "aiohttp",
   "pyjwt",
   "pynacl",

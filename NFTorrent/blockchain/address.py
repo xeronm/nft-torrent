@@ -1,7 +1,7 @@
 import base64
 import binascii
 
-from pytonlib.utils.address import calcCRC, read_friendly_address, account_forms, is_hex, is_int
+from pytonlib.utils.address import account_forms, calcCRC, is_hex, is_int, read_friendly_address
 
 
 def adnl_id_encode(adnl_id: bytes, upper_case: bool = False) -> str:
@@ -82,13 +82,12 @@ def parse_address(address: bytes | str):
     if isinstance(address, bytes):
         address = address.hex()
     if len(address) == 64 and is_hex(address):
-        return account_forms("-1:"+address)
+        return account_forms("-1:" + address)
     elif ":" in address:
-        workchain, address = address.split(":")
-        if is_hex(address) and len(address) == 64 and is_int(workchain):
+        workchain, _address = address.split(":")
+        if is_hex(_address) and len(_address) == 64 and is_int(workchain):
             return account_forms(address)
         else:
             raise ValueError("Invalid raw address format")
     else:
         return read_friendly_address(address)
-
