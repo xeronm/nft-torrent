@@ -17,8 +17,9 @@ from NFTorrent import __meta__, models
 from NFTorrent.auth import set_cookie
 from NFTorrent.ipfs import IpfsRpcHttpException
 from NFTorrent.middlewares import StatisticsMiddleware, StatisticsStore
-from NFTorrent.tonlib import TonlibRequestError
+from NFTorrent.tonlib import TonlibRequestError, TonlibSelectWorkerError
 from NFTorrent.webserver import Server
+from NFTorrent.locks import LockShouldWaitError
 
 ws = Server()
 
@@ -108,6 +109,18 @@ async def ipfs_exception_handler(request, exc):
 
 @app.exception_handler(TonlibRequestError)
 async def invalid_contract_result_exception_handler(request, exc):
+    res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_400_BAD_REQUEST)
+    return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_400_BAD_REQUEST)
+
+
+@app.exception_handler(TonlibSelectWorkerError)
+async def tonlib_worker_exception_handler(request, exc):
+    res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_502_BAD_GATEWAY)
+    return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_502_BAD_GATEWAY)
+
+
+@app.exception_handler(LockShouldWaitError)
+async def operation_lock_wait_exception_handler(request, exc):
     res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_400_BAD_REQUEST)
     return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_400_BAD_REQUEST)
 
@@ -295,7 +308,7 @@ async def get_nft_content(
     """
     response = await ws.get_nft_content(rawRequest, request.address, query=request.q)
     if isinstance(response, Response):
-        response.headers["Cache-Control"] = "public, max-age=3600"
+        response.headers["Cache-Control"] = "public, max-age=86400"
     return response
 
 
@@ -362,7 +375,7 @@ async def get_nft_address_information(request: models.NftMethod = Depends()):  #
     return nft_state
 
 
-@app.post("/api/v1/nft/{address}/sync", response_model_exclude_none=True, tags=["nft"])
+@app.post("/api/v1/nft/{address}/sync", response_model_exclude_none=True, tags=["nft"], status_code=status.HTTP_204_NO_CONTENT)
 async def sync_nft_data(
     rawRequest: Request,
     request: models.NftMethod = Depends(),  # noqa: B008

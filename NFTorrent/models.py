@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import UploadFile
 from fastapi.params import File, Path, Query
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 from NFTorrent.modelsbase import TonAddress
 from NFTorrent.utils import guess_type
@@ -22,7 +22,7 @@ class ProblemDetail(BaseModel):
 class NftMethod(BaseModel):
     address: str = Path(description="Address of NFT item")
 
-    @validator("address")
+    @field_validator("address")
     def validate_contract_address(cls, v):
         try:
             return TonAddress(v).b64url
@@ -134,7 +134,7 @@ class Account(BaseModel):
     chain: CHAIN | None = None
     public_key: str
 
-    @validator("address")
+    @field_validator("address")
     def validate_contract_address(cls, v):
         try:
             return TonAddress(v).b64url
@@ -227,7 +227,7 @@ class CollectionItemsMethod(BaseModel):
     offset: int = Query(default=0)
     icon_size: str = Query(default="small")
 
-    @validator("owner")
+    @field_validator("owner")
     def validate_contract_address(cls, v):
         if not v:
             return None

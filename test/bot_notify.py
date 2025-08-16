@@ -40,8 +40,17 @@ def main():
             torrent_file_size_limit=1024 * 1024,
         )
 
-        await services.nft.nft_preview(bot, nft=nft, collection=collection, user=user, keyboard=False)
-        await services.nft.notify_nft_minted(bot, nft=nft, collection=collection, user=user, keyboard=True)
+        # nft, collection = await bot.backend.nft_get("EQCaGjQPZtCibnJVN3wvyqlAlStAYWWqHkxjfydIoW2hc9oR")
+        # await services.nft.nft_preview(bot, nft, collection, user)
+
+        # nft, collection = await bot.backend.nft_get("EQBuVEf4hXaMoHgTees5xwFtXZYh6sox-1GAv1RIOP-YOCwl")
+        # await services.nft.nft_preview(bot, nft, collection, user)
+
+        nft, collection = await bot.backend.nft_get("EQAX6zFnQ6j8N2FEgqWyyK5g00gJCpz8VTxhZsCO3B2HV8Uz")
+        await services.nft.nft_preview(bot, nft, collection, user)
+
+        # await services.nft.nft_preview(bot, nft=nft, collection=collection, user=user, keyboard=False)
+        # await services.nft.notify_nft_minted(bot, nft=nft, collection=collection, user=user, keyboard=True)
 
     asyncio.run(__send())
 

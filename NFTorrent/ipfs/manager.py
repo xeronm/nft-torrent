@@ -16,40 +16,9 @@ from NFTorrent.modelsbase import MeasurementStore, StatisticMeasurement, with_st
 from NFTorrent.settings import IpfsSettings
 from NFTorrent.tonlib import TonlibManager
 from NFTorrent.utils import dict_to_influx, parse_ipfs_uri
+from NFTorrent.locks import OperationLock
 
 logger = logging.getLogger(__name__)
-
-
-class LockShouldWaitError(Exception):
-    pass
-
-
-class OperationLock:
-
-    def __init__(self, key: str, lock_index: dict[str, asyncio.Lock], wait: bool = True):
-        self.lock_index = lock_index
-        self.key = key
-        self.wait = wait
-
-    async def __aenter__(self):
-        self.lock = self.lock_index.get(self.key)
-        if self.lock is None:
-            self.lock = asyncio.Lock()
-            self.lock.__ref_count = 0
-            self.lock_index[self.key] = self.lock
-        else:
-            if not self.wait and self.lock.locked():
-                raise LockShouldWaitError
-        self.lock.__ref_count += 1
-        await self.lock.acquire()
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb):
-        self.lock.release()
-        self.lock.__ref_count -= 1
-        if self.lock.__ref_count == 0:
-            del self.lock_index[self.key]
-        self.lock = None
 
 
 class IpfsRpcHttpException(HTTPException):
@@ -102,14 +71,16 @@ class IpfsRpcManager:
         self.cluster.close()
 
     def setup_cache(self):
+        # Short-term
+        self.cid_pin_status = with_stats(key="cached_cid_pin_status", stats=self.stats)(
+            self.cache_manager.cached(expire=5)(self.cid_pin_status)
+        )
+        # Mid-term
         self.get_cid_file = with_stats(key="cached_get_cid_file", stats=self.stats)(
             self.cache_manager.cached(expire=15)(self.get_cid_file)
         )
         self.get_cid_info = with_stats(key="cached_get_cid_info", stats=self.stats)(
             self.cache_manager.cached(expire=60)(self.get_cid_info)
-        )
-        self.cid_pin_status = with_stats(key="cached_cid_pin_status", stats=self.stats)(
-            self.cache_manager.cached(expire=30)(self.cid_pin_status)
         )
 
     async def check_ipfs_alive(self):
