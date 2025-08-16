@@ -1,33 +1,32 @@
 import asyncio
+import hashlib
 import io
 import logging
 import logging.config
 import os
 import time
-import hashlib
-import base64
-from mimetypes import guess_extension
 from dataclasses import asdict
+from mimetypes import guess_extension
 from typing import Any
 from urllib.parse import urljoin
 
 from fastapi import Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import HTTPException
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
 from NFTorrent.auth import ContractAPIKeyCookie, NodeJWTBearer
 from NFTorrent.bot import Backend, BotApp
 from NFTorrent.cache import DisabledCacheManager
-from NFTorrent.imageutils import generate_cover, buffer_guess_type
+from NFTorrent.imageutils import buffer_guess_type, generate_cover
 from NFTorrent.indexer import IndexDb
 from NFTorrent.ipfs import IpfsRpcManager
+from NFTorrent.locks import OperationLock
 from NFTorrent.models import HealthCheckResult, NftContentState, torrent_digest
 from NFTorrent.modelsbase import CollectionConfig
 from NFTorrent.settings import Settings
 from NFTorrent.tonlib import TonlibContractIsNotNft, TonlibManager
 from NFTorrent.utils import dict_to_influx, guess_type, parse_ipfs_uri, uri_ipfs, uri_supported
-from NFTorrent.locks import OperationLock
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +43,7 @@ SPECIES_LOGO = [
     "Horse",
     "Hedgehog",
     "Mouse",
-    "Ferret"
+    "Ferret",
 ]
 
 
@@ -54,10 +53,7 @@ def image_data_response(image_data: bytes) -> StreamingResponse:
     return StreamingResponse(
         io.BytesIO(image_data),
         media_type=media_type,
-        headers={
-            "Content-Disposition": f'inline; filename="{hash}{guess_extension(media_type)}"',
-            "ETag": hash
-        },
+        headers={"Content-Disposition": f'inline; filename="{hash}{guess_extension(media_type)}"', "ETag": hash},
     )
 
 
@@ -96,11 +92,13 @@ class Server:
         )
 
     async def startup(self):
+        assert self.settings.webserver.node_id, '"node_id" is required'
         self.start_time = int(time.time())
         self.loop = loop = asyncio.get_event_loop()
         logger.warning("Server startup initiated...")
         logger.warning(
             "Parameters:\n"
+            " - webserver.node_id: %s\n"
             " - webserver.allow_networks: %s\n"
             " - webserver.api_root_path: %s\n"
             " - webserver.twa_domains: %s\n"
@@ -109,6 +107,7 @@ class Server:
             " - ipfs.enabled: %s\n"
             " - cache.enabled: %s <%s>\n"
             " - indexdb.enabled: %s\n",
+            self.settings.webserver.node_id,
             self.settings.webserver.allow_networks,
             self.settings.webserver.api_root_path,
             self.settings.webserver.twa_domains,
@@ -187,7 +186,7 @@ class Server:
     def get_healthcheck(self) -> HealthCheckResult:
         stotage_state = tonlib_state = indexer_state = None
         if self.tonlib is not None:
-            tonlib_state = len([w for w in self.tonlib.workers.values() if w.is_sync]) >= 2  # 2 min liyterservers
+            tonlib_state = len([w for w in self.tonlib.workers.values() if w.is_sync]) >= self.settings.tonlib.min_liteservers
 
         load = redundancy = 0
         if self.ipfs is not None:
@@ -311,7 +310,7 @@ class Server:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
     async def sync_nft_data(self, address: str = None):
-        async with OperationLock(f'sync:{address}', self.sync_wlock, wait=False):
+        async with OperationLock(f"sync:{address}", self.sync_wlock, wait=False):
             await asyncio.sleep(7)  # wait for cache expiration
             try:
                 # Ownership is not verified here, since the NFT may have been transferred or deleted.

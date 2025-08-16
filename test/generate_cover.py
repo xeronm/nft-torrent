@@ -13,7 +13,7 @@ SPECIES_LOGO = [
     "Horse",
     "Hedgehog",
     "Mouse",
-    "Ferret"
+    "Ferret",
 ]
 
 for name in SPECIES_LOGO:

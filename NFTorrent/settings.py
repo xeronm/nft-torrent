@@ -243,6 +243,7 @@ class TonlibSettings:
     restart_timeout: int = 10
     max_liteservers: int = 16
     cdll_path: str = None
+    min_liteservers: int = 2
 
     @property
     def liteserver_config(self):
@@ -257,6 +258,7 @@ class TonlibSettings:
     @classmethod
     def from_environment(cls):
         obj = cls.__new__(cls)
+        obj.min_liteservers = int(os.environ.get("TONLIB_MIN_LITESERVERS", cls.min_liteservers))
         obj.max_liteservers = int(os.environ.get("TONLIB_MAX_LITESERVERS", cls.max_liteservers))
         obj.verbosity_level = int(os.environ.get("TONLIB_VERBOSITY_LEVEL", cls.verbosity_level))
         obj.parallel_requests = int(os.environ.get("TONLIB_PARALLEL_REQUESTS", cls.parallel_requests))

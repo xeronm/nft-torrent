@@ -174,7 +174,7 @@ def load_string(stack, opt: bool = False):
 def load_address(stack, opt: bool = False):
     if opt and "bytes" not in stack[1]:
         return None
-    return CellSlice(stack[1]["bytes"]).load_address()
+    return CellSlice(stack[1]["bytes"]).load_address().serialize()
 
 
 @dataclass

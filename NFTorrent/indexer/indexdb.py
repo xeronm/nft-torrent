@@ -8,9 +8,7 @@ import random
 import time
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import (
-    dataclass,
-)
+from dataclasses import asdict, dataclass
 
 import aiohttp
 import etcd3
@@ -569,9 +567,12 @@ class IndexDb:
         self.threadpool_executor.shutdown()
 
     def setup_cache(self):
-        self.nft_get = self.cache_manager.cached(expire=15)(self.nft_get)
-        self.nft_list = self.cache_manager.cached(expire=15)(self.nft_list)
+        # Short-term
+        self.nft_get = self.cache_manager.cached(expire=5)(self.nft_get)
+        self.nft_list = self.cache_manager.cached(expire=5)(self.nft_list)
+        # Mid-term
         self.collection_query = self.cache_manager.cached(expire=60)(self.collection_query)
+        # Long-term
         self.collection_random_feed = self.cache_manager.cached(expire=300)(self.collection_random_feed)
 
     async def register_tg_user(
@@ -667,7 +668,7 @@ class IndexDb:
     async def nft_list(self, owner: str, icon_size: str = None, offset: int = 0, limit: int = 20):
         result = await self.loop.run_in_executor(self.threadpool_executor, self.sync_nft_list, owner, offset, limit)
         return [
-            x.to_nftheader(self.collections_id.get(x.collection_id).nft_collection.b64url, icon_size=icon_size)
+            asdict(x.to_nftheader(self.collections_id.get(x.collection_id).nft_collection.b64url, icon_size=icon_size))
             for x in result
             if x.collection_id in self.collections_id
         ]
@@ -1101,7 +1102,7 @@ class IndexDb:
 
         result = await self.loop.run_in_executor(self.threadpool_executor, _warped_func, kwargs)
         return [
-            x.to_nftheader(self.collections_id.get(x.collection_id).nft_collection.b64url, icon_size=icon_size)
+            asdict(x.to_nftheader(self.collections_id.get(x.collection_id).nft_collection.b64url, icon_size=icon_size))
             for x in result
             if x.collection_id in self.collections_id
         ]
@@ -1151,7 +1152,7 @@ class IndexDb:
 
         result = await self.loop.run_in_executor(self.threadpool_executor, _warped_func, kwargs)
         return [
-            x.to_nftheader(self.collections_id.get(x.collection_id).nft_collection.b64url, icon_size=icon_size)
+            asdict(x.to_nftheader(self.collections_id.get(x.collection_id).nft_collection.b64url, icon_size=icon_size))
             for x in result
             if x.collection_id in self.collections_id
         ]

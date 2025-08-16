@@ -11,7 +11,7 @@ from NFTorrent.tonlib import TonlibManager
 class TestTonlibManager(unittest.IsolatedAsyncioTestCase):
 
     async def test_tonlib(self):
-        logging.basicConfig(level=logging.INFO)
+        logging.basicConfig(level=logging.WARNING)
         self.tonlib = TonlibManager(
             TonlibSettings(
                 max_liteservers=1,

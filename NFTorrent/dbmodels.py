@@ -150,7 +150,7 @@ class PetMemoryNft(SQLModel, table=True):
         if self.icons is not None and icon_size != "none":
             icons = pickle.loads(self.icons)
             icons = {
-                k: [base64.encodebytes(x) for x in v]
+                k: [base64.b64encode(x).decode() for x in v]
                 for k, v in icons.items()
                 if not icon_size or icon_size == "all" or k == icon_size
             }
@@ -163,7 +163,7 @@ class PetMemoryNft(SQLModel, table=True):
             content=NftItemContent(
                 name=self.nft_name,
                 image=self.image,
-                image_data=base64.encodebytes(self.image_data) if not icons and self.image_data else None,
+                image_data=base64.b64encode(self.image_data).decode() if not icons and self.image_data else None,
             ),
             icons=icons,
             deleted=self.deleted_time is not None,
