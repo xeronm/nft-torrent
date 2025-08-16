@@ -1,7 +1,7 @@
 import base64
 import binascii
 
-from pytonlib.utils.address import calcCRC
+from pytonlib.utils.address import calcCRC, read_friendly_address, account_forms, is_hex, is_int
 
 
 def adnl_id_encode(adnl_id: bytes, upper_case: bool = False) -> str:
@@ -76,3 +76,19 @@ def parse_bag_id(bag_id: int | str | bytes) -> str:
         if not valid:
             raise ValueError("Invalid bag id: should be 32 bytes hex or base64 encoded")
     return hex_bag_id.upper()
+
+
+def parse_address(address: bytes | str):
+    if isinstance(address, bytes):
+        address = address.hex()
+    if len(address) == 64 and is_hex(address):
+        return account_forms("-1:"+address)
+    elif ":" in address:
+        workchain, address = address.split(":")
+        if is_hex(address) and len(address) == 64 and is_int(workchain):
+            return account_forms(address)
+        else:
+            raise ValueError("Invalid raw address format")
+    else:
+        return read_friendly_address(address)
+

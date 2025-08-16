@@ -4,6 +4,9 @@ import logging
 import logging.config
 import os
 import time
+import hashlib
+import base64
+from mimetypes import guess_extension
 from dataclasses import asdict
 from typing import Any
 from urllib.parse import urljoin
@@ -11,12 +14,12 @@ from urllib.parse import urljoin
 from fastapi import Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import HTTPException
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse, Response
 
 from NFTorrent.auth import ContractAPIKeyCookie, NodeJWTBearer
 from NFTorrent.bot import Backend, BotApp
 from NFTorrent.cache import DisabledCacheManager
-from NFTorrent.imageutils import generate_cover
+from NFTorrent.imageutils import generate_cover, buffer_guess_type
 from NFTorrent.indexer import IndexDb
 from NFTorrent.ipfs import IpfsRpcManager
 from NFTorrent.models import HealthCheckResult, NftContentState, torrent_digest
@@ -24,6 +27,7 @@ from NFTorrent.modelsbase import CollectionConfig
 from NFTorrent.settings import Settings
 from NFTorrent.tonlib import TonlibContractIsNotNft, TonlibManager
 from NFTorrent.utils import dict_to_influx, guess_type, parse_ipfs_uri, uri_ipfs, uri_supported
+from NFTorrent.locks import OperationLock
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +48,19 @@ SPECIES_LOGO = [
 ]
 
 
+def image_data_response(image_data: bytes) -> StreamingResponse:
+    hash = hashlib.md5(image_data).hexdigest().lower()
+    media_type = buffer_guess_type(image_data, default_type="image/webp")[0]
+    return StreamingResponse(
+        io.BytesIO(image_data),
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'inline; filename="{hash}{guess_extension(media_type)}"',
+            "ETag": hash
+        },
+    )
+
+
 class Server:
 
     def __init__(self, settings: Settings = None, collection_config: CollectionConfig = None):
@@ -58,6 +75,7 @@ class Server:
         self.indexer: IndexDb = None
         self.ipfs: IpfsRpcManager = None
         self.peer_hostnames = {}
+        self.sync_wlock = {}
         self.loop = None
 
         self.jwt_bearer = NodeJWTBearer(
@@ -254,13 +272,7 @@ class Server:
             else:
                 return RedirectResponse(uri)
         if nft_content.image_data() and query != "uri":
-            return StreamingResponse(
-                io.BytesIO(nft_content.image_data()),
-                media_type="image/webp",
-                headers={
-                    "Content-Disposition": f'inline; filename="{address}.webp"',
-                },
-            )
+            return image_data_response(nft_content.image_data())
         if query == "uri":
             return JSONResponse({"attributes": nft_content.metadata_attributes()})
 
@@ -276,13 +288,7 @@ class Server:
             image = generate_cover(
                 baseimage=baseimage, title=nft_content.title(), subtitle=nft_content.subtitle(), format="webp", **kwargs
             )
-            return StreamingResponse(
-                io.BytesIO(image),
-                media_type="image/webp",
-                headers={
-                    "Content-Disposition": f'inline; filename="{address}.webp"',
-                },
-            )
+            return image_data_response(image)
 
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
@@ -305,28 +311,31 @@ class Server:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
     async def sync_nft_data(self, address: str = None):
-        try:
-            # Ownership is not verified here, since the NFT may have been transferred or deleted.
-            nft_data = await self.tonlib.get_nft_data(address)
-        except TonlibContractIsNotNft:
-            nft_data = None
-            account_state = await self.tonlib.generic_get_account_state(address)
-            if account_state["account_state"]["@type"] == "uninited.accountState":
-                # looks as if NFT was destroyed
-                await self.indexer.nft_update_nft_data(address)
-                return
-            raise
+        async with OperationLock(f'sync:{address}', self.sync_wlock, wait=False):
+            await asyncio.sleep(7)  # wait for cache expiration
+            try:
+                # Ownership is not verified here, since the NFT may have been transferred or deleted.
+                nft_data = await self.tonlib.get_nft_data(address)
+            except TonlibContractIsNotNft:
+                nft_data = None
+                account_state = await self.tonlib.generic_get_account_state(address)
+                if account_state["account_state"]["@type"] == "uninited.accountState":
+                    # looks as if NFT was destroyed
+                    await self.indexer.nft_update_nft_data(address)
+                    return
+                raise
 
-        nft_content = nft_data.individual_content
-        if nft_content is not None:
-            image = nft_content.image()
-            if uri_ipfs(image):
-                cid, _, _ = parse_ipfs_uri(image)
-                if cid:
-                    pin_status = await self.ipfs.cid_pin_status(cid=cid)
-                    if nft_content.storage_due_time() > (pin_status.expires if pin_status else time.time()):
-                        self.loop.create_task(self.ipfs.confirm_content(address, old_cid=None, cid=cid))
-            await self.indexer.nft_update_nft_data(address, nft_data)
+            nft_content = nft_data.individual_content
+            if nft_content is not None:
+                image = nft_content.image()
+                if uri_ipfs(image):
+                    cid, _, _ = parse_ipfs_uri(image)
+                    if cid:
+                        pin_status = await self.ipfs.cid_pin_status(cid=cid)
+                        if nft_content.storage_due_time() > (pin_status.expires if pin_status else time.time()):
+                            self.loop.create_task(self.ipfs.confirm_content(address, old_cid=None, cid=cid))
+                await self.indexer.nft_update_nft_data(address, nft_data)
+            return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     async def get_nft_cid_info(self, address: str, digest: str = None):
         cid, _ = await self.ipfs.get_nft_cid(address, raise_error=True)

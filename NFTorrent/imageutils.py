@@ -1,8 +1,15 @@
 import io
 import math
 from functools import lru_cache
-
 from PIL import Image, ImageDraw, ImageFont
+from .utils import guess_type
+
+
+def buffer_guess_type(data: bytes, default_type: str = None) -> tuple[str, str]:
+    with Image.open(io.BytesIO(data)) as img:
+        ext = img.format.lower()
+        mime_type, _ = guess_type(f"buffer.{ext}", default_type=default_type)
+        return mime_type or "application/octet-stream", ext
 
 
 def convert_image(buffer: bytes, size: int, format: str) -> bytes:

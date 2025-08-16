@@ -5,10 +5,10 @@ from dataclasses import asdict, dataclass, field, is_dataclass
 from functools import wraps
 from typing import Any
 
-from pytonlib.utils.address import detect_address
 from tonpy.types import CellSlice
 
 from NFTorrent.utils import dataclass_to_influx
+from NFTorrent.blockchain.address import parse_address
 
 
 @dataclass(frozen=True)
@@ -19,7 +19,7 @@ class TonAddress:
     b64url: str = field(init=False)
 
     def __post_init__(self):
-        address = detect_address(self.address)
+        address = parse_address(self.address)
         object.__setattr__(self, "raw_form", address["raw_form"])
         addr_map = address["bounceable"]
         object.__setattr__(self, "b64", addr_map["b64"])
