@@ -186,7 +186,9 @@ class Server:
     def get_healthcheck(self) -> HealthCheckResult:
         stotage_state = tonlib_state = indexer_state = None
         if self.tonlib is not None:
-            tonlib_state = len([w for w in self.tonlib.workers.values() if w.is_sync]) >= self.settings.tonlib.min_liteservers
+            tonlib_state = (
+                len([w for w in self.tonlib.workers.values() if w.is_sync]) >= self.settings.tonlib.min_liteservers
+            )
 
         load = redundancy = 0
         if self.ipfs is not None:
@@ -311,7 +313,7 @@ class Server:
 
     async def sync_nft_data(self, address: str = None):
         async with OperationLock(f"sync:{address}", self.sync_wlock, wait=False):
-            await asyncio.sleep(7)  # wait for cache expiration
+            await asyncio.sleep(3)  # wait few seconds for cache expiration
             try:
                 # Ownership is not verified here, since the NFT may have been transferred or deleted.
                 nft_data = await self.tonlib.get_nft_data(address)

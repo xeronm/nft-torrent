@@ -12,9 +12,10 @@ from sqlalchemy.exc import NoResultFound
 from NFTorrent.modelsbase import TonAddress
 from NFTorrent.translations import gettext
 
+from ..keyboards.nft import nft_form_kb
 from ..main import _Bot
 from ..services.nft import nft_preview
-from ..states.nft import NftForm
+from ..states.nft import NftForm, NftFormAction, NftFormCallback
 
 logger = logging.getLogger(__name__)
 
@@ -112,12 +113,27 @@ async def nft_list_callback(callback: CallbackQuery, callback_data: NftListCallb
     await _nft_list(callback.from_user, callback.message, offset=callback_data.offset, edit=True)
 
 
+@router.callback_query(NftFormCallback.filter(F.action == NftFormAction.Cancel.value))
+async def nft_view_cancel(callback: CallbackQuery, callback_data: NftListCallback, state: FSMContext):
+    current_state = await state.get_state()
+    if current_state is not None and current_state.startswith(f"{NftForm.__name__}:"):
+        await state.clear()
+        _ = partial(gettext, callback.from_user.language_code)
+        await callback.message.answer(
+            _("Your request has been cancelled."),
+        )
+    await callback.bot.edit_message_reply_markup(
+        chat_id=callback.message.chat.id, message_id=callback.message.message_id, reply_markup=None
+    )
+    await callback.answer()
+
+
 @router.message(Command("nftview"))
 async def nft_view_command(message: Message, command: CommandObject, state: FSMContext):
     _ = partial(gettext, message.from_user.language_code)
 
     if not command.args:
-        await message.answer(_("Send <b>NFT address</b> to view or /cancel."))
+        await message.answer(_("Send <b>NFT address</b> to view NFT."), reply_markup=nft_form_kb(_))
         await state.set_state(NftForm.address)
         return
 
@@ -125,7 +141,8 @@ async def nft_view_command(message: Message, command: CommandObject, state: FSMC
         address = TonAddress(command.args.strip())
     except Exception:
         await message.answer(
-            _("Provided input is not a valid TON Address. Please send the valid <b>NFT address</b> or just /cancel."),
+            _("Provided input is not a valid TON Address. Please send the valid <b>NFT address</b>."),
+            reply_markup=nft_form_kb(NftForm.address, _),
         )
         await state.set_state(NftForm.address)
         return
@@ -145,9 +162,8 @@ async def get_address(message: Message, state: FSMContext):
         address = TonAddress(message.text.strip())
     except Exception:
         await message.answer(
-            _(
-                "The input you provided is not a valid TON address. Please send a valid <b>NFT address</b>, or just /cancel."
-            ),
+            _("The input you provided is not a valid TON address. Please send a valid <b>NFT address</b>."),
+            reply_markup=nft_form_kb(NftForm.address, _),
         )
         return
 

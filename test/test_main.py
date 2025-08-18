@@ -1,5 +1,6 @@
-import unittest
 import asyncio
+import unittest
+
 from fastapi.testclient import TestClient
 
 from NFTorrent.main import app, ws
@@ -75,8 +76,7 @@ class TestTonlibManager(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200)
         auth_result = response.json()
         self.assertEqual(auth_result["node"]["node_id"], "dev-server")
-        self.assertEqual(auth_result["sess"], {
-            "sub": "EQApc582E7ZtA6hZWQUoGDVH64r2acUzZ1MCE2Cd6u-8Ug4Y",
-            "aud": ["NFTorrent"],
-            "exp": 1756577278
-        })
+        self.assertEqual(
+            auth_result["sess"],
+            {"sub": "EQApc582E7ZtA6hZWQUoGDVH64r2acUzZ1MCE2Cd6u-8Ug4Y", "aud": ["NFTorrent"], "exp": 1756577278},
+        )

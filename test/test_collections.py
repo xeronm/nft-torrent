@@ -41,7 +41,7 @@ class TestPetMemoryNftContent(unittest.TestCase):
                 "balance_class_b": 1.65,
                 "fb_mode": 1,
                 "fb_uri": "https://s.petsmem.site/c/",
-                "minter": None
+                "minter": None,
             },
         )
 
@@ -88,7 +88,7 @@ class TestPetMemoryNftContent(unittest.TestCase):
                 "balance_class_b": 3.925,
                 "fb_mode": 5,
                 "fb_uri": "https://s.petsmem.site/c/",
-                "minter": "EQApc582E7ZtA6hZWQUoGDVH64r2acUzZ1MCE2Cd6u-8Ug4Y"
+                "minter": "EQApc582E7ZtA6hZWQUoGDVH64r2acUzZ1MCE2Cd6u-8Ug4Y",
             },
         )
 

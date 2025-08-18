@@ -23,24 +23,41 @@ class TestAdnl(unittest.TestCase):
 class TestAddress(unittest.TestCase):
 
     def test_parse(self):
-        self.assertEqual(parse_address("0:6e5447f885768ca0781379eb39c7016d5d9621eaca31fb5180bf544838ff9838")["raw_form"], "0:6e5447f885768ca0781379eb39c7016d5d9621eaca31fb5180bf544838ff9838")
-        self.assertEqual(parse_address("EQBuVEf4hXaMoHgTees5xwFtXZYh6sox-1GAv1RIOP-YOCwl")["raw_form"], "0:6e5447f885768ca0781379eb39c7016d5d9621eaca31fb5180bf544838ff9838")
-        self.assertEqual(parse_address("UQBuVEf4hXaMoHgTees5xwFtXZYh6sox-1GAv1RIOP-YOHHg")["raw_form"], "0:6e5447f885768ca0781379eb39c7016d5d9621eaca31fb5180bf544838ff9838")
-        self.assertEqual(parse_address("kQBuVEf4hXaMoHgTees5xwFtXZYh6sox-1GAv1RIOP-YOJev")["raw_form"], "0:6e5447f885768ca0781379eb39c7016d5d9621eaca31fb5180bf544838ff9838")
-        self.assertEqual(parse_address("0QBuVEf4hXaMoHgTees5xwFtXZYh6sox-1GAv1RIOP-YOMpq")["raw_form"], "0:6e5447f885768ca0781379eb39c7016d5d9621eaca31fb5180bf544838ff9838")
+        self.assertEqual(
+            parse_address("0:6e5447f885768ca0781379eb39c7016d5d9621eaca31fb5180bf544838ff9838")["raw_form"],
+            "0:6e5447f885768ca0781379eb39c7016d5d9621eaca31fb5180bf544838ff9838",
+        )
+        self.assertEqual(
+            parse_address("EQBuVEf4hXaMoHgTees5xwFtXZYh6sox-1GAv1RIOP-YOCwl")["raw_form"],
+            "0:6e5447f885768ca0781379eb39c7016d5d9621eaca31fb5180bf544838ff9838",
+        )
+        self.assertEqual(
+            parse_address("UQBuVEf4hXaMoHgTees5xwFtXZYh6sox-1GAv1RIOP-YOHHg")["raw_form"],
+            "0:6e5447f885768ca0781379eb39c7016d5d9621eaca31fb5180bf544838ff9838",
+        )
+        self.assertEqual(
+            parse_address("kQBuVEf4hXaMoHgTees5xwFtXZYh6sox-1GAv1RIOP-YOJev")["raw_form"],
+            "0:6e5447f885768ca0781379eb39c7016d5d9621eaca31fb5180bf544838ff9838",
+        )
+        self.assertEqual(
+            parse_address("0QBuVEf4hXaMoHgTees5xwFtXZYh6sox-1GAv1RIOP-YOMpq")["raw_form"],
+            "0:6e5447f885768ca0781379eb39c7016d5d9621eaca31fb5180bf544838ff9838",
+        )
 
-        self.assertEqual(parse_address("6e5447f885768ca0781379eb39c7016d5d9621eaca31fb5180bf544838ff9838")["raw_form"], "-1:6e5447f885768ca0781379eb39c7016d5d9621eaca31fb5180bf544838ff9838")
+        self.assertEqual(
+            parse_address("6e5447f885768ca0781379eb39c7016d5d9621eaca31fb5180bf544838ff9838")["raw_form"],
+            "-1:6e5447f885768ca0781379eb39c7016d5d9621eaca31fb5180bf544838ff9838",
+        )
 
     def test_parse_error(self):
         try:
             parsed = parse_address("5447f885768ca0781379eb39c7016d5d9621eaca31fb5180bf544838ff9838") or True
         except Exception as E:
             parsed = type(E).__name__
-        self.assertEqual(parsed, 'Error')
+        self.assertEqual(parsed, "Error")
 
         try:
             parsed = parse_address("0:6e5447f885768ca0781379eb39c7016d5d9621eaca31fb5180bf544838ff98") or True
         except Exception as E:
             parsed = type(E).__name__
-        self.assertEqual(parsed, 'ValueError')
-
+        self.assertEqual(parsed, "ValueError")
