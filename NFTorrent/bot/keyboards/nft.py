@@ -3,6 +3,18 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from NFTorrent.dbmodels import PetMemoryNft, PetsCollection
 
 from ..main import BotApp
+from ..states.nft import NftFormAction, NftFormCallback
+
+
+def nft_form_kb(address: str, gettext=None):
+    _ = gettext or (lambda x: x)
+    row1 = [
+        InlineKeyboardButton(
+            text=_("Cancel"),
+            callback_data=NftFormCallback(action=NftFormAction.Cancel.value).pack(),
+        )
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=[row1])
 
 
 def main_nft_kb(app: BotApp, nft: PetMemoryNft, collection: PetsCollection, donate_btn: bool = False, gettext=None):
@@ -29,3 +41,6 @@ def main_nft_kb(app: BotApp, nft: PetMemoryNft, collection: PetsCollection, dona
         ] + keyboard
 
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+__all__ = ["nft_form_kb", "main_nft_kb"]

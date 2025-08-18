@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2025-07-20 18:53+0300\n"
+"POT-Creation-Date: 2025-08-17 11:43+0300\n"
 "PO-Revision-Date: 2025-06-28 11:55+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ru\n"
@@ -19,11 +19,11 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Generated-By: Babel 2.8.0\n"
 
-#: NFTorrent/bot/handlers/admin.py:75 NFTorrent/bot/handlers/nft.py:76
+#: NFTorrent/bot/handlers/admin.py:75 NFTorrent/bot/handlers/nft.py:77
 msgid "◀️ Prev"
 msgstr "◀️ Назад"
 
-#: NFTorrent/bot/handlers/admin.py:80 NFTorrent/bot/handlers/nft.py:82
+#: NFTorrent/bot/handlers/admin.py:80 NFTorrent/bot/handlers/nft.py:83
 msgid "Next ▶️"
 msgstr "Далее ▶️"
 
@@ -94,7 +94,9 @@ msgstr "Сообщение закрытия"
 
 #: NFTorrent/bot/handlers/inquiry.py:155
 msgid "Type your <b>{action_message}</b> to your Inquiry #R{inquiry_num:06d}."
-msgstr "Введите ваше <b>{action_message}</b> к вашему Обращению #R{inquiry_num:06d}."
+msgstr ""
+"Введите ваше <b>{action_message}</b> к вашему Обращению "
+"#R{inquiry_num:06d}."
 
 #: NFTorrent/bot/handlers/inquiry.py:190 NFTorrent/bot/handlers/inquiry.py:339
 msgid "Failed to update Inquiry: {errorname}"
@@ -142,8 +144,8 @@ msgid ""
 "#R{inquiry_num:06d} or cancel\n"
 "Language - <b>{lang}</b>.\n"
 msgstr ""
-"Введите ваше <b>{action_message}</b> по Обращению пользователя @{username}"
-"#R{inquiry_num:06d} или нажмите отмена\n"
+"Введите ваше <b>{action_message}</b> по Обращению пользователя "
+"@{username}#R{inquiry_num:06d} или нажмите отмена\n"
 "Язык сообщения - <b>{lang}</b>.\n"
 
 #: NFTorrent/bot/handlers/inquiry.py:347
@@ -247,8 +249,8 @@ msgid ""
 "<b>Step 4/5</b>: Got <b>{count}</b> image(s). You can optionally add "
 "another <b>Screenshot</b>, or go to the next step."
 msgstr ""
-"<b>Шаг 4/5</b>: Приложено <b>{count}</b> изображений. Опционально вы можете "
-"приложить еще <b>Снимок экрана</b>, или перейти к следующему шагу."
+"<b>Шаг 4/5</b>: Приложено <b>{count}</b> изображений. Опционально вы "
+"можете приложить еще <b>Снимок экрана</b>, или перейти к следующему шагу."
 
 #: NFTorrent/bot/handlers/inquiry.py:518
 msgid "<b>Step 5/5</b>: Do you want to submit your Inquiry <b>{subject}</b>?"
@@ -278,11 +280,11 @@ msgstr ""
 "\n"
 "<b>{subject}</b>"
 
-#: NFTorrent/bot/handlers/nft.py:63
+#: NFTorrent/bot/handlers/nft.py:64
 msgid "Connect wallet"
 msgstr "Подключить кошелек"
 
-#: NFTorrent/bot/handlers/nft.py:66
+#: NFTorrent/bot/handlers/nft.py:67
 msgid ""
 "To view your NFTs using this command, you must first authorize through "
 "the Mini App."
@@ -290,11 +292,11 @@ msgstr ""
 "Для просмотра ваших NFT с использованием данной команды, вам необходимо "
 "сначала авторизоваться через Mini App."
 
-#: NFTorrent/bot/handlers/nft.py:83
+#: NFTorrent/bot/handlers/nft.py:84
 msgid "✨ Mint"
 msgstr ""
 
-#: NFTorrent/bot/handlers/nft.py:86
+#: NFTorrent/bot/handlers/nft.py:87
 msgid ""
 "Please select an NFT from the list to <b>view</b> details, or <b>mint</b>"
 " a new one.\n"
@@ -305,45 +307,49 @@ msgstr ""
 "<b>создайте</b> новый.\n"
 "Список NFT с {from_index} по {to_index}:"
 
-#: NFTorrent/bot/handlers/nft.py:94
+#: NFTorrent/bot/handlers/nft.py:95
 msgid "You don’t have any NFTs starting from position {from_index}"
 msgstr "У вас нет памятных NFT начиная с позиции {from_index}"
 
-#: NFTorrent/bot/handlers/nft.py:100
+#: NFTorrent/bot/handlers/nft.py:101
 msgid "You don't have any memorial NFTs yet. Consider minting your first one!"
 msgstr ""
 "У вас пока нет памтных NFT для просмотра. Самое время создать ваш первый "
 "NFT!"
 
-#: NFTorrent/bot/handlers/nft.py:120
-msgid "Send <b>NFT address</b> to view or /cancel."
-msgstr "Отправьте <b>NFT address</b> для просмотра либо отмените /cancel."
+#: NFTorrent/bot/handlers/nft.py:123
+msgid "Your request has been cancelled."
+msgstr "Ваш запрос был отменен."
 
-#: NFTorrent/bot/handlers/nft.py:128
+#: NFTorrent/bot/handlers/nft.py:136
+msgid "Send <b>NFT address</b> to view NFT."
+msgstr "Отправьте <b>NFT address</b> для просмотра NFT."
+
+#: NFTorrent/bot/handlers/nft.py:144
 msgid ""
 "Provided input is not a valid TON Address. Please send the valid <b>NFT "
-"address</b> or just /cancel."
+"address</b>."
 msgstr ""
 "Введен не корректный TON-адрес. Пожалуйста отправьте корректный <b>Адрес "
-"NFT</b> либо либо отмените /cancel."
+"NFT</b>."
 
-#: NFTorrent/bot/handlers/nft.py:148
+#: NFTorrent/bot/handlers/nft.py:165
 msgid ""
 "The input you provided is not a valid TON address. Please send a valid "
-"<b>NFT address</b>, or just /cancel."
+"<b>NFT address</b>."
 msgstr ""
 "Введен не корректный TON-адрес. Пожалуйста отправьте корректный <b>Адрес "
-"NFT</b> либо отмените /cancel."
+"NFT</b>."
 
-#: NFTorrent/bot/handlers/nft.py:172
+#: NFTorrent/bot/handlers/nft.py:188
 msgid "NFT <code>{address}</code> not found or not indexed yet."
 msgstr "NFT <code>{address}</code> не найдено либо еще не проиндексировано."
 
-#: NFTorrent/bot/handlers/nft.py:183
+#: NFTorrent/bot/handlers/nft.py:199
 msgid "Failed to view NFT <code>{address}</code>, error - {errorname}"
 msgstr "Не удалось просмотреть NFT <code>{address}</code>, ошибка - {errorname}"
 
-#: NFTorrent/bot/keyboards/inquiry.py:11
+#: NFTorrent/bot/keyboards/inquiry.py:11 NFTorrent/bot/keyboards/nft.py:13
 msgid "Cancel"
 msgstr "Отмена"
 
@@ -371,19 +377,19 @@ msgstr "Закрыть"
 msgid "Block"
 msgstr "Блокировать"
 
-#: NFTorrent/bot/keyboards/nft.py:15
+#: NFTorrent/bot/keyboards/nft.py:27
 msgid "View"
 msgstr "Просмотр"
 
-#: NFTorrent/bot/keyboards/nft.py:16
+#: NFTorrent/bot/keyboards/nft.py:28
 msgid "Getgems"
 msgstr ""
 
-#: NFTorrent/bot/keyboards/nft.py:20
+#: NFTorrent/bot/keyboards/nft.py:32
 msgid "IPFS.io"
 msgstr ""
 
-#: NFTorrent/bot/keyboards/nft.py:26
+#: NFTorrent/bot/keyboards/nft.py:38
 msgid "Donate (Renew storage)"
 msgstr "Поддержать (Продлить хранение)"
 
@@ -422,7 +428,7 @@ msgstr ""
 "✨ Ваш памятный NFT был изменен\n"
 "\n"
 
-#: NFTorrent/bot/services/nft.py:200
+#: NFTorrent/bot/services/nft.py:201
 msgid ""
 "⚠️ The guaranteed storage period for your NFT IPFS content ends on "
 "<b>{due_date}</b>.\n"
@@ -441,3 +447,4 @@ msgstr ""
 "\n"
 "Мы предоставляем эту услугу в обмен на пожертвование — ваша поддержка "
 "помогает поддерживать сервис и сохранять файлы доступными.\n"
+

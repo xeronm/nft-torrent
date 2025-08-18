@@ -115,7 +115,8 @@ async def nft_preview(
     description = "\n".join([f"  {x}" for x in nft.description.split("\n")])
     message = (
         f"<b>{nft.name}</b> ({nft.birth_date} ~ {nft.death_date})\n\n"
-        f"{description}\n\n<code>{nft.address}</code>\n\n"
+        f"{description}\n\n"
+        # f"<code>{nft.address}</code>\n\n"
         f'<a href="{app.get_bot_miniapp_link(nft.address)}">Mini App</a>'
         f' • <a href="{app.get_petsmem_link(nft.address)}">Web App</a>'
         f' • <a href="{app.get_getgems_link(collection.address, nft.address)}">Getgems</a>'
