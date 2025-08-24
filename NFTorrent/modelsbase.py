@@ -143,7 +143,7 @@ class BaseNftContent(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def metadata_attributes(self) -> dict[str, Any]:
+    def metadata_attributes(self, **kwaddr) -> dict[str, Any]:
         pass
 
 

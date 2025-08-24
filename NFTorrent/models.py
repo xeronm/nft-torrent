@@ -34,8 +34,13 @@ class IpfsCidMethod(BaseModel):
     cid: str = Path(description="IPFS CID")
 
 
+class ContentQuery(str, Enum):
+    URI = "uri"
+    IMAGE = "image"
+
+
 class NftContentMethod(NftMethod):
-    q: str | None = Query(description="NFT content query", default=None)
+    q: ContentQuery | None = Query(annotation="query", description="NFT content query", default=None)
 
 
 class BaseNftContentMethod(NftMethod):
@@ -218,6 +223,12 @@ class NftItemHeader(BaseModel):
     deleted: bool | None = False
 
 
+class IconSize(str, Enum):
+    NONE = "none"
+    SMALL = "small"
+    MEDIUM = "medium"
+
+
 class CollectionItemsMethod(BaseModel):
     lang: str | None = Query(default=None)
     country: str | None = Query(default=None)
@@ -225,7 +236,7 @@ class CollectionItemsMethod(BaseModel):
     species: int | None = Query(default=None)
     limit: int = Query(default=100)
     offset: int = Query(default=0)
-    icon_size: str = Query(default="small")
+    icon_size: IconSize = Query(default=IconSize.SMALL)
 
     @field_validator("owner")
     def validate_contract_address(cls, v):
@@ -240,7 +251,7 @@ class CollectionItemsMethod(BaseModel):
 class NftListMethod(BaseModel):
     limit: int = Query(default=20)
     offset: int = Query(default=0)
-    icon_size: str = Query(default="medium")
+    icon_size: IconSize = Query(default=IconSize.SMALL)
 
 
 class NftContentState(Enum):

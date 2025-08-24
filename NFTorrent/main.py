@@ -177,10 +177,11 @@ async def statistics(request: Request) -> str:
 @app.get("/api/v1/bootstrap", tags=["bootstrap"], status_code=status.HTTP_204_NO_CONTENT)
 async def bootstrap() -> None:
     hc = ws.get_healthcheck()
+    headers = {"Access-Control-Allow-Origin": "*"}
     if hc.tonlib and hc.storage:
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
+        return Response(status_code=status.HTTP_204_NO_CONTENT, headers=headers)
     else:
-        return Response(status_code=status.HTTP_502_BAD_GATEWAY)
+        return Response(status_code=status.HTTP_502_BAD_GATEWAY, headers=headers)
 
 
 @app.get(

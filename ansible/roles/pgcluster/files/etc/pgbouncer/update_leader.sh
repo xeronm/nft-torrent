@@ -23,7 +23,7 @@ TEMP_CONFIG="/tmp/pgbouncer.ini.tmp"
 BACKUP_CONFIG="/etc/pgbouncer/pgbouncer.ini.bak"
 
 # Query current Leader
-LEADER_IP=$(patronictl -c $PATRONI_CONFIG list --format json | \
+LEADER_IP=$(/usr/local/bin/patronictl -c $PATRONI_CONFIG list --format json | \
             jq -r '.[] | select(.Role=="Leader") | .Host')
 
 [ -z "$LEADER_IP" ] && {

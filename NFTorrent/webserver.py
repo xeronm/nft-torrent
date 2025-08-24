@@ -22,8 +22,8 @@ from NFTorrent.imageutils import buffer_guess_type, generate_cover
 from NFTorrent.indexer import IndexDb
 from NFTorrent.ipfs import IpfsRpcManager
 from NFTorrent.locks import OperationLock
-from NFTorrent.models import HealthCheckResult, NftContentState, torrent_digest
-from NFTorrent.modelsbase import CollectionConfig
+from NFTorrent.models import ContentQuery, HealthCheckResult, NftContentState, torrent_digest
+from NFTorrent.modelsbase import CollectionConfig, StatisticNoTags
 from NFTorrent.settings import Settings
 from NFTorrent.tonlib import TonlibContractIsNotNft, TonlibManager
 from NFTorrent.utils import dict_to_influx, guess_type, parse_ipfs_uri, uri_ipfs, uri_supported
@@ -198,11 +198,13 @@ class Server:
                 redundancy = len(ipfs_state["cluster_peers"]) / self.settings.ipfs.min_redundancy
                 stotage_state = ipfs_state["peers"] >= self.ipfs.settings.min_peers_count
         if self.indexer is not None:
-            indexer_state = self.indexer.get_indexdb_state()
+            curr_time = time.time()
             last_checked = [x.last_checked for x in self.indexer.stats_coll.values()]
-            indexer_state = len(last_checked) == len(
-                [x for x in last_checked if x >= time.time() - self.indexer.settings.indexer_timeout * 2]
-            )
+            indexer_state = (
+                not tonlib_state
+                or len(last_checked)
+                == len([x for x in last_checked if x >= curr_time - self.indexer.settings.indexer_timeout * 2])
+            ) and self.indexer.stats[StatisticNoTags].task_last_checked >= curr_time - self.indexer.restart_timeout * 2
         bot = False
         if self.bot_app is not None:
             bot = self.indexer.dp_active
@@ -234,7 +236,7 @@ class Server:
     async def get_nft_content(self, request: Request, address: str, query: str = None):
         nft_collection = self.collection_config.get_collection(address)
         if nft_collection is not None:
-            if query == "uri":
+            if query == ContentQuery.URI:
                 return JSONResponse(
                     nft_collection.meta,
                     headers={
@@ -250,7 +252,7 @@ class Server:
         nft_data = await self.tonlib.get_nft_data(address)
         nft_content = nft_data.individual_content
 
-        uri = nft_content.uri() if query == "uri" else nft_content.image()
+        uri = nft_content.uri() if query == ContentQuery.URI else nft_content.image()
         if uri and uri_supported(uri):
             if uri_ipfs(uri):
                 cid, file_path, digest = parse_ipfs_uri(uri)
@@ -272,10 +274,17 @@ class Server:
                 return RedirectResponse(request.url_for("get_nft_torrent_content", address=address, digest=digest))
             else:
                 return RedirectResponse(uri)
-        if nft_content.image_data() and query != "uri":
+        if nft_content.image_data() and query != ContentQuery.URI:
             return image_data_response(nft_content.image_data())
-        if query == "uri":
-            return JSONResponse({"attributes": nft_content.metadata_attributes()})
+        if query == ContentQuery.URI:
+            return JSONResponse(
+                {
+                    "attributes": nft_content.metadata_attributes(
+                        webapp=self.bot_app.get_petsmem_link(nft_address=address),
+                        miniapp=self.bot_app.get_bot_miniapp_link(nft_address=address),
+                    )
+                }
+            )
 
         nft_collection = self.collection_config.get_collection(nft_data.collection_address)
         if nft_collection.item_cover:

@@ -139,7 +139,7 @@ class PetMemoryNftContent(BaseNftContent):
     def species(self):
         return self.imm_data.species_name if self.imm_data.species_name else SPECIES[self.imm_data.species]
 
-    def metadata_attributes(self):
+    def metadata_attributes(self, webapp: str = None, miniapp: str = None):
         gp = self.imm_data.geo_point
         attrs = {
             "name": self.imm_data.name,
@@ -152,16 +152,20 @@ class PetMemoryNftContent(BaseNftContent):
             "language": self.imm_data.lang,
             "location": self.imm_data.location,
             "geo_point": (
-                f"{int(gp.is_south)}:{gp.latitude:.04f}:{gp.longitude:.04f}"
+                f"{(-1 if gp.is_south else 1)*gp.latitude:.06f}:{gp.longitude:.06f}"
                 if self.imm_data.geo_point is not None
                 else None
             ),
             "fee_due_time": self.fee_due_time,
         }
         if self.data.image is not None:
-            attrs["image_uri"] = self.data.image
+            attrs["image"] = self.data.image
         if self.data.uri is not None:
             attrs["uri"] = self.data.uri
+        if webapp:
+            attrs["webapp"] = webapp
+        if miniapp:
+            attrs["miniapp"] = miniapp
         return [{"trait_type": k, "value": v} for k, v in attrs.items()]
 
 
