@@ -18,12 +18,12 @@ config = CollectionConfig(
     nft_content_class=PetMemoryNftContent,
     collections=[
         CollectionInstance(
-            address="EQAfAC4AUwg_EXRIT0NllzWoZihso8pY_qpPFLKbpMge8JcZ",
+            address="EQBguFeVo0BnIe6ln3uR6nXFvPKDkq6n2X6e8tg1i0AECOPs",
             image="./assets/images/collection-logo.webp",
             item_cover=cover,
             meta={
-                "name": "Pets Memorial - 1",
-                "description": "Transform your memories into living digital artifacts — timeless, immutable and authentic, powered by blockchain technology. Share your story with those who'll truly understand, inspire others, and preserve what matters most in a world where nothing truly disappears.\nBecause some stories are too precious to remain just another photo in your smartphone gallery.",
+                "name": "Pets Memorial (Test)",
+                "description": "Pets Memorial is an NFT collection that lets you create a lasting digital tribute to your beloved pet. Turn photos and memories into unique NFTs that preserve their story on the blockchain. Share your tribute with others who understand and keep your pet’s memory alive.\nhttps://t.me/pets_memorial_bot",
                 "attributes": [],
             },
             nft_samples={},

@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 MAX_CAPTION_LENGTH = 1500
+MAX_MEDIA_ITEMS = 10
 
 
 class NftListItem(BaseModel):

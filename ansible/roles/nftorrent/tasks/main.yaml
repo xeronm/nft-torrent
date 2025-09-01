@@ -158,15 +158,6 @@
   notify: restart nftorrent
   tags: nftorrent
 
-- name: Download TON Blockchain Config
-  ansible.builtin.get_url:
-    url: https://ton.org/testnet-global-config.json
-    dest: /home/{{ oam.user }}/nft-torrent/private/testnet-global-config.json
-    owner: "{{ oam.user }}"
-    group: "{{ oam.group }}"
-    mode: '0440'
-  tags: nftorrent
-
 - name: NFTorrent docker service
   community.docker.docker_compose_v2:
     project_name: nft-torrent

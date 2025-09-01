@@ -65,6 +65,7 @@ class WebServerSettings:
     jwt_algorithm: str
     port: int = None
     debug: bool = False
+    testnet: bool = True
     remote_api_root: str = None
     public_addr: str = None
     node_id: str = None
@@ -84,6 +85,7 @@ class WebServerSettings:
     @classmethod
     def from_environment(cls):
         obj = cls.__new__(cls)
+        obj.testnet = strtobool(os.environ.get("HTTP_TESTNET", "true"))
         obj.debug = strtobool(os.environ.get("HTTP_DEBUG", "false"))
         obj.api_root_path = os.environ.get("HTTP_API_ROOT_PATH", "")
         obj.remote_api_root = os.environ.get("HTTP_REMOTE_API_ROOT")

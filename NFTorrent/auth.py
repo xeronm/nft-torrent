@@ -164,6 +164,7 @@ class ContractAPIKeyCookie(APIKeyCookie):
         domains: list[str] = None,
         allow_networks: list[str] = None,
         real_ip_header: bool = True,
+        testnet: bool = True,
     ):
         super().__init__(name=self.cookie_name, auto_error=False)
         self.domains = set(domains or [])
@@ -172,6 +173,7 @@ class ContractAPIKeyCookie(APIKeyCookie):
         self.jwt_secret = jwt_secret
         self.jwt_algorithm = jwt_algorithm
         self.bot_secret = None
+        self.testnet = testnet
         if bot_token:
             self.bot_secret = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
 
@@ -291,6 +293,9 @@ class ContractAPIKeyCookie(APIKeyCookie):
         return jwt.decode(proof.payload, self.jwt_secret, audience=self.audience, algorithms=[self.jwt_algorithm])
 
     def auth_session(self, account: models.Account, proof: models.TonProof, public_key: str = None):
+        if self.testnet != (account.chain == models.CHAIN.TESTNET):
+            HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Account Network mistmatch")
+
         try:
             jwt_token = self.auth_verify(account, proof, public_key)
         except (InvalidTokenError, SignatureVerificationError) as E:

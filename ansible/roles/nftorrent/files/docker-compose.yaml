@@ -76,7 +76,7 @@ services:
       IPFS_CONFIRMATION_TIMEOUT: 60
       TONLIB_KEYSTORE: /ton_keystore/
       TONLIB_REQUEST_TIMEOUT: 20
-      TONLIB_LITESERVER_CONFIG: /run/secrets/liteserver_config
+      TONLIB_LITESERVER_CONFIG: ${TONLIB_LITESERVER_CONFIG}
       CACHE_ENABLED: 1
       # CACHE_REDIS_ENDPOINT: cache
       # CACHE_REDIS_TIMEOUT: 2
@@ -106,7 +106,6 @@ services:
       - ./assets:/opt/nftorrent/assets
       - ./log:/opt/nftorrent/log
     secrets:
-      - liteserver_config
       - jwt_key
       - bot_token
       - db_password
@@ -130,8 +129,6 @@ services:
       # - cache
 
 secrets:
-  liteserver_config:
-    file: ./private/testnet-global-config.json
   jwt_key:
     file: ./private/jwt.key
   bot_token:

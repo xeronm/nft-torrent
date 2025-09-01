@@ -11,7 +11,7 @@ from NFTorrent.models import NftContentInfo
 from NFTorrent.translations import gettext
 
 from ..keyboards.nft import main_nft_kb
-from ..main import MAX_CAPTION_LENGTH, BotApp
+from ..main import MAX_CAPTION_LENGTH, MAX_MEDIA_ITEMS, BotApp
 
 logger = logging.getLogger(__name__)
 
@@ -127,12 +127,16 @@ async def nft_preview(
     media_urls = []
     if nft.torrent_info is not None:
         torrent_info: NftContentInfo = pickle.loads(nft.torrent_info)
-        if torrent_info.files:
+        if torrent_info and torrent_info.files:
+            files = sorted(torrent_info.files, key=lambda x: (not nft.image.endswith('/'+x.name), x.name))
+
             media_urls = [
                 app.get_petsmem_content_link(nft.address, digest=file.digest)
-                for file in torrent_info.files
+                for file in files
                 if not file.name.startswith(".") and file.size <= app.torrent_file_size_limit
             ]
+
+            media_urls = media_urls[:MAX_MEDIA_ITEMS]
         else:
             media_urls = [app.get_petsmem_content_link(nft.address, digest=torrent_info.digest)]
     # elif (nft.image and uri_supported(nft.image)) or nft.image_data:

@@ -309,7 +309,7 @@ async def get_nft_content(
     """
     response = await ws.get_nft_content(rawRequest, request.address, query=request.q)
     if isinstance(response, Response):
-        response.headers["Cache-Control"] = "public, max-age=86400"
+        response.headers["Cache-Control"] = "public, max-age=3600"
     return response
 
 

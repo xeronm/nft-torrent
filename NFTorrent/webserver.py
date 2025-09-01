@@ -279,10 +279,8 @@ class Server:
         if query == ContentQuery.URI:
             return JSONResponse(
                 {
-                    "attributes": nft_content.metadata_attributes(
-                        webapp=self.bot_app.get_petsmem_link(nft_address=address),
-                        miniapp=self.bot_app.get_bot_miniapp_link(nft_address=address),
-                    )
+                    "external_url": self.bot_app.get_petsmem_link(nft_address=address),
+                    "attributes": nft_content.metadata_attributes()
                 }
             )
 
