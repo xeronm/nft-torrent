@@ -128,7 +128,7 @@ async def nft_preview(
     if nft.torrent_info is not None:
         torrent_info: NftContentInfo = pickle.loads(nft.torrent_info)
         if torrent_info and torrent_info.files:
-            files = sorted(torrent_info.files, key=lambda x: (not nft.image.endswith('/'+x.name), x.name))
+            files = sorted(torrent_info.files, key=lambda x: (not nft.image.endswith("/" + x.name), x.name))
 
             media_urls = [
                 app.get_petsmem_content_link(nft.address, digest=file.digest)

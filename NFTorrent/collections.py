@@ -18,7 +18,7 @@ config = CollectionConfig(
     nft_content_class=PetMemoryNftContent,
     collections=[
         CollectionInstance(
-            address="EQBguFeVo0BnIe6ln3uR6nXFvPKDkq6n2X6e8tg1i0AECOPs",
+            address="EQD7HAmDSSxSXJNhAWod8suE-_W0iwlC9o_OUR76kXo3jrtD",
             image="./assets/images/collection-logo.webp",
             item_cover=cover,
             meta={
