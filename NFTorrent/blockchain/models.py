@@ -153,10 +153,12 @@ class PetMemoryNftContent(BaseNftContent):
             "location": self.imm_data.location,
         }
         if self.imm_data.geo_point is not None:
-            attrs.update({
-                "geo_latitude": f"{(-1 if gp.is_south else 1)*gp.latitude:.03f}",
-                "geo_longitude": f"{gp.longitude:.03f}",
-            })
+            attrs.update(
+                {
+                    "geo_latitude": f"{(-1 if gp.is_south else 1)*gp.latitude:.03f}",
+                    "geo_longitude": f"{gp.longitude:.03f}",
+                }
+            )
         return [{"trait_type": k, "value": v} for k, v in attrs.items()]
 
 

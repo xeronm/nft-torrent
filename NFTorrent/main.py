@@ -17,7 +17,7 @@ from NFTorrent import __meta__, models
 from NFTorrent.auth import set_cookie
 from NFTorrent.ipfs import IpfsRpcHttpException
 from NFTorrent.locks import LockShouldWaitError
-from NFTorrent.middlewares import StatisticsMiddleware, StatisticsStore
+from NFTorrent.middlewares import StatisticsMiddleware, StatisticsStore, UserStatisticsMiddleware, UserStatisticsStore
 from NFTorrent.tonlib import TonlibRequestError, TonlibSelectWorkerError
 from NFTorrent.webserver import Server
 
@@ -36,6 +36,7 @@ app = FastAPI(
 )
 
 stats = StatisticsStore()
+user_stats = UserStatisticsStore()
 
 
 @app.on_event("startup")
@@ -142,6 +143,7 @@ async def add_bearer_response_auth_header(request: Request, call_next):
 
 
 app.add_middleware(StatisticsMiddleware, stats_store=stats)
+app.add_middleware(UserStatisticsMiddleware, stats_store=user_stats)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ws.settings.webserver.allow_origins,
@@ -171,6 +173,7 @@ async def statistics(request: Request) -> str:
     timestamp = int(time.time() * 1000000000)
     measurements = ws.get_measurements(timestamp)
     measurements += stats.as_influx(timestamp)
+    measurements += user_stats.as_influx(timestamp)
     return "\n".join(measurements)
 
 
@@ -310,6 +313,7 @@ async def get_nft_content(
     response = await ws.get_nft_content(rawRequest, request.address, query=request.q)
     if isinstance(response, Response):
         response.headers["Cache-Control"] = "public, max-age=3600"
+        response.headers["Access-Control-Allow-Origin"] = "*"
     return response
 
 
@@ -322,6 +326,7 @@ async def get_nft_torrent_content(request: models.BaseNftContentMethod = Depends
     response = await ws.get_nft_torrent_content(request.address, digest=request.digest)
     if isinstance(response, Response):
         response.headers["Cache-Control"] = "public, max-age=86400, immutable"
+        response.headers["Access-Control-Allow-Origin"] = "*"
     return response
 
 

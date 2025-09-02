@@ -98,6 +98,7 @@ class Server:
         logger.warning("Server startup initiated...")
         logger.warning(
             "Parameters:\n"
+            " - webserver.testnet: %s\n"
             " - webserver.node_id: %s\n"
             " - webserver.allow_networks: %s\n"
             " - webserver.api_root_path: %s\n"
@@ -107,6 +108,7 @@ class Server:
             " - ipfs.enabled: %s\n"
             " - cache.enabled: %s <%s>\n"
             " - indexdb.enabled: %s\n",
+            self.settings.webserver.testnet,
             self.settings.webserver.node_id,
             self.settings.webserver.allow_networks,
             self.settings.webserver.api_root_path,
@@ -280,7 +282,7 @@ class Server:
             return JSONResponse(
                 {
                     "external_url": self.bot_app.get_petsmem_link(nft_address=address),
-                    "attributes": nft_content.metadata_attributes()
+                    "attributes": nft_content.metadata_attributes(),
                 }
             )
 
