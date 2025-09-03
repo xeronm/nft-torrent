@@ -34,11 +34,12 @@ LEADER_IP=$(/usr/local/bin/patronictl -c $PATRONI_CONFIG list --format json | \
 # Create updated config
 awk -v ip="$LEADER_IP" '
   /^\[databases\]/ { in_databases=1 }
-  in_databases && /^postgres =/ {
-    sub(/host=[^ ]+/, "host=" ip); in_databases=0
+  in_databases && /^\[/ && !/^\[databases\]/ { in_databases=0 }
+  in_databases && /^[^#].*=/ {
+    sub(/host=[^ ]+/, "host=" ip)
   }
   { print }
-' $PGBOUNCER_CONFIG > $TEMP_CONFIG
+' "$PGBOUNCER_CONFIG" > "$TEMP_CONFIG"
 
 # Apply changes
 mv $TEMP_CONFIG $PGBOUNCER_CONFIG

@@ -151,6 +151,12 @@ class Server:
                     admin_group_id=self.settings.webserver.bot_admin_group_id,
                     torrent_file_size_limit=self.settings.ipfs.file_size_limit,
                     node_id=self.settings.webserver.node_id,
+                    getgems_authority=self.settings.webserver.getgems_authority,
+                    ipfs_authority=self.settings.webserver.ipfs_authority,
+                    tonviewer_authority=self.settings.webserver.tonviewer_authority,
+                    petsmem_authority=self.settings.webserver.petsmem_authority,
+                    petsmem_content_authority=self.settings.webserver.petsmem_content_authority,
+                    bot_miniapp_authority=self.settings.webserver.bot_miniapp_url,
                 )
             self.indexer = IndexDb(
                 self.settings.indexdb,

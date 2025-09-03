@@ -1,0 +1,68 @@
+- name: "Website: Get checksum of current archive"
+  ansible.builtin.stat:
+    path: "{{ nginx_website.target }}/.website.sha256"
+    checksum_algorithm: sha256
+  register: website_checksum
+  ignore_errors: yes
+
+- name: "Website: Calculate checksum of new archive"
+  ansible.builtin.stat:
+    path: "{{ nginx_website.package }}"
+    checksum_algorithm: sha256
+  delegate_to: localhost
+  register: new_archive_checksum
+
+- block:
+    - name: "Website: Create temp dir for deployment"
+      ansible.builtin.tempfile:
+        state: directory
+        path: /usr/share/nginx
+        prefix: .deploy-
+      register: tmpdir
+
+    - name: "Website: Deploy website {{ nginx_website.package }} into temp dir"
+      ansible.builtin.unarchive:
+        src: "{{ nginx_website.package }}"
+        dest: "{{ tmpdir.path }}"
+        owner: root
+        group: root
+
+    - name: "Website: Remove old website dir"
+      ansible.builtin.file:
+        path: "{{ nginx_website.target }}"
+        state: absent
+
+    - name: "Website: Atomically replace website dir"
+      ansible.builtin.command: mv {{ tmpdir.path }} {{ nginx_website.target }}
+      notify: restart nginx
+
+    - name: "Website: correct SELinux context"
+      ansible.builtin.file:
+        path: "{{ nginx_website.target }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+        setype: httpd_sys_content_t
+
+    - name: "Website: correct SELinux context"
+      ansible.builtin.file:
+        path: "{{ nginx_website.target }}"
+        state: directory
+        owner: root
+        group: root
+        setype: httpd_sys_content_t
+        recurse: yes
+
+    # - name: "Website: Restore SELinux context"
+    #   ansible.builtin.command: restorecon -Rv "{{ nginx_website.target }}"
+
+    - name: "Website: Save checksum of deployed archive"
+      ansible.builtin.copy:
+        content: "{{ new_archive_checksum.stat.checksum }}"
+        dest: "{{ nginx_website.target }}/.website.sha256"
+        owner: root
+        group: root
+        mode: '0644'
+  when: website_checksum.stat.checksum is not defined or
+        website_checksum.stat.checksum != new_archive_checksum.stat.checksum
