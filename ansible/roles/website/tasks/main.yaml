@@ -1,65 +1,31 @@
-- name: "Website: Get checksum of current archive"
-  ansible.builtin.stat:
-    path: /usr/share/nginx/html/.website.sha256
-    checksum_algorithm: sha256
-  register: website_checksum
-  ignore_errors: yes
-  tags: website
+- name: '"Testnet" website'
+  include_role:
+    name: nginx
+    tasks_from: website
+    apply:
+      tags:
+        - website
+        - testnet
+  vars:
+    nginx_website:
+      target: /usr/share/nginx/html
+      package: "{{ website.package_mainnet }}"
+  tags:
+    - website
+    - testnet
 
-- name: "Website: Calculate checksum of new archive"
-  ansible.builtin.stat:
-    path: "{{ website.package }}"
-    checksum_algorithm: sha256
-  delegate_to: localhost
-  register: new_archive_checksum
-  tags: website
-
-- block:
-    - name: "Website: Create temp dir for deployment"
-      ansible.builtin.tempfile:
-        state: directory
-        path: /usr/share/nginx
-        prefix: .deploy-
-      register: tmpdir
-
-    - name: "Website: Deploy website into temp dir"
-      ansible.builtin.unarchive:
-        src: "{{ website.package }}"
-        dest: "{{ tmpdir.path }}"
-        owner: root
-        group: root
-
-    - name: "Website: Remove old website dir"
-      ansible.builtin.file:
-        path: /usr/share/nginx/html
-        state: absent
-
-    - name: "Website: Atomically replace website dir"
-      ansible.builtin.command: mv {{ tmpdir.path }} /usr/share/nginx/html
-      notify: restart nginx
-
-    - name: "Website: correct SELinux context"
-      ansible.builtin.file:
-        path: /usr/share/nginx/html
-        state: directory
-        owner: root
-        group: root
-        mode: '0755'
-        seuser: system_u
-        serole: object_r
-        setype: httpd_sys_content_t
-        selevel: s0
-
-    - name: "Website: Restore SELinux context"
-      ansible.builtin.command: restorecon -Rv /usr/share/nginx/html
-
-    - name: "Website: Save checksum of deployed archive"
-      ansible.builtin.copy:
-        content: "{{ new_archive_checksum.stat.checksum }}"
-        dest: /usr/share/nginx/html/.website.sha256
-        owner: root
-        group: root
-        mode: '0644'
-  when: website_checksum.stat.checksum is not defined or
-        website_checksum.stat.checksum != new_archive_checksum.stat.checksum
-  tags: website
+- name: '"Testnet" website'
+  include_role:
+    name: nginx
+    tasks_from: website
+    apply:
+      tags:
+        - website
+        - mainnet
+  vars:
+    nginx_website:
+      target: /usr/share/nginx/html_testnet
+      package: "{{ website.package_testnet }}"
+  tags:
+    - website
+    - mainnet

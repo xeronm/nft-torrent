@@ -24,6 +24,12 @@ config = CollectionConfig(
             meta={
                 "name": "Pets Memorial (Test)",
                 "description": "Pets Memorial is an NFT collection that lets you create a lasting digital tribute to your beloved pet. Turn photos and memories into unique NFTs that preserve their story on the blockchain. Share your tribute with others who understand and keep your pet’s memory alive.\nhttps://t.me/pets_memorial_bot",
+                "external_url": "https://testnet.petsmem.site/",
+                "social_links": [
+                    "https://t.me/pets_memorial_test_bot",
+                    "https://testnet.petsmem.site/"
+                ],
+                "cover_image": "https://petsmem.site/images/petsmem-logo-getgems-banner.webp",
                 "attributes": [],
             },
             nft_samples={},

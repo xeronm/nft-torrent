@@ -81,6 +81,12 @@ class WebServerSettings:
     allow_networks: list[str] = None
     request_timeout: int = 10
     collection_config: CollectionConfig = None
+    getgems_authority: str = "https://testnet.getgems.io"
+    ipfs_authority: str = "https://ipfs.io"
+    petsmem_authority: str = "https://testnet.petsmem.site"
+    petsmem_content_authority: str = "https://t.petsmem.site"
+    tonviewer_authority: str = "https://testnet.tonviewer.com"
+    bot_miniapp_url: str = "https://t.me/pets_memorial_test_bot/petsmem"
 
     @classmethod
     def from_environment(cls):
@@ -113,6 +119,13 @@ class WebServerSettings:
             os.environ.get("HTTP_COLLECTION_CONFIG", "NFTorrent.collections.config"),
         )  # noqa: E501
         obj.allow_networks = [x.strip() for x in os.environ.get("HTTP_ALLOW_NETWORKS", "").split(",") if x.strip()]
+
+        obj.getgems_authority = os.environ.get("HTTP_GETGEMS_AUTH", cls.getgems_authority)
+        obj.ipfs_authority = os.environ.get("HTTP_IPFS_AUTH", cls.ipfs_authority)
+        obj.petsmem_authority = os.environ.get("HTTP_PETSMEM_AUTH", cls.petsmem_authority)
+        obj.petsmem_content_authority = os.environ.get("HTTP_PETSMEM_CONTENT_AUTH", cls.petsmem_content_authority)
+        obj.tonviewer_authority = os.environ.get("HTTP_TONVIEWER_AUTH", cls.tonviewer_authority)
+        obj.bot_miniapp_url = os.environ.get("HTTP_BOT_MINIAPP_URL", cls.bot_miniapp_url)
         return obj
 
 
