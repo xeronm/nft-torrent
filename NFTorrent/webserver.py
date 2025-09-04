@@ -252,10 +252,11 @@ class Server:
                     },
                 )
             else:
-                return FileResponse(
-                    nft_collection.image,
-                    media_type=guess_type(nft_collection.image, default_type="image/webp")[0],
-                )
+                return RedirectResponse(nft_collection.image)
+                # return FileResponse(
+                #     nft_collection.image,
+                #     media_type=guess_type(nft_collection.image, default_type="image/webp")[0],
+                # )
 
         nft_data = await self.tonlib.get_nft_data(address)
         nft_content = nft_data.individual_content
@@ -285,9 +286,14 @@ class Server:
         if nft_content.image_data() and query != ContentQuery.URI:
             return image_data_response(nft_content.image_data())
         if query == ContentQuery.URI:
+            weburl = self.bot_app.get_petsmem_link(nft_address=address)
             return JSONResponse(
                 {
-                    "external_url": self.bot_app.get_petsmem_link(nft_address=address),
+                    "external_url": weburl,
+                    "social_links": [
+                        self.bot_app.get_bot_miniapp_link(nft_address=address),
+                        weburl,
+                    ],
                     "attributes": nft_content.metadata_attributes(),
                 }
             )

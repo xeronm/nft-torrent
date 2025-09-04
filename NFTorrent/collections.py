@@ -19,7 +19,7 @@ config = CollectionConfig(
     collections=[
         CollectionInstance(
             address="EQD7HAmDSSxSXJNhAWod8suE-_W0iwlC9o_OUR76kXo3jrtD",
-            image="./assets/images/collection-logo.webp",
+            image="https://petsmem.site/images/petsmem-logo-pad-512x512.webp",
             item_cover=cover,
             meta={
                 "name": "Pets Memorial (Test)",
