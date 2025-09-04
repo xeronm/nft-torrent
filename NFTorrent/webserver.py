@@ -13,7 +13,7 @@ from urllib.parse import urljoin
 from fastapi import Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import HTTPException
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response, StreamingResponse
 
 from NFTorrent.auth import ContractAPIKeyCookie, NodeJWTBearer
 from NFTorrent.bot import Backend, BotApp
@@ -140,7 +140,13 @@ class Server:
         )
 
         if self.settings.ipfs.enabled:
-            self.ipfs = IpfsRpcManager(self.settings.ipfs, cache_manager=cache_manager, tonlib=self.tonlib, loop=loop)
+            self.ipfs = IpfsRpcManager(
+                self.settings.ipfs,
+                cache_manager=cache_manager,
+                tonlib=self.tonlib,
+                loop=loop,
+                max_pin_duration=600 if self.settings.webserver.testnet else 0,
+            )
 
         self.bot_app = None
         if self.settings.indexdb.enabled:
