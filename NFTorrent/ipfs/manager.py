@@ -40,12 +40,14 @@ class IpfsRpcManager:
         cache_manager: BaseCacheManager | None = None,
         loop: asyncio.BaseEventLoop | None = None,
         tonlib: TonlibManager = None,
+        max_pin_duration: float = 0,
     ):
         self.settings = settings
         self.cache_manager = cache_manager or DisabledCacheManager()
         self.tonlib = tonlib
         self.loop = loop
         self.node_state = None
+        self.max_pin_duration = max_pin_duration
 
         self.cid_wlock = {}
         self.tasks = {
@@ -187,8 +189,13 @@ class IpfsRpcManager:
     ):
         name = name or ""
         if self.settings.cluster_rpc_uri:
+            pin_expire_at = expire_at
+            if pin_expire_at and self.max_pin_duration:
+                pin_expire_at = max(pin_expire_at, time.time() + self.max_pin_duration)
             expire_at_str = (
-                datetime.datetime.fromtimestamp(expire_at, tz=datetime.timezone.utc).isoformat() if expire_at else ""
+                datetime.datetime.fromtimestamp(pin_expire_at, tz=datetime.timezone.utc).isoformat()
+                if pin_expire_at
+                else ""
             )
             query_params = {
                 "mode": "recursive",
