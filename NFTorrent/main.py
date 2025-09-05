@@ -352,7 +352,7 @@ if ws.settings.indexdb.enabled:
 @app.get(
     "/api/v1/nft/{address}",
     response_model_exclude_none=True,
-    dependencies=[Depends(ws.jwt_session)],  # noqa: B008
+    # dependencies=[Depends(ws.jwt_session)],  # noqa: B008
     tags=["nft"],
 )
 @wrap_result
@@ -420,7 +420,7 @@ if ws.settings.ipfs.enabled:
     @app.get(
         "/api/v1/nft/{address}/ipfs/{digest}",
         response_model_exclude_none=True,
-        dependencies=[Depends(ws.jwt_session)],  # noqa: B008
+        # dependencies=[Depends(ws.jwt_session)],  # noqa: B008
         tags=["nft"],
     )
     @wrap_result

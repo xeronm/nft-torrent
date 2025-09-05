@@ -1,1 +1,1 @@
-1. IndexDB: transfer all BE methods to `./bot/backend.py` and  Move `./bot/backend.py` to IndexDB
+1. [] Убедиться, что про продлении pin выбирается максимальный expire из текущего на пине и данных с NFT, т.к. на один CID мжет ссылаться несколько NFT

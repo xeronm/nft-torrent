@@ -292,6 +292,17 @@ class Server:
         if nft_content.image_data() and query != ContentQuery.URI:
             return image_data_response(nft_content.image_data())
         if query == ContentQuery.URI:
+            # uri = nft_content.image()
+            # images = None
+            # if uri and uri_ipfs(uri):
+            #     cid, file_path, digest = parse_ipfs_uri(uri)
+            #     cid_info = await self.ipfs.get_cid_info(cid=cid)
+            #     if cid_info.files:
+            #         images = [
+            #             str(request.url_for("get_nft_torrent_content", address=address, digest=x.digest))
+            #             for x in cid_info.files
+            #         ]
+
             weburl = self.bot_app.get_petsmem_link(nft_address=address)
             return JSONResponse(
                 {
@@ -300,6 +311,7 @@ class Server:
                         self.bot_app.get_bot_miniapp_link(nft_address=address),
                         weburl,
                     ],
+                    # "images": images,
                     "attributes": nft_content.metadata_attributes(),
                 }
             )

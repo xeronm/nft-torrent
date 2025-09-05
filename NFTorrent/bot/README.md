@@ -21,8 +21,8 @@ Registration in TApps
 
 ```
 Details
-Link: https://t.me/pets_memorial_bot
-Analytics ID: pets_memorial_ru
+Link: https://t.me/pets_memorial_bot/petsmem
+Analytics ID: pets_memorial
 Subtitle: Where Pet Memories Live Forever
 Description: Pets Memorial lets you create a lasting digital tribute to your beloved pet. Turn photos and memories into unique NFTs that preserve their story on the blockchain. Share your tribute with others who understand and keep your pet’s memory alive.
 ```
