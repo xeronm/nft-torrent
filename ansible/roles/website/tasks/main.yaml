@@ -8,13 +8,13 @@
         - testnet
   vars:
     nginx_website:
-      target: /usr/share/nginx/html
-      package: "{{ website.package_mainnet }}"
+      target: /usr/share/nginx/html_testnet
+      package: "{{ website.package_testnet }}"
   tags:
     - website
     - testnet
 
-- name: '"Testnet" website'
+- name: '"Mainnet" website'
   include_role:
     name: nginx
     tasks_from: website
@@ -24,8 +24,8 @@
         - mainnet
   vars:
     nginx_website:
-      target: /usr/share/nginx/html_testnet
-      package: "{{ website.package_testnet }}"
+      target: /usr/share/nginx/html
+      package: "{{ website.package_mainnet }}"
   tags:
     - website
     - mainnet
