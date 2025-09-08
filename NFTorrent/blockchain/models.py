@@ -156,7 +156,7 @@ class PetMemoryNftContent(BaseNftContent):
             attrs.update(
                 {
                     "geo_latitude": f"{(-1 if gp.is_south else 1)*gp.latitude:.03f}",
-                    "geo_longitude": f"{gp.longitude:.03f}",
+                    "geo_longitude": f"{gp.longitude if gp.longitude < 180 else gp.longitude - 360:.03f}",
                 }
             )
         return [{"trait_type": k, "value": v} for k, v in attrs.items()]
