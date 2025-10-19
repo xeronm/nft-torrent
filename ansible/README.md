@@ -67,7 +67,7 @@ nftorrent:
   environment:
     IPFS_CLUSTER_SECRET: <32byte hexencoded cluster secret>
     IPFS_CLUSTER_PEERNAME: "{{ inventory_hostname }}"
-    NFTORRENT_VERSION: 0.2.2
+    NFTORRENT_VERSION: 0.2.3
     HTTP_TWA_DOMAINS: ton-connect.github.io, petsmem.site
     HTTP_ALLOW_ORIGINS: http://localhost:9000, https://petsmem.site
   ton_config: https://ton.org/testnet-global-config.json

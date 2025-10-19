@@ -29,3 +29,14 @@
   tags:
     - website
     - mainnet
+
+- name: "Website: Deploy website prerender {{ website.package_prerender }}"
+  ansible.builtin.unarchive:
+    src: "{{ website.package_prerender }}"
+    dest: /usr/share/nginx/html
+    owner: root
+    group: root
+    keep_newer: yes
+  tags:
+    - website
+    - prerender

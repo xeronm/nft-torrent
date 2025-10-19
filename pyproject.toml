@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ton-nft-torrent"
-version = "0.2.2"
+version = "0.2.3"
 description = "TON NFT Torrent content HTTP Gateway"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -24,7 +24,7 @@ maintainers = [
 urls = { "Homepage" = "https://github.com/xeronm/nft-torrent" }
 
 dependencies = [
-  "pytonlib==0.0.66",
+  "pytonlib==0.0.67",
   "redis",
   "ring",
   "fastapi",
