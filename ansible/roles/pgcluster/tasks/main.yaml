@@ -1,0 +1,441 @@
+# Global Vars
+- name: Build etcd peer list
+  set_fact:
+    etcd_client_peer_list: >-
+      {% for host in groups[inventory_group] %}{{ hostvars[host]['ansible_host'] }}:2379{% if not loop.last %},{% endif %}{% endfor %}
+  tags:
+    - pgcluster
+    - etcd
+
+- name: Build etcd initial-cluster string
+  set_fact:
+    etcd_initial_cluster: >-
+      {% for host in groups[inventory_group] %}{{ hostvars[host]['inventory_hostname'] }}=https://{{ hostvars[host]['ansible_host'] }}:2380{% if not loop.last %},{% endif %}{% endfor %}
+  tags:
+    - pgcluster
+    - etcd
+
+#
+- name: Ensure Patroni ports are restricted to cluster hosts (public zone, rich rules)
+  firewalld:
+    zone: public
+    permanent: true
+    immediate: true
+    state: enabled
+    rich_rule: >
+      rule family="ipv4"
+      source address="{{ hostvars[item_host].ansible_host }}"
+      port protocol="tcp" port="{{ item_port }}"
+      accept
+  loop: "{{ groups[inventory_group] | product(patroni_ports) | list }}"
+  loop_control:
+    loop_var: combo
+    label: "{{ combo.0 }} → {{ combo.1 }}"
+  vars:
+    item_host: "{{ combo.0 }}"
+    item_port: "{{ combo.1 }}"
+  when: hostvars[item_host].ansible_host is defined
+  notify: Reload firewalld
+  tags: pgcluster
+
+- name: Ensure etcd ports are restricted to cluster hosts (public zone, rich rules)
+  firewalld:
+    zone: public
+    permanent: true
+    immediate: true
+    state: enabled
+    rich_rule: >
+      rule family="ipv4"
+      source address="{{ hostvars[item_host].ansible_host }}"
+      port protocol="tcp" port="{{ item_port }}"
+      accept
+  loop: "{{ groups[inventory_group] | product(etcd_ports) | list }}"
+  loop_control:
+    loop_var: combo
+    label: "{{ combo.0 }} → {{ combo.1 }}"
+  vars:
+    item_host: "{{ combo.0 }}"
+    item_port: "{{ combo.1 }}"
+  when: hostvars[item_host].ansible_host is defined
+  notify: Reload firewalld
+  tags:
+    - pgcluster
+    - etcd
+
+- name: Import PGDG GPG key
+  rpm_key:
+    key: https://download.postgresql.org/pub/repos/yum/keys/RPM-GPG-KEY-PGDG
+    state: present
+  tags: pgcluster
+
+- name: Enable PostgreSQL repository
+  dnf:
+    name: https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-x86_64/pgdg-redhat-repo-latest.noarch.rpm
+    state: present
+  tags: pgcluster
+
+- name: Disable built-in PostgreSQL module
+  shell: dnf -qy module disable postgresql
+  args:
+    warn: false
+  tags: pgcluster
+
+- name: "Install PostgreSQL-{{postgres_version}} and PG-Bouncer"
+  dnf:
+    name:
+      - "postgresql{{ postgres_version }}-server"
+      - "postgresql{{ postgres_version }}"
+      - pgbouncer
+      - python3-cryptography
+      - jq
+    state: present
+  tags: pgcluster
+
+- name: Ensure configuration directories exist
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - /usr/local/src/etcd
+  tags: pgcluster
+
+- name: Ensure data and Configuration directories exist
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: '0750'
+  loop:
+    - /etc/patroni
+    - /etc/pgbouncer
+    - /etc/etcd
+    - "{{ etcd_data_dir }}"
+    - "{{ postgres_data_dir }}"
+  tags:
+    - pgcluster
+    - etcd
+
+- name: "Download etcd-v{{ etcd_version }} archive if not already present"
+  ansible.builtin.get_url:
+    url: "{{ etcd_download_url }}"
+    dest: "/usr/local/src/etcd/etcd-v{{ etcd_version }}-linux-amd64.tar.gz"
+    mode: '0644'
+    force: no
+  tags:
+    - pgcluster
+    - etcd
+
+- name: Unpack etcd binaries to temporary path
+  ansible.builtin.unarchive:
+    src: "/usr/local/src/etcd/etcd-v{{ etcd_version }}-linux-amd64.tar.gz"
+    dest: "/tmp"
+    remote_src: yes
+    creates: "/tmp/etcd-v{{ etcd_version }}-linux-amd64"
+  tags:
+    - pgcluster
+    - etcd
+
+- name: Copy etcd binary if changed
+  ansible.builtin.copy:
+    src: "/tmp/etcd-v{{ etcd_version }}-linux-amd64/etcd"
+    dest: "/usr/local/bin/etcd"
+    owner: root
+    group: root
+    mode: '0755'
+    remote_src: yes
+  tags:
+    - pgcluster
+    - etcd
+
+- name: Copy etcdctl binary if changed
+  ansible.builtin.copy:
+    src: "/tmp/etcd-v{{ etcd_version }}-linux-amd64/etcdctl"
+    dest: "/usr/local/bin/etcdctl"
+    owner: root
+    group: root
+    mode: '0755'
+    remote_src: yes
+  tags:
+    - pgcluster
+    - etcd
+
+- name: Install Patroni via pip
+  pip:
+    name: patroni[etcd]
+    executable: pip3
+  tags: pgcluster
+
+- name: Ensure certificate directory exists
+  file:
+    path: /etc/ssl/pgcluster
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: "0750"
+  tags: pgcluster
+
+- name: Copy CA public certificate for PG-Cluster
+  copy:
+    src: "./certs/pgcluster/ca.crt"
+    dest: /etc/ssl/pgcluster/ca.crt
+    owner: root
+    group: root
+    mode: '0644'
+  tags: pgcluster
+
+- name: Copy CA private key for PG-Cluster
+  copy:
+    src: "./certs/pgcluster/ca.key"
+    dest: /etc/ssl/pgcluster/ca.key
+    owner: root
+    group: root
+    mode: '0600'
+  tags: pgcluster
+
+- name: Generate private key for PG-Cluster services
+  community.crypto.openssl_privatekey:
+    path: /etc/ssl/pgcluster/server.key
+    size: 4096
+    type: RSA
+    owner: postgres
+    group: postgres
+    mode: '0600'
+  notify:
+    - Restart etcd
+    - Restart Patroni
+    - Restart PgBouncer
+  tags:
+    - pgcluster
+    - etcd
+
+- name: Generate private key and CSR for PG-Cluster services
+  community.crypto.openssl_csr:
+    path: /etc/ssl/pgcluster/server.csr
+    privatekey_path: /etc/ssl/pgcluster/server.key
+    common_name: "{{ inventory_hostname }}"
+    subject_alt_name: "IP:{{ ansible_host }},IP:172.16.1.1"
+    key_usage:
+      - digitalSignature
+      - keyEncipherment
+    extended_key_usage_critical: true
+    extended_key_usage:
+      - serverAuth
+      - clientAuth
+    basic_constraints_critical: true
+    basic_constraints:
+      - CA:FALSE
+    owner: postgres
+    group: postgres
+    mode: "0640"
+  tags: pgcluster
+
+- name: Sign certificate using local CA
+  community.crypto.x509_certificate:
+    path: /etc/ssl/pgcluster/server.crt
+    csr_path: /etc/ssl/pgcluster/server.csr
+    provider: ownca
+    ownca_path: /etc/ssl/pgcluster/ca.crt
+    ownca_privatekey_path: /etc/ssl/pgcluster/ca.key
+    ownca_not_after: "+1825d"
+    owner: postgres
+    group: postgres
+    mode: "0640"
+  notify:
+    - Restart etcd
+    - Restart Patroni
+    - Restart PgBouncer
+  tags:
+    - pgcluster
+    - etcd
+
+- name: Deploy systemd unit for etcd
+  template:
+    src: ./etc/systemd/etcd.service
+    dest: /etc/systemd/system/etcd.service
+  notify:
+    - Reload systemd
+    - Restart etcd
+  tags:
+    - pgcluster
+    - etcd
+
+- name: Deploy systemd unit for etcd-dbshrink
+  template:
+    src: ./etc/systemd/etcd-dbshrink.service
+    dest: /etc/systemd/system/etcd-dbshrink.service
+  notify:
+    - Reload systemd
+    - Restart etcd-dbshrink
+  tags:
+    - pgcluster
+    - etcd
+
+- name: Deploy systemd timer for etcd-dbshrink
+  copy:
+    src: ./etc/systemd/etcd-dbshrink.timer
+    dest: /etc/systemd/system/etcd-dbshrink.timer
+  notify:
+    - Reload systemd
+    - Restart etcd-dbshrink
+  tags:
+    - pgcluster
+    - etcd
+
+- name: Deploy etcd scripts (dbshrink.sh)
+  copy:
+    src: ./etc/etcd/dbshrink.sh
+    dest: /etc/etcd/dbshrink.sh
+    owner: postgres
+    group: postgres
+    mode: '0750'
+  tags:
+    - pgcluster
+    - etcd
+
+- name: Deploy etcd scripts (etcdctl.sh)
+  template:
+    src: ./etc/etcd/etcdctl.sh
+    dest: /etc/etcd/etcdctl.sh
+    owner: postgres
+    group: postgres
+    mode: '0750'
+  tags:
+    - pgcluster
+    - etcd
+
+- name: Deploy systemd unit for Patroni
+  copy:
+    src: ./etc/systemd/patroni.service
+    dest: /etc/systemd/system/patroni.service
+  notify:
+    - Reload systemd
+    - Restart Patroni
+  tags: pgcluster
+
+- name: Create systemd unit for PgBouncer
+  copy:
+    src: ./etc/systemd/pgbouncer.service
+    dest: /etc/systemd/system/pgbouncer.service
+  notify:
+    - Reload systemd
+    - Restart PgBouncer
+  tags:
+    - pgbouncer
+    - pgcluster
+
+- name: Deploy Patroni config
+  template:
+    src: ./etc/patroni/patroni.yaml
+    dest: /etc/patroni/patroni.yaml
+    owner: postgres
+    group: postgres
+    mode: '0644'
+  notify: Restart Patroni
+  tags: pgcluster
+
+- name: Deploy PgBouncer config
+  copy:
+    src: ./etc/pgbouncer/pgbouncer.ini
+    dest: /etc/pgbouncer/pgbouncer.ini
+    owner: postgres
+    group: postgres
+    mode: '0644'
+  notify:
+    - PgBouncer update_leader.sh
+    - Restart PgBouncer
+  tags:
+    - pgbouncer
+    - pgcluster
+
+- name: Deploy PgBouncer OnRoleChange hook (update_leader.sh)
+  copy:
+    src: ./etc/pgbouncer/update_leader.sh
+    dest: /etc/pgbouncer/update_leader.sh
+    owner: postgres
+    group: postgres
+    mode: '0750'
+  notify:
+    - PgBouncer update_leader.sh
+  tags:
+    - pgbouncer
+    - pgcluster
+
+- name: Generate PgBouncer userlist.txt
+  copy:
+    dest: /etc/pgbouncer/userlist.txt
+    content: |
+      {% for user in pg_users %}{% if pg_users[user].secret is defined %}
+      "{{ user }}" "{{ pg_users[user].secret }}"
+      {% endif %}{% endfor %}
+    owner: postgres
+    group: postgres
+    mode: '0600'
+  notify: Restart PgBouncer
+  tags:
+    - pgbouncer
+    - pgcluster
+
+- name: Enable and start etcd
+  systemd:
+    name: etcd
+    enabled: true
+    state: started
+  tags:
+    - pgcluster
+    - etcd
+
+- name: Enable and start pgcluster services
+  systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop:
+    - patroni
+    - pgbouncer
+  tags: pgcluster
+
+- name: Copy etcd Client public certificate for PG-Cluster
+  copy:
+    src: "./certs/pgcluster/client.crt"
+    dest: /etc/telegraf/etcd-client.crt
+    owner: telegraf
+    group: telegraf
+    mode: '0644'
+  tags: nftorrent
+
+- name: Copy etcd Client puprivate key for PG-Cluster
+  copy:
+    src: "./certs/pgcluster/client.key"
+    dest: /etc/telegraf/etcd-client.key
+    owner: telegraf
+    group: telegraf
+    mode: '0600'
+  tags: nftorrent
+
+- name: Add user 'telegraf' to group 'postgres'
+  ansible.builtin.user:
+    name: telegraf
+    groups: postgres
+    append: true
+  notify:
+    - restart telegraf
+  tags:
+    - pgcluster
+    - telegraf
+
+- name: pgcluster Telegraf is configured
+  copy:
+    src: ./etc/telegraf/telegraf.d/pgcluster.conf
+    dest: /etc/telegraf/telegraf.d/pgcluster.conf
+    owner: root
+    group: root
+    mode: 0644
+  notify:
+    - restart telegraf
+  tags:
+    - pgcluster
+    - telegraf

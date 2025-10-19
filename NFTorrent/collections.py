@@ -1,38 +1,35 @@
 from NFTorrent.blockchain.models import PetMemoryNftContent, PetsCollectionInfo
-from NFTorrent.dbmodels import PetMemoryNft, PetsCollection
-from NFTorrent.modelsbase import CollectionConfig, CollectionInstance
+from NFTorrent.modelsbase import CollectionConfig, CollectionInstance, CollectionItemCover
+
+cover = CollectionItemCover(
+    baseimage_path="./assets/images/species",
+    font="./assets/fonts/Inter_24pt-Bold.ttf",
+    subtitle_font="./assets/fonts/Inter_24pt-Regular.ttf",
+    title_size=36,
+    subtitle_size=20,
+    rect_padding=(96, 0),
+    rect_fill=(31, 33, 66),
+    color="white",
+)
+
 
 config = CollectionConfig(
     collection_info_class=PetsCollectionInfo,
     nft_content_class=PetMemoryNftContent,
-    dbmodel_class=PetsCollection,
-    dbmodel_nft_class=PetMemoryNft,
     collections=[
         CollectionInstance(
-            address="EQAI_6RBqCUCGlNKRQOh_diuz8az2S_TY3IAHdozFTDDGs-9",
-            image="./assets/images/collection-3.webp",
+            address="EQD7HAmDSSxSXJNhAWod8suE-_W0iwlC9o_OUR76kXo3jrtD",
+            image="https://petsmem.site/images/petsmem-logo-pad-512x512.webp",
+            item_cover=cover,
             meta={
-                "name": "Pets Memorial - 1",
-                "description": "Transform your memories into living digital artifacts — timeless, immutable and authentic, powered by blockchain technology. Share your story with those who'll truly understand, inspire others, and preserve what matters most in a world where nothing truly disappears.\nBecause some stories are too precious to remain just another photo in your smartphone gallery.",
+                "name": "Pets Memorial (Test)",
+                "description": "Pets Memorial is an NFT collection that lets you create a lasting digital tribute to your beloved pet. Turn photos and memories into unique NFTs that preserve their story on the blockchain. Share your tribute with others who understand and keep your pet’s memory alive.",
+                "external_url": "https://testnet.petsmem.site/",
+                "social_links": ["https://t.me/pets_memorial_test_bot", "https://testnet.petsmem.site/"],
+                "cover_image": "https://petsmem.site/images/petsmem-logo-getgems-banner.webp",
                 "attributes": [],
             },
-            nft_samples={
-                "image_url": "UQDGmyLShGRLKLTvXT027DQGmIQ5K-FU7U0ULuGsnVRKLGg9",
-                "image_onchain": "UQBI_r486VLTnscs7SQNE29vETuHajF0mxwpGu57VzSLwPnY",
-                "image_ipfs": "UQCckh6snB2Yvl7fPY8Jy-fVKEFPMPCY16kRcm7868JVPvOZ",
-            },
-        ),
-        CollectionInstance(
-            address="EQDXmMnHdy75YldKGYfpm2eGTbkpHRq6CLjVIOJBdgjQt_Z9",
-            image="./assets/images/collection-3.webp",
-            meta={
-                "name": "Pets Memorial - 2",
-                "description": "Transform your memories into living digital artifacts — timeless, immutable and authentic, powered by blockchain technology. Share your story with those who'll truly understand, inspire others, and preserve what matters most in a world where nothing truly disappears.\nBecause some stories are too precious to remain just another photo in your smartphone gallery.",
-                "attributes": [],
-            },
-            nft_samples={
-                "image_ipfs": "EQAM38nXYgpT-3jFCpKai2aAZF0CuqZyeiH2F13lsKjl77KO",
-            },
+            nft_samples={},
         ),
     ],
 )

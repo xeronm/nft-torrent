@@ -6,6 +6,25 @@ from tonpy.types import CellSlice
 from ..modelsbase import BaseNftContent
 from .encoders import bcd2c_to_string, date_mask_to_string, flatten_snake_cell
 
+SPECIES = [
+    "Other",
+    "Dog",
+    "Cat",
+    "Hamster/Guinea Pig",
+    "Rabbit",
+    "Parrot",
+    "Fish",
+    "Turtle",
+    "Reptile",
+    "Horse/Pony",
+    "Hedgehog",
+    "Mouse/Rat",
+    "Ferret",
+    "Reserved",
+    "Reserved",
+    "Reserved",
+]
+
 
 @dataclass
 class GeoPoint:
@@ -111,15 +130,20 @@ class PetMemoryNftContent(BaseNftContent):
     def storage_due_time(self):
         return self.fee_due_time
 
+    def title(self):
+        return self.imm_data.name
+
+    def subtitle(self):
+        return self.imm_data.breed if self.imm_data.breed else self.species()
+
+    def species(self):
+        return self.imm_data.species_name if self.imm_data.species_name else SPECIES[self.imm_data.species]
+
     def metadata_attributes(self):
         gp = self.imm_data.geo_point
         attrs = {
             "name": self.imm_data.name,
-            "species": (
-                self.imm_data.species_name
-                if self.imm_data.species_name
-                else (["Other", "Dog", "Cat"][self.imm_data.species])
-            ),
+            "species": self.species(),
             "breed": self.imm_data.breed,
             "sex": "Female" if self.imm_data.sex else "Male",
             "birth_date": self.imm_data.birth_date,
@@ -127,17 +151,14 @@ class PetMemoryNftContent(BaseNftContent):
             "country_code": self.imm_data.country_code,
             "language": self.imm_data.lang,
             "location": self.imm_data.location,
-            "geo_point": (
-                f"{int(gp.is_south)}:{gp.latitude:.04f}:{gp.longitude:.04f}"
-                if self.imm_data.geo_point is not None
-                else None
-            ),
-            "fee_due_time": self.fee_due_time,
         }
-        if self.data.image is not None:
-            attrs["image_uri"] = self.data.image
-        if self.data.uri is not None:
-            attrs["uri"] = self.data.uri
+        if self.imm_data.geo_point is not None:
+            attrs.update(
+                {
+                    "geo_latitude": f"{(-1 if gp.is_south else 1)*gp.latitude:.03f}",
+                    "geo_longitude": f"{gp.longitude if gp.longitude < 180 else gp.longitude - 360:.03f}",
+                }
+            )
         return [{"trait_type": k, "value": v} for k, v in attrs.items()]
 
 
@@ -145,6 +166,12 @@ def load_string(stack, opt: bool = False):
     if opt and "bytes" not in stack[1]:
         return None
     return CellSlice(stack[1]["bytes"]).load_string()
+
+
+def load_address(stack, opt: bool = False):
+    if opt and "bytes" not in stack[1]:
+        return None
+    return CellSlice(stack[1]["bytes"]).load_address().serialize()
 
 
 @dataclass
@@ -157,11 +184,18 @@ class PetsCollectionInfo:
     balance_class_b: float
     fb_mode: int
     fb_uri: str
+    minter: str | None = None
 
     @classmethod
     def from_tvm(cls, stack: list):
-        if len(stack) != 8:
+        if len(stack) not in [8, 9]:
             raise ValueError(f"Invalid PetsCollectionInfo response length: {len(stack)}")
+
+        minter = None
+        if len(stack) > 8:
+            minter = load_address(stack[0])
+            stack = stack[1:]
+
         return PetsCollectionInfo(
             fee_storage=int(stack[0][1], 16) / 1e9,
             fee_class_a=int(stack[1][1], 16) / 1e9,
@@ -171,4 +205,5 @@ class PetsCollectionInfo:
             balance_class_b=int(stack[5][1], 16) / 1e9,
             fb_mode=int(stack[6][1], 16),
             fb_uri=load_string(stack[7]),
+            minter=minter,
         )

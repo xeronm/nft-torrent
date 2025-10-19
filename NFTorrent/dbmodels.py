@@ -1,26 +1,31 @@
 import base64
 import datetime
+import enum
 import pickle
 
-from sqlmodel import Field, UniqueConstraint
+from sqlmodel import Field, SQLModel, UniqueConstraint
 
-from .blockchain.models import GeoPoint, NftMutableMetaData, PetMemoryNftContent, PetMemoryNftImmutableData
-from .modelsbase import BaseCollectionModel, BaseNftModel, NftItemData, NftItemHeader
+from .blockchain.models import SPECIES, GeoPoint, NftMutableMetaData, PetMemoryNftContent, PetMemoryNftImmutableData
+from .modelsbase import NftItemContent, NftItemData, NftItemHeader
 
 
-class PetsCollection(BaseCollectionModel, table=True):
+class PetsCollection(SQLModel, table=True):
     id: int = Field(default=None, primary_key=True)
     address: str = Field(unique=True, max_length=48)
     index: int = Field()
+    updated_time: datetime.datetime = Field(default_factory=datetime.datetime.utcnow, nullable=False)
     __tablename__ = "pets_collection"
 
 
-class PetMemoryNft(BaseNftModel, table=True):
+class PetMemoryNft(SQLModel, table=True):
     id: int = Field(default=None, primary_key=True)
     collection_id: int = Field(foreign_key="pets_collection.id")
     address: str = Field(unique=True, max_length=48)
     index: int = Field(index=True)
-    last_updated: datetime.datetime = Field(default_factory=datetime.datetime.utcnow, nullable=False)
+    created_time: datetime.datetime = Field(default_factory=datetime.datetime.utcnow, nullable=False)
+    updated_time: datetime.datetime = Field(default_factory=datetime.datetime.utcnow, nullable=False)
+    deleted_time: datetime.datetime | None = Field(default=None)
+    last_notified: datetime.datetime | None = Field(default=None)
     # Immutable Data
     lang: str = Field(index=True, max_length=2)
     name: str = Field(max_length=100)
@@ -43,6 +48,7 @@ class PetMemoryNft(BaseNftModel, table=True):
     image: str | None = Field(default=None, max_length=500)
     image_data: bytes | None = Field(default=None)
     #
+    torrent_info: bytes | None = Field(default=None)
     icons: bytes | None = Field(default=None)
     error_time: datetime.datetime | None = Field(default=None, index=True)
     error_code: str | None = Field(default=None, max_length=40)
@@ -125,21 +131,103 @@ class PetMemoryNft(BaseNftModel, table=True):
             collection_address=collection_address,
         )
 
+    @property
+    def nft_name(self):
+        nft_name_comp = [self.name, self.species_name or SPECIES[self.species]]
+
+        if self.country:
+            nft_name_comp.append(self.country)
+        if self.location:
+            nft_name_comp.append(self.location)
+
+        nft_name = ", ".join(nft_name_comp)
+        if self.birth_date != "*" or self.death_date != "*":
+            nft_name += f" ({self.birth_date} ~ {self.death_date})"
+        return nft_name
+
     def to_nftheader(self, collection_address: str, icon_size: str = None) -> NftItemHeader:
         icons: dict[str, list[str]] = None
-        if self.icons is not None:
+        if self.icons is not None and icon_size != "none":
             icons = pickle.loads(self.icons)
             icons = {
-                k: [base64.encodebytes(x) for x in v]
+                k: [base64.b64encode(x).decode() for x in v]
                 for k, v in icons.items()
                 if not icon_size or icon_size == "all" or k == icon_size
             }
+
         return NftItemHeader(
             address=self.address,
             index=self.index,
             owner_address=self.owner,
             collection_address=collection_address,
-            image=self.image,
-            image_data=None,
+            content=NftItemContent(
+                name=self.nft_name,
+                image=self.image,
+                image_data=base64.b64encode(self.image_data).decode() if not icons and self.image_data else None,
+            ),
             icons=icons,
+            deleted=self.deleted_time is not None,
         )
+
+
+class NftTaskType(enum.IntEnum):
+    SYNC = 1
+    NOTIFY_DUE_DATE = 2
+    NOTIFY_MINT = 3
+    NOTIFY_UPDATED = 4
+    NOTIFY_TRANSFERED = 5
+
+
+class NftTaskQueue(SQLModel, table=True):
+    id: int = Field(default=None, primary_key=True)
+    task_type: int
+    task_time: datetime.datetime | None = Field(index=True)
+    collection_id: int = Field(foreign_key="pets_collection.id")
+    pet_memory_nft_id: int | None = Field(foreign_key="pet_memory_nft.id", default=None)
+    index: int | None = Field(default=None)
+    procst_time: datetime.datetime | None = Field(index=True, default=None)
+    created_time: datetime.datetime = Field(default_factory=datetime.datetime.utcnow, nullable=False)
+
+    __tablename__ = "nft_task_queue"
+
+
+class TgUser(SQLModel, table=True):
+    id: int = Field(default=None, primary_key=True)
+    owner: str = Field(index=True, max_length=48)
+    user_id: int = Field(index=True)
+    username: str | None = Field(default=None, max_length=100)
+    country: str | None = Field(default=None, max_length=2)
+    language: str | None = Field(default=None, max_length=2)
+    is_premium: bool = Field(default=False)
+    created_time: datetime.datetime = Field(default_factory=datetime.datetime.utcnow, nullable=False)
+    updated_time: datetime.datetime = Field(default_factory=datetime.datetime.utcnow, nullable=False)
+
+    __tablename__ = "tg_user"
+    __table_args__ = (UniqueConstraint("owner", "user_id", name="tg_user_index_uk"),)
+
+
+class UserInquiryState(enum.IntEnum):
+    ACTIVE = 1
+
+
+class UserInquiry(SQLModel, table=True):
+    id: int = Field(default=None, primary_key=True)
+    inquiry_id: str = Field(unique=True, max_length=24)
+    user_id: int = Field(index=True)
+    state: int | None = Field(default=UserInquiryState.ACTIVE)
+    username: str | None = Field(default=None, max_length=100)
+    language: str | None = Field(default=None, max_length=2)
+    is_premium: bool = Field(default=False)
+    subject: str | None = Field(default=None, max_length=100)
+    message: str | None = Field(default=None, max_length=2000)
+    message_id: int | None = Field(default=None)
+    nft_address: str | None = Field(default=None, max_length=48)
+    created_time: datetime.datetime = Field(default_factory=datetime.datetime.utcnow, nullable=False)
+    updated_time: datetime.datetime = Field(default_factory=datetime.datetime.utcnow, nullable=False)
+    disabled_to: datetime.datetime | None = Field(default=None)
+    closed_time: datetime.datetime | None = Field(default=None)
+    admin_user_id: int | None = Field(default=None)
+    admin_message: str | None = Field(default=None, max_length=2000)
+
+    __tablename__ = "user_inquiry"
+    __table_args__ = (UniqueConstraint("user_id", "state", name="user_inquiry_uk"),)

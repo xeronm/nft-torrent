@@ -1,18 +1,27 @@
 from NFTorrent.blockchain.models import PetMemoryNftContent, PetsCollectionInfo
-from NFTorrent.dbmodels import PetMemoryNft, PetsCollection
-from NFTorrent.modelsbase import CollectionConfig, CollectionInstance
+from NFTorrent.modelsbase import CollectionConfig, CollectionInstance, CollectionItemCover
+
+cover = CollectionItemCover(
+    baseimage_path="./assets/images/species",
+    font="./assets/fonts/Inter_24pt-Bold.ttf",
+    subtitle_font="./assets/fonts/Inter_24pt-Regular.ttf",
+    title_size=36,
+    subtitle_size=20,
+    rect_padding=(96, 0),
+    rect_fill=(31, 33, 66),
+    color="white",
+)
 
 config = CollectionConfig(
     collection_info_class=PetsCollectionInfo,
     nft_content_class=PetMemoryNftContent,
-    dbmodel_class=PetsCollection,
-    dbmodel_nft_class=PetMemoryNft,
     collections=[
 {% for param in nftorrent.collections %}
         CollectionInstance(
             address="{{ param.address }}",
             image="{{ param.image }}",
             meta={{ dict(param.meta) }},
+            item_cover=cover,
         ),
 {% endfor %}
     ]

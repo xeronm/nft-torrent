@@ -1,0 +1,43 @@
+- name: PgBouncer update_leader.sh
+  ansible.builtin.command: /etc/pgbouncer/update_leader.sh ansible
+
+- name: Reload systemd
+  command: systemctl daemon-reload
+
+- name: Restart Patroni
+  systemd:
+    name: patroni
+    state: restarted
+    enabled: yes
+    daemon_reload: yes
+
+- name: Restart etcd
+  systemd:
+    name: etcd
+    state: restarted
+    enabled: yes
+    daemon_reload: yes
+
+- name: Restart etcd-dbshrink
+  systemd:
+    name: etcd
+    state: restarted
+    enabled: yes
+    daemon_reload: yes
+
+- name: Restart PgBouncer
+  systemd:
+    name: pgbouncer
+    state: restarted
+    enabled: yes
+    daemon_reload: yes
+
+- name: Reload firewalld
+  service:
+    name: firewalld
+    state: reloaded
+
+- name: restart telegraf
+  service:
+    name: telegraf
+    state: restarted

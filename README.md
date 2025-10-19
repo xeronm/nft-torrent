@@ -45,91 +45,27 @@ sudo useradd -r -g nftorrent --uid=9001 --home-dir=/home/nftorrent --shell=/sbin
     - generate `jwt.key` - JWT secret key for Bearer Authorization
     - TON Storage: create `storage.manifest` - BAG ID of the torrent to locate NFT Storage Peers
 
+
 3. Run docker-compose
 ```sh
 docker compose up -d
 ```
 
-#### Deploy via Ansible
-
-1. Activate SSH key
+### Annex A. Useful Commands
 
 ```sh
-ssh-agent bash
-ssh-add ~/.ssh/<private key>
-```
-
-2. Setup Inventory and Global Vars
-
-```yaml
-# ./inventory/production.yaml
-nftorrents:
-  hosts:
-    n01.s.petsmem.site:
-      ansible_host: 80.249.146.167
+openssl s_client \
+  -connect 45.144.222.100:2379 \
+  -cert /etc/ssl/pgcluster/client.crt \
+  -key /etc/ssl/pgcluster/client.key \
+  -CAfile /etc/ssl/pgcluster/ca.crt
 ```
 
 
-```yaml
-# ./group_vars/all.yaml
-oam:
-  user: nftorrent
-  group: nftorrent
-  comment: NF Torrent
-  uid: 9001
-  gid: 9001
-  sshkey: <ssh-rsa>
-  telegraf:
-    influxdb:
-      token: <InfluxDB Output Token>
-      urls:
-        - <InfluxDB Output URLs>
-      bucket: petsmem
-      organization: petsmem
-```
-
-```yaml
-# ./group_vars/nftorrents.yaml
-nftorrent:
-  collections:
-    - address: EQCq3q4Oi6nxLGA399SXlUv6XR8sAECm_TPIl-kZRY6rvIvc
-      image: './assets/images/collection-3.webp'
-  environment:
-    IPFS_CLUSTER_SECRET: <32byte hexencoded cluster secret>
-    IPFS_CLUSTER_PEERNAME: "{{ inventory_hostname }}"
-    NFTORRENT_VERSION: 0.2.1
-    HTTP_TWA_DOMAINS: ton-connect.github.io, petsmem.site
-    HTTP_ALLOW_ORIGINS: http://localhost:9000, https://petsmem.site
-  ton_config: https://ton.org/testnet-global-config.json
-  jwt_key: <32byte hexencoded JWT secret>
-  ipfs:
-    peerstore:
-      - <IPFS bootstrap peer record 1>
-      - <IPFS bootstrap peer record 2>
-website:
-  package: <pet-memorial-miniapp build package>
-```
-
-3. Deploy
-```sh
-ansible-playbook -i ./inventory/production.yaml nftorrents.yaml
-```
-
-Check Geo-routing
-```sh
-curl -i https://www.petsmem.site/ --resolve www.petsmem.site:443:45.144.222.100
-```
-
-5. Configure Master-Host and obtain ceritificate
-
-Setup properly:
-  - DNS Credentials `/etc/letsencrypt/<plugin>.ini`;
-  - Deploy hook `/etc/letsencrypt/renewal/<domain>`;
+### Annex B. Localization
 
 ```sh
-pip3 install ansible certbot
-certbot certonly -a dns -d <domain> -d *.<domain> --dns-propagation-seconds 300
-certbot renew --dry-run
+pybabel extract -F babel.cfg -o NFTorrent/locales/messages.pot .
+pybabel update -i NFTorrent/locales/messages.pot -d NFTorrent/locales -l ru
+pybabel compile -d NFTorrent/locales
 ```
-
-

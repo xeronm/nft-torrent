@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ton-nft-torrent"
-version = "0.2.1"
+version = "0.2.3"
 description = "TON NFT Torrent content HTTP Gateway"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -24,19 +24,28 @@ maintainers = [
 urls = { "Homepage" = "https://github.com/xeronm/nft-torrent" }
 
 dependencies = [
-  "pytonlib==0.0.65",
+  "pytonlib==0.0.67",
   "redis",
   "ring",
   "fastapi",
   "pydantic",
+  "python-dateutil",
   "python-multipart",
-  "tonpy",
+  "tonpy>=0.0.0.1.3a0",
   "aiohttp",
   "pyjwt",
   "pynacl",
   "sqlmodel",
   "psycopg2-binary",
-  "pillow"
+  "pillow",
+  "etcd3",
+  "tenacity<7.0.0",
+  "protobuf>=3.20.0,<4.21.0",
+  "babel",
+  "aiogram",
+  "pyyaml",
+  "ua-parser",
+  "user-agents",
 ]
 
 classifiers = [
@@ -55,8 +64,10 @@ classifiers = [
 include-package-data = true
 
 [tool.setuptools.packages.find]
-exclude = ["test*"]
+exclude = ["test*", "ansible*", "docker*"]
 
+[tool.setuptools.package-data]
+NFTorrent = ["locales/**/LC_MESSAGES/*.mo"]
 
 [tool.black]
 line-length = 120

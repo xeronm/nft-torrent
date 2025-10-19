@@ -1,0 +1,43 @@
+[Unit]
+Description=etcd key-value store for PostgreSQL cluster
+After=network.target
+Requires=network.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+User=postgres
+Group=postgres
+Type=notify
+EnvironmentFile=-/etc/default/etcd
+ExecStart=/usr/local/bin/etcd \
+  --name {{ inventory_hostname }} \
+  --data-dir {{ etcd_data_dir }} \
+  --quota-backend-bytes=1073741824 \
+  --heartbeat-interval 200 \
+  --election-timeout 2000 \
+  --initial-advertise-peer-urls=https://{{ ansible_host }}:2380 \
+  --listen-peer-urls=https://{{ ansible_host }}:2380 \
+  --listen-client-urls=https://0.0.0.0:2379 \
+  --advertise-client-urls=https://{{ ansible_host }}:2379 \
+  --initial-cluster-token=patroni-cluster \
+  --initial-cluster={{ etcd_initial_cluster }} \
+  --initial-cluster-state={{ etcd.cluster_state | default('new') }} \
+  --client-cert-auth \
+  --cert-file=/etc/ssl/pgcluster/server.crt \
+  --key-file=/etc/ssl/pgcluster/server.key \
+  --trusted-ca-file=/etc/ssl/pgcluster/ca.crt \
+  --peer-client-cert-auth \
+  --peer-cert-file=/etc/ssl/pgcluster/server.crt \
+  --peer-key-file=/etc/ssl/pgcluster/server.key \
+  --peer-trusted-ca-file=/etc/ssl/pgcluster/ca.crt
+Restart=always
+RestartSec=10
+LimitNOFILE=32768
+OOMScoreAdjust=-500
+ProtectSystem=full
+ReadWritePaths={{ etcd_data_dir }}
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

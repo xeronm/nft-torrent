@@ -65,10 +65,14 @@ class WebServerSettings:
     jwt_algorithm: str
     port: int = None
     debug: bool = False
+    testnet: bool = True
     remote_api_root: str = None
     public_addr: str = None
+    node_id: str = None
     twa_domains: list[str] = None
+    bot_polling: bool = True
     bot_token: str = None
+    bot_admin_group_id: int = None
     allow_origins: list[str] = None
     enable_ssl: bool = True
     verify_ssl: bool = True
@@ -77,17 +81,29 @@ class WebServerSettings:
     allow_networks: list[str] = None
     request_timeout: int = 10
     collection_config: CollectionConfig = None
+    getgems_authority: str = "https://testnet.getgems.io"
+    ipfs_authority: str = "https://ipfs.io"
+    petsmem_authority: str = "https://testnet.petsmem.site"
+    petsmem_content_authority: str = "https://t.petsmem.site"
+    tonviewer_authority: str = "https://testnet.tonviewer.com"
+    bot_miniapp_url: str = "https://t.me/pets_memorial_test_bot/petsmem"
 
     @classmethod
     def from_environment(cls):
         obj = cls.__new__(cls)
+        obj.testnet = strtobool(os.environ.get("HTTP_TESTNET", "true"))
         obj.debug = strtobool(os.environ.get("HTTP_DEBUG", "false"))
         obj.api_root_path = os.environ.get("HTTP_API_ROOT_PATH", "")
         obj.remote_api_root = os.environ.get("HTTP_REMOTE_API_ROOT")
         obj.public_addr = os.environ.get("HTTP_PUBLIC_ADDR", "127.0.0.1")
+        obj.node_id = os.environ.get("HTTP_NODE_ID", None)
         obj.jwt_secret = _value_from_file(os.environ.get("HTTP_API_JWT_SECRET", None))
         obj.jwt_algorithm = os.environ.get("HTTP_API_JWT_ALGORITHM", "HS256")
+        obj.bot_polling = strtobool(os.environ.get("HTTP_TWA_BOT_POLL", "true"))
         obj.bot_token = _value_from_file(os.environ.get("HTTP_TWA_BOT_TOKEN", None))
+        obj.bot_admin_group_id = os.environ.get("HTTP_TWA_BOT_ADMIN_GROUP_ID")
+        if obj.bot_admin_group_id:
+            obj.bot_admin_group_id = int(obj.bot_admin_group_id)
 
         obj.port = os.environ.get("HTTP_PORT", None)
         if obj.port is not None:
@@ -103,6 +119,13 @@ class WebServerSettings:
             os.environ.get("HTTP_COLLECTION_CONFIG", "NFTorrent.collections.config"),
         )  # noqa: E501
         obj.allow_networks = [x.strip() for x in os.environ.get("HTTP_ALLOW_NETWORKS", "").split(",") if x.strip()]
+
+        obj.getgems_authority = os.environ.get("HTTP_GETGEMS_AUTH", cls.getgems_authority)
+        obj.ipfs_authority = os.environ.get("HTTP_IPFS_AUTH", cls.ipfs_authority)
+        obj.petsmem_authority = os.environ.get("HTTP_PETSMEM_AUTH", cls.petsmem_authority)
+        obj.petsmem_content_authority = os.environ.get("HTTP_PETSMEM_CONTENT_AUTH", cls.petsmem_content_authority)
+        obj.tonviewer_authority = os.environ.get("HTTP_TONVIEWER_AUTH", cls.tonviewer_authority)
+        obj.bot_miniapp_url = os.environ.get("HTTP_BOT_MINIAPP_URL", cls.bot_miniapp_url)
         return obj
 
 
@@ -117,8 +140,12 @@ class IndexDbSettings:
     icon_size_small: int = 100
     icon_size_medium: int = 240
     icon_format: str = "webp"
-    nftorrent_apiroot: str = None
     http_timeout: int = 30
+    etcd_hosts: list[str] = None
+    etcd_cacert: str = None
+    etcd_cert: str = None
+    etcd_key: str = None
+    task_queue_bulk_size: int = 20
 
     @classmethod
     def from_environment(cls):
@@ -126,7 +153,7 @@ class IndexDbSettings:
         obj.enabled = strtobool(os.environ.get("INDEXDB_ENABLED", "false"))
         database_backend = os.environ.get("INDEXDB_DATABASE_BACKEND", "postgresql+psycopg2")
         database_user = os.environ.get("INDEXDB_DATABASE_USER", "postgres")
-        database_password = os.environ.get("INDEXDB_DATABASE_PASSWORD", "postgres")
+        database_password = _value_from_file(os.environ.get("INDEXDB_DATABASE_PASSWORD", "postgres"))
         database_name = os.environ.get("INDEXDB_DATABASE_NAME", "postgres")
         database_host = os.environ.get("INDEXDB_DATABASE_HOST", "localhost")
         database_port = os.environ.get("INDEXDB_DATABASE_PORT", None)
@@ -140,8 +167,15 @@ class IndexDbSettings:
         obj.icon_size_small = int(os.environ.get("INDEXDB_ICON_SIZE_SMALL", cls.icon_size_small))
         obj.icon_size_medium = int(os.environ.get("INDEXDB_ICON_SIZE_MEDIUM", cls.icon_size_medium))
         obj.icon_format = os.environ.get("INDEXDB_ICON_FORMAT", cls.icon_format)
-        obj.nftorrent_apiroot = os.environ.get("INDEXDB_NFTORRENT_APIROOT")
         obj.http_timeout = int(os.environ.get("INDEXDB_HTTP_TIMEOUT", cls.http_timeout))
+
+        obj.etcd_hosts = [x.strip() for x in os.environ.get("INDEXDB_ETCD_HOSTS", "").split(",") if x.strip()]
+        obj.etcd_cacert = os.environ.get("INDEXDB_ETCD_CACERT", None)
+        obj.etcd_cert = os.environ.get("INDEXDB_ETCD_CERT", None)
+        obj.etcd_key = os.environ.get("INDEXDB_ETCD_KEY", None)
+
+        obj.task_queue_bulk_size = int(os.environ.get("INDEXDB_TASK_QUEUE_BULK_SIZE", cls.task_queue_bulk_size))
+
         return obj
 
 
@@ -224,6 +258,7 @@ class TonlibSettings:
     restart_timeout: int = 10
     max_liteservers: int = 16
     cdll_path: str = None
+    min_liteservers: int = 2
 
     @property
     def liteserver_config(self):
@@ -238,6 +273,7 @@ class TonlibSettings:
     @classmethod
     def from_environment(cls):
         obj = cls.__new__(cls)
+        obj.min_liteservers = int(os.environ.get("TONLIB_MIN_LITESERVERS", cls.min_liteservers))
         obj.max_liteservers = int(os.environ.get("TONLIB_MAX_LITESERVERS", cls.max_liteservers))
         obj.verbosity_level = int(os.environ.get("TONLIB_VERBOSITY_LEVEL", cls.verbosity_level))
         obj.parallel_requests = int(os.environ.get("TONLIB_PARALLEL_REQUESTS", cls.parallel_requests))

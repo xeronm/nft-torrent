@@ -5,6 +5,8 @@
     owner: root
     group: root
     mode: '0644'
+  notify:
+    - restart nginx
   tags: pushcert
 
 - name: Push privkey.pem
@@ -14,10 +16,6 @@
     owner: root
     group: root
     mode: '0600'
-  tags: pushcert
-
-- name: Reload nginx
-  service:
-    name: nginx
-    state: reloaded
+  notify:
+    - restart nginx
   tags: pushcert

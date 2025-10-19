@@ -1,14 +1,13 @@
 import abc
-import datetime
 import time
 from collections import defaultdict
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
+from functools import wraps
 from typing import Any
 
-from pytonlib.utils.address import detect_address
-from sqlmodel import Field, SQLModel
 from tonpy.types import CellSlice
 
+from NFTorrent.blockchain.address import parse_address
 from NFTorrent.utils import dataclass_to_influx
 
 
@@ -20,13 +19,9 @@ class TonAddress:
     b64url: str = field(init=False)
 
     def __post_init__(self):
-        address = detect_address(self.address)
+        address = parse_address(self.address)
         object.__setattr__(self, "raw_form", address["raw_form"])
-        addr_map = None
-        if "non_bounceable" in address["given_type"]:
-            addr_map = address["non_bounceable"]
-        else:
-            addr_map = address["bounceable"]
+        addr_map = address["bounceable"]
         object.__setattr__(self, "b64", addr_map["b64"])
         object.__setattr__(self, "b64url", addr_map["b64url"])
 
@@ -35,8 +30,18 @@ class TonAddress:
 
 
 @dataclass(frozen=True)
-class StatisticNoTags:
+class BaseStatisticTags:
     pass
+
+
+@dataclass(frozen=True)
+class StatisticNoTags(BaseStatisticTags):
+    pass
+
+
+@dataclass(frozen=True)
+class MethodStatisticTags(BaseStatisticTags):
+    method: str
 
 
 @dataclass
@@ -57,51 +62,56 @@ class StatisticMeasurement:
 
 class MeasurementStore(defaultdict):
 
-    def __init__(self, name: str, *args, **kwargs):
+    def __init__(self, name: str, *args, default_tag_factory: type[BaseStatisticTags] = MethodStatisticTags, **kwargs):
         super().__init__(*args, **kwargs)
         self.name = name
+        self.default_tag_factory = default_tag_factory
 
     def get_timestamp(self):
         return int(time.time() * 1000000000)
 
     def as_list(self):
         _timestamp = self.get_timestamp()
-        return [{"tags": asdict(k), "fields": asdict(v), "timestamp": _timestamp} for k, v in self.items()]
+        return [
+            {
+                "measurement": self.name,
+                "tags": asdict(k if is_dataclass(k) else self.default_tag_factory(k)) if k != StatisticNoTags else None,
+                "fields": asdict(v),
+                "timestamp": _timestamp,
+            }
+            for k, v in self.items()
+        ]
 
-    def as_influx(self, timestamp):
+    def tag_set(self, k: Any):
+        if k == StatisticNoTags:
+            return ""
+        else:
+            return "," + dataclass_to_influx(k if is_dataclass(k) else self.default_tag_factory(k))
+
+    def as_influx(self, timestamp=None):
         timestamp = timestamp or self.get_timestamp()
-        return [f"{self.name},{dataclass_to_influx(k)} {dataclass_to_influx(v)} {timestamp}" for k, v in self.items()]
+        return sorted([f"{self.name}{self.tag_set(k)} {dataclass_to_influx(v)} {timestamp}" for k, v in self.items()])
 
 
-class BaseCollectionModel(SQLModel, table=False):
-    id: int = Field(default=None, primary_key=True)
-    address: str = Field(unique=True, max_length=48)
-    index: int = Field()
+def with_stats(key: Any = None, stats: MeasurementStore = None, stats_attr: str = "stats"):
+    def decorator(method):
+        @wraps(method)
+        async def wrapper(*args, **kwargs):
+            if stats is not None:
+                container = stats
+            else:
+                container = getattr(args[0], stats_attr)
 
+            with container[key or method.__name__]:
+                return await method(*args, **kwargs)
 
-class BaseNftModel(SQLModel, table=False):
-    id: int = Field(default=None, primary_key=True)
-    collection_id: int = Field()
-    address: str = Field(unique=True, max_length=48)
-    index: int = Field(index=True)
-    image: str | None = Field(default=None, max_length=256)
-    image_data: bytes | None = Field(default=None)
-    icons: bytes | None = Field(default=None)
-    error_time: datetime.datetime | None = Field(default=None, index=True)
-    error_code: str | None = Field(default=None, max_length=40)
+        return wrapper
 
-    @classmethod
-    @abc.abstractmethod
-    def from_nftmodel(cls, collection: int, data: Any):
-        pass
-
-    @abc.abstractmethod
-    def to_nftheader(self, collection_address: str, icon_size: str = None):
-        pass
+    return decorator
 
 
 @dataclass
-class BaseNftContent:
+class BaseNftContent(abc.ABC):
 
     @classmethod
     @abc.abstractmethod
@@ -124,9 +134,21 @@ class BaseNftContent:
     def storage_due_time(self) -> int:
         pass
 
+    @abc.abstractmethod
+    def title(self) -> str:
+        pass
+
+    @abc.abstractmethod
+    def subtitle(self) -> str:
+        pass
+
+    @abc.abstractmethod
+    def metadata_attributes(self, **kwaddr) -> dict[str, Any]:
+        pass
+
 
 @dataclass
-class BaseCollectionInfo:
+class BaseCollectionInfo(abc.ABC):
 
     @classmethod
     @abc.abstractmethod
@@ -135,8 +157,23 @@ class BaseCollectionInfo:
 
 
 @dataclass(frozen=True)
+class CollectionItemCover:
+    baseimage_path: str
+    font: str
+    subtitle_font: str = None
+    title_size: int = 96
+    subtitle_size: int = 48
+    offset_top: float = 0.875
+    color: Any = "black"
+    rect_fill: Any = "white"
+    rect_padding: tuple[int, int] = (64, 8)
+    rect_margin: tuple[int, int] = (24, 0)
+
+
+@dataclass(frozen=True)
 class CollectionInstance(TonAddress):
     image: str
+    item_cover: CollectionItemCover = None
     meta: dict[str, Any] = field(default_factory=dict)
     nft_samples: dict[str, str] = None
 
@@ -146,8 +183,6 @@ class CollectionConfig:
     collection_info_class: type[BaseCollectionInfo]
     nft_content_class: type[BaseNftContent]
     collections: list[CollectionInstance]
-    dbmodel_class: type[BaseCollectionModel] = None
-    dbmodel_nft_class: type[BaseNftModel] = None
 
     def __post_init__(self):
         self._collections_map = {x.raw_form: x for x in self.collections}
@@ -177,11 +212,18 @@ class NftItemData:
 
 
 @dataclass(frozen=True)
+class NftItemContent:
+    name: str
+    image: str | None = None
+    image_data: str | None = None
+
+
+@dataclass(frozen=True)
 class NftItemHeader:
     address: str
     index: int
     owner_address: str
     collection_address: str = None
-    image: str = None
-    image_data: str = None
     icons: dict[str, list[str]] = None
+    content: NftItemContent = None
+    deleted: bool = False

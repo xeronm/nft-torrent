@@ -1,26 +1,60 @@
 import asyncio
+import hashlib
 import io
 import logging
 import logging.config
+import os
 import time
+from dataclasses import asdict
+from mimetypes import guess_extension
+from typing import Any
 from urllib.parse import urljoin
 
 from fastapi import Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import HTTPException
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response, StreamingResponse
 
 from NFTorrent.auth import ContractAPIKeyCookie, NodeJWTBearer
+from NFTorrent.bot import Backend, BotApp
 from NFTorrent.cache import DisabledCacheManager
+from NFTorrent.imageutils import buffer_guess_type, generate_cover
 from NFTorrent.indexer import IndexDb
 from NFTorrent.ipfs import IpfsRpcManager
-from NFTorrent.models import HealthCheckResult, NftContentState, torrent_digest
-from NFTorrent.modelsbase import CollectionConfig
+from NFTorrent.locks import OperationLock
+from NFTorrent.models import ContentQuery, HealthCheckResult, NftContentState, torrent_digest
+from NFTorrent.modelsbase import CollectionConfig, StatisticNoTags
 from NFTorrent.settings import Settings
-from NFTorrent.tonlib import TonlibManager
-from NFTorrent.utils import dict_to_influx, guess_type, parse_ipfs_uri
+from NFTorrent.tonlib import TonlibContractIsNotNft, TonlibManager
+from NFTorrent.utils import dict_to_influx, guess_type, parse_ipfs_uri, uri_ipfs, uri_supported
 
 logger = logging.getLogger(__name__)
+
+SPECIES_LOGO = [
+    "Other",
+    "Dog",
+    "Cat",
+    "Hamster",
+    "Rabbit",
+    "Parrot",
+    "Fish",
+    "Turtle",
+    "Reptile",
+    "Horse",
+    "Hedgehog",
+    "Mouse",
+    "Ferret",
+]
+
+
+def image_data_response(image_data: bytes) -> StreamingResponse:
+    hash = hashlib.md5(image_data).hexdigest().lower()
+    media_type = buffer_guess_type(image_data, default_type="image/webp")[0]
+    return StreamingResponse(
+        io.BytesIO(image_data),
+        media_type=media_type,
+        headers={"Content-Disposition": f'inline; filename="{hash}{guess_extension(media_type)}"', "ETag": hash},
+    )
 
 
 class Server:
@@ -37,6 +71,7 @@ class Server:
         self.indexer: IndexDb = None
         self.ipfs: IpfsRpcManager = None
         self.peer_hostnames = {}
+        self.sync_wlock = {}
         self.loop = None
 
         self.jwt_bearer = NodeJWTBearer(
@@ -57,11 +92,14 @@ class Server:
         )
 
     async def startup(self):
+        assert self.settings.webserver.node_id, '"node_id" is required'
         self.start_time = int(time.time())
         self.loop = loop = asyncio.get_event_loop()
         logger.warning("Server startup initiated...")
         logger.warning(
             "Parameters:\n"
+            " - webserver.testnet: %s\n"
+            " - webserver.node_id: %s\n"
             " - webserver.allow_networks: %s\n"
             " - webserver.api_root_path: %s\n"
             " - webserver.twa_domains: %s\n"
@@ -70,6 +108,8 @@ class Server:
             " - ipfs.enabled: %s\n"
             " - cache.enabled: %s <%s>\n"
             " - indexdb.enabled: %s\n",
+            self.settings.webserver.testnet,
+            self.settings.webserver.node_id,
             self.settings.webserver.allow_networks,
             self.settings.webserver.api_root_path,
             self.settings.webserver.twa_domains,
@@ -100,11 +140,34 @@ class Server:
         )
 
         if self.settings.ipfs.enabled:
-            self.ipfs = IpfsRpcManager(self.settings.ipfs, cache_manager=cache_manager, tonlib=self.tonlib, loop=loop)
+            self.ipfs = IpfsRpcManager(
+                self.settings.ipfs,
+                cache_manager=cache_manager,
+                tonlib=self.tonlib,
+                loop=loop,
+                max_pin_duration=600 if self.settings.webserver.testnet else 0,
+            )
 
+        self.bot_app = None
         if self.settings.indexdb.enabled:
+            if self.settings.webserver.bot_token:
+                self.bot_app = BotApp(
+                    self.settings.webserver.bot_token,
+                    backend=Backend(loop=loop, url=self.settings.indexdb.database_url, cache_manager=cache_manager),
+                    admin_group_id=self.settings.webserver.bot_admin_group_id,
+                    torrent_file_size_limit=self.settings.ipfs.file_size_limit,
+                    node_id=self.settings.webserver.node_id,
+                    getgems_authority=self.settings.webserver.getgems_authority,
+                    ipfs_authority=self.settings.webserver.ipfs_authority,
+                    tonviewer_authority=self.settings.webserver.tonviewer_authority,
+                    petsmem_authority=self.settings.webserver.petsmem_authority,
+                    petsmem_content_authority=self.settings.webserver.petsmem_content_authority,
+                    bot_miniapp_authority=self.settings.webserver.bot_miniapp_url,
+                )
             self.indexer = IndexDb(
                 self.settings.indexdb,
+                bot_app=self.bot_app,
+                bot_polling=self.settings.webserver.bot_polling,
                 cache_manager=cache_manager,
                 loop=loop,
                 tonlib=self.tonlib,
@@ -137,35 +200,45 @@ class Server:
     def get_healthcheck(self) -> HealthCheckResult:
         stotage_state = tonlib_state = indexer_state = None
         if self.tonlib is not None:
-            tonlib_state = len([w for w in self.tonlib.workers.values() if w.is_sync]) >= 2  # 2 min liyterservers
+            tonlib_state = (
+                len([w for w in self.tonlib.workers.values() if w.is_sync]) >= self.settings.tonlib.min_liteservers
+            )
 
         load = redundancy = 0
         if self.ipfs is not None:
             ipfs_state = self.ipfs.get_cached_node_state()
             if ipfs_state is not None:
                 load = ipfs_state["storage"]["RepoSize"] * 100 / ipfs_state["storage"]["StorageMax"]
-                redundancy = len(ipfs_state["cluster_peers"]) >= self.settings.ipfs.min_redundancy
+                redundancy = len(ipfs_state["cluster_peers"]) / self.settings.ipfs.min_redundancy
                 stotage_state = ipfs_state["peers"] >= self.ipfs.settings.min_peers_count
         if self.indexer is not None:
-            indexer_state = self.indexer.get_indexdb_state()
-            last_checked = [x["fields"]["last_checked"] for x in indexer_state["stats"]]
-            indexer_state = len(last_checked) == len(
-                [x for x in last_checked if x >= time.time() - self.indexer.settings.indexer_timeout * 2]
-            )
+            curr_time = time.time()
+            last_checked = [x.last_checked for x in self.indexer.stats_coll.values()]
+            indexer_state = (
+                not tonlib_state
+                or len(last_checked)
+                == len([x for x in last_checked if x >= curr_time - self.indexer.settings.indexer_timeout * 2])
+            ) and self.indexer.stats[StatisticNoTags].task_last_checked >= curr_time - self.indexer.restart_timeout * 2
+        bot = False
+        if self.bot_app is not None:
+            bot = self.indexer.dp_active
 
         return HealthCheckResult(
+            node_id=self.settings.webserver.node_id,
             tonlib=bool(tonlib_state),
             storage=bool(stotage_state),
             indexdb=bool(indexer_state),
-            redundancy=bool(redundancy),
+            redundancy=round(redundancy, 2),
+            bot=bot,
             load=round(load, 2),
         )
 
     def get_measurements(self, timestamp: int):
         hc = self.get_healthcheck()
-        _stats = hc.dict()
+        _stats = hc.model_dump()
         _stats["start_time"] = self.start_time
-        measurements = [f"NFTorrentServer {dict_to_influx(_stats)} {timestamp}"]
+        node_id = _stats.pop("node_id")
+        measurements = [f"NFTorrentServer,node={node_id} {dict_to_influx(_stats)} {timestamp}"]
         if self.tonlib is not None:
             measurements += self.tonlib.get_measurements(timestamp)
         if self.ipfs is not None:
@@ -177,7 +250,7 @@ class Server:
     async def get_nft_content(self, request: Request, address: str, query: str = None):
         nft_collection = self.collection_config.get_collection(address)
         if nft_collection is not None:
-            if query == "uri":
+            if query == ContentQuery.URI:
                 return JSONResponse(
                     nft_collection.meta,
                     headers={
@@ -185,18 +258,18 @@ class Server:
                     },
                 )
             else:
-                return FileResponse(
-                    nft_collection.image,
-                    media_type=guess_type(nft_collection.image, default_type="image/webp")[0],
-                    headers={},
-                )
+                return RedirectResponse(nft_collection.image)
+                # return FileResponse(
+                #     nft_collection.image,
+                #     media_type=guess_type(nft_collection.image, default_type="image/webp")[0],
+                # )
 
         nft_data = await self.tonlib.get_nft_data(address)
         nft_content = nft_data.individual_content
 
-        uri = nft_content.uri() if query == "uri" else nft_content.image()
-        if uri:
-            if uri.startswith("ipfs://"):
+        uri = nft_content.uri() if query == ContentQuery.URI else nft_content.image()
+        if uri and uri_supported(uri):
+            if uri_ipfs(uri):
                 cid, file_path, digest = parse_ipfs_uri(uri)
                 cid_info = await self.ipfs.get_cid_info(cid=cid)
                 if not cid_info.files:
@@ -216,26 +289,55 @@ class Server:
                 return RedirectResponse(request.url_for("get_nft_torrent_content", address=address, digest=digest))
             else:
                 return RedirectResponse(uri)
-        if nft_content.image_data() and query != "uri":
-            return StreamingResponse(
-                io.BytesIO(nft_content.image_data()),
-                media_type="image/webp",
-                headers={
-                    "Content-Disposition": f'inline; filename="{address}.webp"',
-                },
-            )
-        if query == "uri":
-            return JSONResponse({"attributes": nft_content.metadata_attributes()})
+        if nft_content.image_data() and query != ContentQuery.URI:
+            return image_data_response(nft_content.image_data())
+        if query == ContentQuery.URI:
+            # uri = nft_content.image()
+            # images = None
+            # if uri and uri_ipfs(uri):
+            #     cid, file_path, digest = parse_ipfs_uri(uri)
+            #     cid_info = await self.ipfs.get_cid_info(cid=cid)
+            #     if cid_info.files:
+            #         images = [
+            #             str(request.url_for("get_nft_torrent_content", address=address, digest=x.digest))
+            #             for x in cid_info.files
+            #         ]
 
-        # TODO: Generate dynamic default image with pets Name
-        return HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+            weburl = self.bot_app.get_petsmem_link(nft_address=address)
+            return JSONResponse(
+                {
+                    "external_url": weburl,
+                    "social_links": [
+                        self.bot_app.get_bot_miniapp_link(nft_address=address),
+                        weburl,
+                    ],
+                    # "images": images,
+                    "attributes": nft_content.metadata_attributes(),
+                }
+            )
+
+        nft_collection = self.collection_config.get_collection(nft_data.collection_address)
+        if nft_collection.item_cover:
+            kwargs = asdict(nft_collection.item_cover)
+            species_name = (
+                SPECIES_LOGO[nft_content.imm_data.species]
+                if nft_content.imm_data.species < len(SPECIES_LOGO)
+                else SPECIES_LOGO[0]
+            )
+            baseimage = os.path.join(kwargs.pop("baseimage_path"), f"{species_name}.webp")
+            image = generate_cover(
+                baseimage=baseimage, title=nft_content.title(), subtitle=nft_content.subtitle(), format="webp", **kwargs
+            )
+            return image_data_response(image)
+
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
     async def get_nft_torrent_content(self, address: str = None, file_path: str = None, digest: str = None):
         nft_data = await self.tonlib.get_nft_data(address)
         nft_content = nft_data.individual_content
         if nft_content is not None:
             image = nft_content.image()
-            if image.startswith("ipfs://"):
+            if uri_ipfs(image):
                 cid, _, _ = parse_ipfs_uri(image)
                 data, info = await self.ipfs.get_cid_file(cid=cid, file_path=file_path, digest=digest)
                 return StreamingResponse(
@@ -248,21 +350,32 @@ class Server:
                 )
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
-    async def sync_nft_data(self, address: str = None, owner: str = None, userdata: str = None):
-        nft_data = await self.tonlib.get_nft_data(address, owner=owner)
-        nft_content = nft_data.individual_content
-        if nft_content is not None:
-            image = nft_content.image()
-            if image and image.startswith("ipfs://"):
-                cid, _, _ = parse_ipfs_uri(image)
-                pin_status = await self.ipfs.cid_pin_status(cid=cid)
-                if (
-                    nft_content.storage_due_time() > (pin_status.expires if pin_status else time.time())
-                    or pin_status.userdata is None
-                    and userdata is not None
-                ):
-                    self.loop.create_task(self.ipfs.confirm_content(address, old_cid=None, cid=cid, userdata=userdata))
-            # TODO: Update IndexDB
+    async def sync_nft_data(self, address: str = None):
+        async with OperationLock(f"sync:{address}", self.sync_wlock, wait=False):
+            await asyncio.sleep(3)  # wait few seconds for cache expiration
+            try:
+                # Ownership is not verified here, since the NFT may have been transferred or deleted.
+                nft_data = await self.tonlib.get_nft_data(address)
+            except TonlibContractIsNotNft:
+                nft_data = None
+                account_state = await self.tonlib.generic_get_account_state(address)
+                if account_state["account_state"]["@type"] == "uninited.accountState":
+                    # looks as if NFT was destroyed
+                    await self.indexer.nft_update_nft_data(address)
+                    return
+                raise
+
+            nft_content = nft_data.individual_content
+            if nft_content is not None:
+                image = nft_content.image()
+                if uri_ipfs(image):
+                    cid, _, _ = parse_ipfs_uri(image)
+                    if cid:
+                        pin_status = await self.ipfs.cid_pin_status(cid=cid)
+                        if nft_content.storage_due_time() > (pin_status.expires if pin_status else time.time()):
+                            self.loop.create_task(self.ipfs.confirm_content(address, old_cid=None, cid=cid))
+                await self.indexer.nft_update_nft_data(address, nft_data)
+            return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     async def get_nft_cid_info(self, address: str, digest: str = None):
         cid, _ = await self.ipfs.get_nft_cid(address, raise_error=True)
@@ -287,3 +400,20 @@ class Server:
         if not pin_status:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
         return pin_status
+
+    async def register_tg_user(self, owner: str = None, userdata: Any = None, country: str = None):
+        if owner is None or userdata is None or not isinstance(userdata, dict):
+            return
+        user_id = userdata.get("id")
+        is_premium = userdata.get("prem")
+        username = userdata.get("name")
+        language = userdata.get("lang", "en")
+        if user_id:
+            await self.indexer.register_tg_user(
+                owner=owner,
+                user_id=user_id,
+                username=username,
+                is_premium=is_premium,
+                language=language,
+                country=country,
+            )

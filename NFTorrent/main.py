@@ -4,7 +4,7 @@ from functools import wraps
 
 import aiohttp
 import aiohttp.client_exceptions
-from fastapi import FastAPI, Request, Response, status
+from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.params import Depends
@@ -16,8 +16,9 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from NFTorrent import __meta__, models
 from NFTorrent.auth import set_cookie
 from NFTorrent.ipfs import IpfsRpcHttpException
-from NFTorrent.middlewares import StatisticsMiddleware, StatisticsStore
-from NFTorrent.tonlib import TonlibRequestError
+from NFTorrent.locks import LockShouldWaitError
+from NFTorrent.middlewares import StatisticsMiddleware, StatisticsStore, UserStatisticsMiddleware, UserStatisticsStore
+from NFTorrent.tonlib import TonlibRequestError, TonlibSelectWorkerError
 from NFTorrent.webserver import Server
 
 ws = Server()
@@ -35,6 +36,7 @@ app = FastAPI(
 )
 
 stats = StatisticsStore()
+user_stats = UserStatisticsStore()
 
 
 @app.on_event("startup")
@@ -51,7 +53,7 @@ async def shutdown_event():
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request, exc):
     res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc.detail), status=exc.status_code)
-    return JSONResponse(res.dict(exclude_none=True), status_code=res.status)
+    return JSONResponse(res.model_dump(exclude_none=True), status_code=res.status)
 
 
 @app.exception_handler(RequestValidationError)
@@ -62,7 +64,7 @@ async def request_validation_exception_handler(request, exc):
         errors=[{k: v for k, v in err.items() if k != "ctx"} for err in exc.errors()],
         status=status.HTTP_422_UNPROCESSABLE_ENTITY,
     )
-    return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_422_UNPROCESSABLE_ENTITY)
+    return JSONResponse(res.model_dump(exclude_none=True), status_code=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
 
 @app.exception_handler(ValidationError)
@@ -73,49 +75,61 @@ async def validation_exception_handler(request, exc):
         errors=[{k: v for k, v in err.items() if k != "ctx"} for err in exc.errors()],
         status=status.HTTP_422_UNPROCESSABLE_ENTITY,
     )
-    return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_422_UNPROCESSABLE_ENTITY)
+    return JSONResponse(res.model_dump(exclude_none=True), status_code=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
 
 @app.exception_handler(aiohttp.client_exceptions.ClientError)
 async def client_exception_handler(request, exc):
     res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_502_BAD_GATEWAY)
-    return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_502_BAD_GATEWAY)
+    return JSONResponse(res.model_dump(exclude_none=True), status_code=status.HTTP_502_BAD_GATEWAY)
 
 
 @app.exception_handler(aiohttp.client_exceptions.ClientConnectorError)
 async def client_connect_exception_handler(request, exc):
     res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_502_BAD_GATEWAY)
-    return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_502_BAD_GATEWAY)
+    return JSONResponse(res.model_dump(exclude_none=True), status_code=status.HTTP_502_BAD_GATEWAY)
 
 
 @app.exception_handler(asyncio.TimeoutError)
 async def timeout_exception_handler(request, exc):
     res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_504_GATEWAY_TIMEOUT)
-    return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_504_GATEWAY_TIMEOUT)
+    return JSONResponse(res.model_dump(exclude_none=True), status_code=status.HTTP_504_GATEWAY_TIMEOUT)
 
 
 @app.exception_handler(TonlibException)
 async def tonlib_error_result_exception_handler(request, exc):
     res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    return JSONResponse(res.model_dump(exclude_none=True), status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @app.exception_handler(IpfsRpcHttpException)
 async def ipfs_exception_handler(request, exc):
     res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    return JSONResponse(res.model_dump(exclude_none=True), status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @app.exception_handler(TonlibRequestError)
 async def invalid_contract_result_exception_handler(request, exc):
     res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_400_BAD_REQUEST)
-    return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_400_BAD_REQUEST)
+    return JSONResponse(res.model_dump(exclude_none=True), status_code=status.HTTP_400_BAD_REQUEST)
+
+
+@app.exception_handler(TonlibSelectWorkerError)
+async def tonlib_worker_exception_handler(request, exc):
+    res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_502_BAD_GATEWAY)
+    return JSONResponse(res.model_dump(exclude_none=True), status_code=status.HTTP_502_BAD_GATEWAY)
+
+
+@app.exception_handler(LockShouldWaitError)
+async def operation_lock_wait_exception_handler(request, exc):
+    res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_400_BAD_REQUEST)
+    return JSONResponse(res.model_dump(exclude_none=True), status_code=status.HTTP_400_BAD_REQUEST)
 
 
 @app.exception_handler(Exception)
 async def fastapi_generic_exception_handler(request, exc):
     res = models.ProblemDetail(title=type(exc).__name__, detail=str(exc), status=status.HTTP_503_SERVICE_UNAVAILABLE)
-    return JSONResponse(res.dict(exclude_none=True), status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+    return JSONResponse(res.model_dump(exclude_none=True), status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
 @app.middleware("http")
@@ -129,6 +143,7 @@ async def add_bearer_response_auth_header(request: Request, call_next):
 
 
 app.add_middleware(StatisticsMiddleware, stats_store=stats)
+app.add_middleware(UserStatisticsMiddleware, stats_store=user_stats)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ws.settings.webserver.allow_origins,
@@ -158,7 +173,18 @@ async def statistics(request: Request) -> str:
     timestamp = int(time.time() * 1000000000)
     measurements = ws.get_measurements(timestamp)
     measurements += stats.as_influx(timestamp)
+    measurements += user_stats.as_influx(timestamp)
     return "\n".join(measurements)
+
+
+@app.get("/api/v1/bootstrap", tags=["bootstrap"], status_code=status.HTTP_204_NO_CONTENT)
+async def bootstrap() -> None:
+    hc = ws.get_healthcheck()
+    headers = {"Access-Control-Allow-Origin": "*"}
+    if hc.tonlib and hc.storage:
+        return Response(status_code=status.HTTP_204_NO_CONTENT, headers=headers)
+    else:
+        return Response(status_code=status.HTTP_502_BAD_GATEWAY, headers=headers)
 
 
 @app.get(
@@ -189,6 +215,34 @@ async def get_ipfs_state():
     return ws.ipfs.get_cached_node_state()
 
 
+@app.get(
+    "/api/v1/ipfs/pins",
+    dependencies=[Depends(ws.jwt_bearer)],  # noqa: B008
+    tags=["ipfs"],
+    response_model=list[models.NftContentPin],
+)
+@wrap_result
+async def get_ipfs_pin_list():
+    """
+    Get IPFS pin list.
+    """
+    return await ws.ipfs.pin_list()
+
+
+@app.get(
+    "/api/v1/ipfs/cid/{cid}/pin",
+    dependencies=[Depends(ws.jwt_bearer)],  # noqa: B008
+    tags=["ipfs"],
+    response_model=models.NftContentPin,
+)
+@wrap_result
+async def get_ipfs_cid_pin(request: models.IpfsCidMethod = Depends()):  # noqa: B008
+    """
+    Get IPFS CID pin status.
+    """
+    return await ws.ipfs.cid_pin_status(request.cid)
+
+
 if ws.settings.indexdb.enabled:
 
     @app.get(
@@ -214,13 +268,16 @@ async def get_account_auth_payload(request: Request) -> models.AuthPayload:
 
 
 @app.post("/api/v1/account/auth", tags=["account"])
-async def create_account_auth_session(body: models.AuthData) -> models.AuthSession:
+async def create_account_auth_session(rawRequest: Request, body: models.AuthData) -> models.AuthSession:
     """
     Auhtenticate account signature and create session
     """
     payload, token = ws.jwt_session.auth_session(body.account, body.proof)
     response = JSONResponse(
-        models.AuthSession(node=ws.get_healthcheck(), sess=payload).dict(), status_code=status.HTTP_200_OK
+        models.AuthSession(node=ws.get_healthcheck(), sess=payload).model_dump(), status_code=status.HTTP_200_OK
+    )
+    await ws.register_tg_user(
+        owner=payload.sub, userdata=payload.user, country=rawRequest.headers.get("x-country-code")
     )
     set_cookie(
         response,
@@ -256,6 +313,7 @@ async def get_nft_content(
     response = await ws.get_nft_content(rawRequest, request.address, query=request.q)
     if isinstance(response, Response):
         response.headers["Cache-Control"] = "public, max-age=3600"
+        response.headers["Access-Control-Allow-Origin"] = "*"
     return response
 
 
@@ -268,13 +326,33 @@ async def get_nft_torrent_content(request: models.BaseNftContentMethod = Depends
     response = await ws.get_nft_torrent_content(request.address, digest=request.digest)
     if isinstance(response, Response):
         response.headers["Cache-Control"] = "public, max-age=86400, immutable"
+        response.headers["Access-Control-Allow-Origin"] = "*"
     return response
+
+
+if ws.settings.indexdb.enabled:
+
+    @app.get("/api/v1/nft/list", response_model_exclude_none=True, tags=["nft"])
+    @wrap_result
+    async def list_nft(
+        request: models.NftListMethod = Depends(),  # noqa: B008
+        jwt_payload: models.JWTPayload = Depends(ws.jwt_session),  # noqa: B008
+    ) -> list[models.NftItemHeader]:  # noqa: B008
+        """
+        Get NFT Data information.
+        """
+        if jwt_payload is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="valid JWT API key required for this operation"
+            )
+        nft_data = await ws.indexer.nft_list(owner=jwt_payload.sub, **request.model_dump())
+        return nft_data
 
 
 @app.get(
     "/api/v1/nft/{address}",
     response_model_exclude_none=True,
-    dependencies=[Depends(ws.jwt_session)],  # noqa: B008
+    # dependencies=[Depends(ws.jwt_session)],  # noqa: B008
     tags=["nft"],
 )
 @wrap_result
@@ -303,17 +381,22 @@ async def get_nft_address_information(request: models.NftMethod = Depends()):  #
     return nft_state
 
 
-@app.post("/api/v1/nft/{address}/sync", response_model_exclude_none=True, tags=["nft"])
+@app.post(
+    "/api/v1/nft/{address}/sync", response_model_exclude_none=True, tags=["nft"], status_code=status.HTTP_204_NO_CONTENT
+)
 async def sync_nft_data(
-    request: models.NftMethod = Depends(), jwt_payload: models.JWTPayload = Depends(ws.jwt_session)  # noqa: B008
+    rawRequest: Request,
+    request: models.NftMethod = Depends(),  # noqa: B008
+    jwt_payload: models.JWTPayload = Depends(ws.jwt_session),  # noqa: B008
 ):
     """
     Sync NFT OffChain data.
     """
     if jwt_payload is not None:
-        return await ws.sync_nft_data(request.address, owner=jwt_payload.sub, userdata=jwt_payload.user)
-    else:
-        return await ws.sync_nft_data(request.address)
+        await ws.register_tg_user(
+            owner=jwt_payload.sub, userdata=jwt_payload.user, country=rawRequest.headers.get("x-country-code")
+        )
+    return await ws.sync_nft_data(request.address)
 
 
 @app.get(
@@ -337,7 +420,7 @@ if ws.settings.ipfs.enabled:
     @app.get(
         "/api/v1/nft/{address}/ipfs/{digest}",
         response_model_exclude_none=True,
-        dependencies=[Depends(ws.jwt_session)],  # noqa: B008
+        # dependencies=[Depends(ws.jwt_session)],  # noqa: B008
         tags=["nft"],
     )
     @wrap_result
@@ -362,27 +445,39 @@ if ws.settings.ipfs.enabled:
 
     @app.post("/api/v1/nft/ipfs", response_model_exclude_none=True, tags=["nft"])
     async def create_new_nft_ipfs_content(
+        rawRequest: Request,
         request: models.NewNftTorrentCreate = Depends(),  # noqa: B008
         jwt_payload: models.JWTPayload = Depends(ws.jwt_session),  # noqa: B008
     ):
         """
         Create new NFT IPFS Content.
         """
-        return await ws.ipfs.new_nft_create_content(
+        result = await ws.ipfs.new_nft_create_content(
             request.files, owner=jwt_payload.sub if jwt_payload is not None else None
         )
+        if jwt_payload is not None:
+            await ws.register_tg_user(
+                owner=jwt_payload.sub, userdata=jwt_payload.user, country=rawRequest.headers.get("x-country-code")
+            )
+        return result
 
     @app.post("/api/v1/nft/{address}/ipfs", response_model_exclude_none=True, tags=["nft"])
     async def create_nft_ipfs_content(
+        rawRequest: Request,
         request: models.NftTorrentCreate = Depends(),  # noqa: B008
         jwt_payload: models.JWTPayload = Depends(ws.jwt_session),  # noqa: B008
     ):
         """
         Create NFT IPFS Content.
         """
-        return await ws.ipfs.create_content(
+        result = await ws.ipfs.create_content(
             request.address, request.files, owner=jwt_payload.sub if jwt_payload is not None else None
         )
+        if jwt_payload is not None:
+            await ws.register_tg_user(
+                owner=jwt_payload.sub, userdata=jwt_payload.user, country=rawRequest.headers.get("x-country-code")
+            )
+        return result
 
 
 if ws.settings.indexdb.enabled:
@@ -391,36 +486,50 @@ if ws.settings.indexdb.enabled:
         "/api/v1/collection",
         response_model_exclude_none=True,
         tags=["collection"],
-        dependencies=[Depends(ws.jwt_session)],  # noqa: B008
+        # dependencies=[Depends(ws.jwt_session)],  # noqa: B008
+        response_model=list[models.CollectionData],
     )
-    async def list_collections() -> list[models.CollectionData]:
+    @wrap_result
+    async def list_collections():
         """
         List Collections Info.
         """
-        return [
+        result = [
             x.collection_data if x.collection_data else await ws.tonlib.get_collection_data(x.nft_collection.address)
             for x in ws.indexer.collections.values()
         ]
+        return result
 
     @app.get(
         "/api/v1/collection/items",
         response_model_exclude_none=True,
         tags=["collection"],
         dependencies=[Depends(ws.jwt_session)],  # noqa: B008
+        response_model=list[models.NftItemHeader],
     )
+    @wrap_result
     async def list_collection_nft_items(
         request: models.CollectionItemsMethod = Depends(),  # noqa: B008
-    ) -> list[models.NftItemHeader]:
+    ):
         """
         List Collection NFT items.
         """
-        return await ws.indexer.collection_query(**request.dict())
+        return await ws.indexer.collection_query(**request.model_dump())
 
-    @app.get("/api/v1/collection/feed", response_model_exclude_none=True, tags=["collection"])
+    @app.get(
+        "/api/v1/collection/feed",
+        response_model_exclude_none=True,
+        tags=["collection"],
+        response_model=list[models.NftItemHeader],
+    )
+    @wrap_result
     async def collection_random_feed(
         request: models.CollectionItemsMethod = Depends(),  # noqa: B008
-    ) -> list[models.NftItemHeader]:
+    ):
         """
         Collection NFT radnom feed.
         """
-        return await ws.indexer.collection_random_feed(**request.dict())
+        return JSONResponse(
+            await ws.indexer.collection_random_feed(**request.model_dump()),
+            headers={"Cache-Control": "public, max-age=300"},
+        )

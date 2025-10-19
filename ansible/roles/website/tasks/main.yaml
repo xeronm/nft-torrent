@@ -1,7 +1,42 @@
-- name: Website
+- name: '"Testnet" website'
+  include_role:
+    name: nginx
+    tasks_from: website
+    apply:
+      tags:
+        - website
+        - testnet
+  vars:
+    nginx_website:
+      target: /usr/share/nginx/html_testnet
+      package: "{{ website.package_testnet }}"
+  tags:
+    - website
+    - testnet
+
+- name: '"Mainnet" website'
+  include_role:
+    name: nginx
+    tasks_from: website
+    apply:
+      tags:
+        - website
+        - mainnet
+  vars:
+    nginx_website:
+      target: /usr/share/nginx/html
+      package: "{{ website.package_mainnet }}"
+  tags:
+    - website
+    - mainnet
+
+- name: "Website: Deploy website prerender {{ website.package_prerender }}"
   ansible.builtin.unarchive:
-    src: "{{ website.package }}"
+    src: "{{ website.package_prerender }}"
     dest: /usr/share/nginx/html
     owner: root
     group: root
-  tags: website
+    keep_newer: yes
+  tags:
+    - website
+    - prerender

@@ -1,0 +1,11 @@
+- name: restart PGAdmin
+  community.docker.docker_compose_v2:
+    recreate: auto
+    project_name: pgadmin
+    project_src: "/home/{{ oam.user }}/pgadmin"
+    state: restarted
+
+- name: restart nginx
+  service:
+    name: nginx
+    state: restarted

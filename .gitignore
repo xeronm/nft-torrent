@@ -1,15 +1,18 @@
 *.pyc
+*.mo
 .vscode
 .idea
 __pycache__/
 .db.*
 
 .tox
+.env
 .ruff_cache
 .coverage
 .coverage.*
 .xmlcoverage/
 htmlcov/
+log/
 
 # Packages
 *.egg
@@ -20,3 +23,4 @@ build/
 # Ansible inventory
 ansible/group_vars/**
 ansible/inventory/**
+ansible/files/certs/**

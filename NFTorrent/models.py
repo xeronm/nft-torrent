@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import UploadFile
 from fastapi.params import File, Path, Query
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 from NFTorrent.modelsbase import TonAddress
 from NFTorrent.utils import guess_type
@@ -22,7 +22,7 @@ class ProblemDetail(BaseModel):
 class NftMethod(BaseModel):
     address: str = Path(description="Address of NFT item")
 
-    @validator("address")
+    @field_validator("address")
     def validate_contract_address(cls, v):
         try:
             return TonAddress(v).b64url
@@ -30,8 +30,17 @@ class NftMethod(BaseModel):
             raise ValueError("Ivalid TON contract address format") from E
 
 
+class IpfsCidMethod(BaseModel):
+    cid: str = Path(description="IPFS CID")
+
+
+class ContentQuery(str, Enum):
+    URI = "uri"
+    IMAGE = "image"
+
+
 class NftContentMethod(NftMethod):
-    q: str | None = Query(description="NFT content query", default=None)
+    q: ContentQuery | None = Query(annotation="query", description="NFT content query", default=None)
 
 
 class BaseNftContentMethod(NftMethod):
@@ -81,6 +90,7 @@ class TonlibWorkerState(BaseModel):
 
 
 class MeasurementItem(BaseModel):
+    measurement: str | None
     tags: dict[str, Any] | None
     fields: dict[str, Any]
     timestamp: int
@@ -129,7 +139,7 @@ class Account(BaseModel):
     chain: CHAIN | None = None
     public_key: str
 
-    @validator("address")
+    @field_validator("address")
     def validate_contract_address(cls, v):
         try:
             return TonAddress(v).b64url
@@ -138,11 +148,17 @@ class Account(BaseModel):
 
 
 class HealthCheckResult(BaseModel):
+    node_id: str
     load: float
-    redundancy: bool
+    redundancy: float
     tonlib: bool | None
     storage: bool | None
     indexdb: bool | None
+    bot: bool | None
+
+
+class BootstrapResult(BaseModel):
+    node_id: str
 
 
 class TonProof(BaseModel):
@@ -191,23 +207,51 @@ class NftItemData(BaseModel):
     torrent_digest: str | None = None
 
 
+class NftItemContent(BaseModel):
+    name: str
+    image: str | None = None
+    image_data: str | None = None
+
+
 class NftItemHeader(BaseModel):
     address: str
     index: int
     owner_address: str
     collection_address: str | None = None
-    image: str | None = None
-    image_data: str | None = None
+    content: NftItemContent
     icons: dict[str, list[str]] | None = None
+    deleted: bool | None = False
+
+
+class IconSize(str, Enum):
+    NONE = "none"
+    SMALL = "small"
+    MEDIUM = "medium"
 
 
 class CollectionItemsMethod(BaseModel):
     lang: str | None = Query(default=None)
     country: str | None = Query(default=None)
+    owner: str | None = Query(default=None)
     species: int | None = Query(default=None)
     limit: int = Query(default=100)
     offset: int = Query(default=0)
-    icon_size: str = Query(default="small")
+    icon_size: IconSize = Query(default=IconSize.SMALL)
+
+    @field_validator("owner")
+    def validate_contract_address(cls, v):
+        if not v:
+            return None
+        try:
+            return TonAddress(v).b64url
+        except Exception as E:
+            raise ValueError("Ivalid TON contract address format") from E
+
+
+class NftListMethod(BaseModel):
+    limit: int = Query(default=20)
+    offset: int = Query(default=0)
+    icon_size: IconSize = Query(default=IconSize.SMALL)
 
 
 class NftContentState(Enum):
@@ -228,6 +272,8 @@ class NftContentPin(BaseModel):
     created: int = None
     expires: int = None
     userdata: Any | None = None
+    cid: str | None = None
+    nft_address: str | None = None
 
 
 def torrent_digest(hash: str, filename: str = None) -> str:

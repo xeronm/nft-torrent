@@ -5,3 +5,8 @@
     project_src: "/home/{{ oam.user }}/nft-torrent"
     state: restarted
   tags: nftorrent
+
+- name: restart nginx
+  service:
+    name: nginx
+    state: restarted

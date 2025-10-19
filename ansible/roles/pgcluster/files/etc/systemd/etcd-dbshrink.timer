@@ -1,0 +1,9 @@
+[Unit]
+Description=Run etcd compact and defrag periodically
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=6h
+
+[Install]
+WantedBy=timers.target

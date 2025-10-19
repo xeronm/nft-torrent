@@ -164,6 +164,7 @@ class ContractAPIKeyCookie(APIKeyCookie):
         domains: list[str] = None,
         allow_networks: list[str] = None,
         real_ip_header: bool = True,
+        testnet: bool = True,
     ):
         super().__init__(name=self.cookie_name, auto_error=False)
         self.domains = set(domains or [])
@@ -172,6 +173,7 @@ class ContractAPIKeyCookie(APIKeyCookie):
         self.jwt_secret = jwt_secret
         self.jwt_algorithm = jwt_algorithm
         self.bot_secret = None
+        self.testnet = testnet
         if bot_token:
             self.bot_secret = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
 
@@ -186,15 +188,24 @@ class ContractAPIKeyCookie(APIKeyCookie):
         if self.real_ip_header:
             client_ip = request.headers.get("X-Real-IP", client_ip)
 
+        allow_ip = self.allow_networks and [True for x in self.allow_networks if ipaddress.ip_address(client_ip) in x]
         api_key: str = await super().__call__(request)
         if not api_key:
-            if self.allow_networks and [True for x in self.allow_networks if ipaddress.ip_address(client_ip) in x]:
+            if allow_ip:
+                logger.debug(
+                    "СontractAPIKeyCookie: Not authenticated. Error ignored, since the client_ip matches an allow_networks."
+                )
                 return
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authenticated")
 
         try:
             payload = jwt.decode(api_key, self.jwt_secret, audience=self.audience, algorithms=[self.jwt_algorithm])
         except InvalidTokenError as E:
+            if allow_ip:
+                logger.debug(
+                    "СontractAPIKeyCookie: Invalid or expired token. Error ignored, since the client_ip matches an allow_networks."
+                )
+                return
             logger.info(
                 "ContractAPIKeyCookie: token validation error, token: %s, client_ip: %s, host: %s - %s: %s",  # noqa: E501
                 api_key,
@@ -233,14 +244,12 @@ class ContractAPIKeyCookie(APIKeyCookie):
 
     def get_auth_payload(self, init_data: dict = None) -> str:
         user = None
+
+        attrmap = {"id": "id", "username": "name", "language_code": "lang", "is_premium": "prem"}
         if init_data and self.bot_secret:
             try:
                 self.validate_init_data(init_data)
-                user = {
-                    k: v
-                    for k, v in json.loads(init_data.get("user", {})).items()
-                    if k in {"id", "username", "is_premium"}
-                }
+                user = {attrmap[k]: v for k, v in json.loads(init_data.get("user", {})).items() if k in attrmap}
             except ValueError as E:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(E)) from E
 
@@ -284,6 +293,9 @@ class ContractAPIKeyCookie(APIKeyCookie):
         return jwt.decode(proof.payload, self.jwt_secret, audience=self.audience, algorithms=[self.jwt_algorithm])
 
     def auth_session(self, account: models.Account, proof: models.TonProof, public_key: str = None):
+        if self.testnet != (account.chain == models.CHAIN.TESTNET):
+            HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Account Network mistmatch")
+
         try:
             jwt_token = self.auth_verify(account, proof, public_key)
         except (InvalidTokenError, SignatureVerificationError) as E:

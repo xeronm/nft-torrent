@@ -1,0 +1,29 @@
+[Unit]
+Description=PgBouncer Connection Pooler
+After=network.target
+Requires=network.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=postgres
+Group=postgres
+RuntimeDirectory=pgbouncer
+RuntimeDirectoryMode=0750
+ExecStart=/usr/bin/pgbouncer /etc/pgbouncer/pgbouncer.ini
+ExecReload=/bin/kill -HUP $MAINPID
+KillSignal=SIGINT
+TimeoutStopSec=30
+Restart=always
+RestartSec=5
+LimitNOFILE=16384
+ProtectSystem=full
+ReadWritePaths=/var/run/pgbouncer
+NoNewPrivileges=true
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pgbouncer
+
+[Install]
+WantedBy=multi-user.target

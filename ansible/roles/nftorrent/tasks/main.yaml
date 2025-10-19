@@ -23,13 +23,52 @@
     group: "{{ oam.group }}"
   tags: nftorrent
 
-- name: NFTorrent private "~/nft-torrent/private"
+- name: NFTorrent required paths
   file:
-    path: "/home/{{ oam.user }}/nft-torrent/private"
+    path: "/home/{{ oam.user }}/nft-torrent/{{ item }}"
     state: directory
     owner: "{{ oam.user }}"
     group: "{{ oam.group }}"
     mode: '0750'
+  loop:
+    - private
+    - log
+  tags: nftorrent
+
+- name: NFTorrent private "~/nft-torrent/private/certs"
+  file:
+    path: "/home/{{ oam.user }}/nft-torrent/private/certs"
+    state: directory
+    owner: "{{ oam.user }}"
+    group: "{{ oam.group }}"
+    mode: '0750'
+  tags: nftorrent
+
+- name: Copy CA public certificate for PG-Cluster
+  copy:
+    src: "./certs/pgcluster/ca.crt"
+    dest: /home/{{ oam.user }}/nft-torrent/private/certs/ca.crt
+    owner: root
+    group: root
+    mode: '0644'
+  tags: nftorrent
+
+- name: Copy etcd Client public certificate for PG-Cluster
+  copy:
+    src: "./certs/pgcluster/client.crt"
+    dest: /home/{{ oam.user }}/nft-torrent/private/certs/client.crt
+    owner: "{{ oam.user }}"
+    group: "{{ oam.group }}"
+    mode: '0644'
+  tags: nftorrent
+
+- name: Copy etcd Client puprivate key for PG-Cluster
+  copy:
+    src: "./certs/pgcluster/client.key"
+    dest: /home/{{ oam.user }}/nft-torrent/private/certs/client.key
+    owner: "{{ oam.user }}"
+    group: "{{ oam.group }}"
+    mode: '0600'
   tags: nftorrent
 
 - name: NFTorrent private JWT Key
@@ -38,7 +77,7 @@
     dest: "/home/{{ oam.user }}/nft-torrent/private/jwt.key"
     owner: "{{ oam.user }}"
     group: "{{ oam.group }}"
-    mode: '0600'
+    mode: '0400'
   notify: restart nftorrent
   tags: nftorrent
 
@@ -48,7 +87,17 @@
     dest: "/home/{{ oam.user }}/nft-torrent/private/bot_token.key"
     owner: "{{ oam.user }}"
     group: "{{ oam.group }}"
-    mode: '0600'
+    mode: '0400'
+  notify: restart nftorrent
+  tags: nftorrent
+
+- name: NFTorrent DB Password
+  copy:
+    content: "{{ pg_users.postgres.password }}"
+    dest: "/home/{{ oam.user }}/nft-torrent/private/db_password"
+    owner: "{{ oam.user }}"
+    group: "{{ oam.group }}"
+    mode: '0400'
   notify: restart nftorrent
   tags: nftorrent
 
@@ -109,15 +158,6 @@
   notify: restart nftorrent
   tags: nftorrent
 
-- name: Download TON Blockchain Config
-  ansible.builtin.get_url:
-    url: https://ton.org/testnet-global-config.json
-    dest: /home/{{ oam.user }}/nft-torrent/private/testnet-global-config.json
-    owner: "{{ oam.user }}"
-    group: "{{ oam.group }}"
-    mode: '0440'
-  tags: nftorrent
-
 - name: NFTorrent docker service
   community.docker.docker_compose_v2:
     project_name: nft-torrent
@@ -154,4 +194,6 @@
     mode: 0644
   notify:
     - restart nginx
-  tags: nftorrent
+  tags:
+    - nftorrent
+    - nginx

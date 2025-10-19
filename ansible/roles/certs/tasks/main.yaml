@@ -5,7 +5,7 @@
     owner: root
     group: root
     mode: 0755
-  with_items: "{{ ssl_domains }}"
+  loop: "{{ ssl_domains }}"
   tags: certs
 
 - name: 'Private Ceritificates path'
@@ -15,29 +15,29 @@
     owner: root
     group: root
     mode: 0700
-  with_items: "{{ ssl_domains }}"
+  loop: "{{ ssl_domains }}"
   tags: certs
 
 - name: 'SSL Public Bootstrap Ceritificate'
   copy:
-    src: "{{ inventory_dir }}/certs/{{ item }}/fullchain.pem"
+    src: "./certs/{{ item }}/fullchain.pem"
     dest: "/etc/pki/tls/certs/{{ item }}/fullchain.pem"
     owner: root
     group: root
     mode: 0644
-  with_items: "{{ ssl_domains }}"
+  loop: "{{ ssl_domains }}"
   notify:
     - restart nginx
   tags: certs
 
 - name: 'SSL Private Ceritificate Key'
   copy:
-    src: "{{ inventory_dir }}/certs/{{ item }}/privkey.pem"
+    src: "./certs/{{ item }}/privkey.pem"
     dest: "/etc/pki/tls/private/{{ item }}/privkey.pem"
     owner: root
     group: root
     mode: 0600
-  with_items: "{{ ssl_domains }}"
+  loop: "{{ ssl_domains }}"
   notify:
     - restart nginx
   tags: certs

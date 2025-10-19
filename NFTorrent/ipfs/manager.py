@@ -3,16 +3,17 @@ import datetime
 import json
 import logging
 import time
-from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlencode, urljoin
 
 import aiohttp
+from dateutil.parser import isoparse
 from fastapi import HTTPException, UploadFile, status
 
 from NFTorrent import exceptions, models
 from NFTorrent.cache import BaseCacheManager, DisabledCacheManager
-from NFTorrent.modelsbase import MeasurementStore, StatisticMeasurement
+from NFTorrent.locks import OperationLock
+from NFTorrent.modelsbase import MeasurementStore, StatisticMeasurement, with_stats
 from NFTorrent.settings import IpfsSettings
 from NFTorrent.tonlib import TonlibManager
 from NFTorrent.utils import dict_to_influx, parse_ipfs_uri
@@ -20,47 +21,10 @@ from NFTorrent.utils import dict_to_influx, parse_ipfs_uri
 logger = logging.getLogger(__name__)
 
 
-class LockShouldWaitError(Exception):
-    pass
-
-
-class OperationLock:
-
-    def __init__(self, key: str, lock_index: dict[str, asyncio.Lock], wait: bool = True):
-        self.lock_index = lock_index
-        self.key = key
-        self.wait = wait
-
-    async def __aenter__(self):
-        self.lock = self.lock_index.get(self.key)
-        if self.lock is None:
-            self.lock = asyncio.Lock()
-            self.lock.__ref_count = 0
-            self.lock_index[self.key] = self.lock
-        else:
-            if not self.wait and self.lock.locked():
-                raise LockShouldWaitError
-        self.lock.__ref_count += 1
-        await self.lock.acquire()
-        return None
-
-    async def __aexit__(self, exc_type, exc, tb):
-        self.lock.release()
-        self.lock.__ref_count -= 1
-        if self.lock.__ref_count == 0:
-            del self.lock_index[self.key]
-        self.lock = None
-
-
 class IpfsRpcHttpException(HTTPException):
 
     def __str__(self):
         return f"status={self.status_code}, detail={self.detail}"
-
-
-@dataclass(frozen=True)
-class StatisticTags:
-    method: str
 
 
 class IpfsRpcManager:
@@ -76,12 +40,14 @@ class IpfsRpcManager:
         cache_manager: BaseCacheManager | None = None,
         loop: asyncio.BaseEventLoop | None = None,
         tonlib: TonlibManager = None,
+        max_pin_duration: float = 0,
     ):
         self.settings = settings
         self.cache_manager = cache_manager or DisabledCacheManager()
         self.tonlib = tonlib
         self.loop = loop
         self.node_state = None
+        self.max_pin_duration = max_pin_duration
 
         self.cid_wlock = {}
         self.tasks = {
@@ -107,9 +73,17 @@ class IpfsRpcManager:
         self.cluster.close()
 
     def setup_cache(self):
-        self.get_cid_file = self.cache_manager.cached(expire=15)(self.get_cid_file)
-        self.get_cid_info = self.cache_manager.cached(expire=60)(self.get_cid_info)
-        self.cid_pin_status = self.cache_manager.cached(expire=30)(self.cid_pin_status)
+        # Short-term
+        self.cid_pin_status = with_stats(key="cached_cid_pin_status", stats=self.stats)(
+            self.cache_manager.cached(expire=5)(self.cid_pin_status)
+        )
+        # Mid-term
+        self.get_cid_file = with_stats(key="cached_get_cid_file", stats=self.stats)(
+            self.cache_manager.cached(expire=15)(self.get_cid_file)
+        )
+        self.get_cid_info = with_stats(key="cached_get_cid_info", stats=self.stats)(
+            self.cache_manager.cached(expire=60)(self.get_cid_info)
+        )
 
     async def check_ipfs_alive(self):
         logger.warning("[check_ipfs_alive]: Entering main loop")
@@ -162,7 +136,7 @@ class IpfsRpcManager:
         kwargs = {}
         if data is not None:
             kwargs["data"] = data
-        with self.stats[StatisticTags(method=stat_name)]:
+        with self.stats[stat_name]:
             try:
                 logger.info('IPFS Call "%s: %s"', method.__name__.upper(), uri)
                 result = None
@@ -186,6 +160,7 @@ class IpfsRpcManager:
                 )
                 raise
 
+    @with_stats()
     async def cid_add_local(self, files: list[UploadFile] = None) -> models.NftContentInfo:
         data = aiohttp.FormData()
         for f in files:
@@ -208,12 +183,20 @@ class IpfsRpcManager:
             content.make_digest()
         return content
 
+    @with_stats()
     async def cid_pin(
         self, cid: str = None, name: str = None, expire_at: float = None, address: str = None, userdata: Any = None
     ):
         name = name or ""
         if self.settings.cluster_rpc_uri:
-            expire_at_str = datetime.datetime.fromtimestamp(expire_at).isoformat() + "Z" if expire_at else ""
+            pin_expire_at = expire_at
+            if pin_expire_at and self.max_pin_duration:
+                pin_expire_at = max(pin_expire_at, time.time() + self.max_pin_duration)
+            expire_at_str = (
+                datetime.datetime.fromtimestamp(pin_expire_at, tz=datetime.timezone.utc).isoformat()
+                if pin_expire_at
+                else ""
+            )
             query_params = {
                 "mode": "recursive",
                 "replication-min": self.settings.min_redundancy,
@@ -234,6 +217,7 @@ class IpfsRpcManager:
             uri = f"pin/add?arg={cid}&recursive=true&name={name}"
             return await self.call_rpc_method("pin", self.cluster.post, uri, json=True)
 
+    @with_stats()
     async def cid_unpin(self, cid: str = None):
         try:
             if self.settings.cluster_rpc_uri:
@@ -246,6 +230,7 @@ class IpfsRpcManager:
             if E.status_code != status.HTTP_404_NOT_FOUND:
                 raise
 
+    @with_stats()
     async def cid_pin_status(self, cid: str = None) -> models.NftContentPin:
         try:
             if self.settings.cluster_rpc_uri:
@@ -263,8 +248,9 @@ class IpfsRpcManager:
 
             return models.NftContentPin(
                 redundancy=len(pin_status["allocations"]),
-                expires=float(pin_status["metadata"].get("expires", "0")),
-                created=time.mktime(time.strptime(pin_status["created"], "%Y-%m-%dT%H:%M:%SZ")),
+                expires=int(pin_status["metadata"].get("expires", "0")),
+                created=int(isoparse(pin_status["created"]).timestamp()),
+                nft_address=pin_status["metadata"].get("nft"),
                 userdata=userdata,
             )
         except IpfsRpcHttpException as E:
@@ -272,33 +258,62 @@ class IpfsRpcManager:
                 raise
         return None
 
+    @with_stats()
+    async def pin_list(self) -> models.NftContentPin:
+        allocations = await self.call_rpc_method("pin_list", self.cluster.get, "allocations", json=False, text=True)
+        pins = []
+        for item in allocations.split("\n"):
+            item = item.strip()
+            if not item:
+                continue
+
+            _item = json.loads(item)
+            if not _item["metadata"]:
+                _item["metadata"] = {}
+            userdata = _item["metadata"].get("userdata", None)
+            if userdata:
+                userdata = json.loads(userdata)
+
+            pins.append(
+                models.NftContentPin(
+                    redundancy=len(_item["allocations"]),
+                    expires=int(_item["metadata"].get("expires", "0")),
+                    created=int(isoparse(_item["timestamp"]).timestamp()),
+                    nft_address=_item["metadata"].get("nft"),
+                    cid=_item["cid"],
+                    userdata=userdata,
+                )
+            )
+
+        return pins
+
+    @with_stats()
     async def confirm_content(self, address: str, old_cid: str, cid: str, userdata: Any = None):
         try:
-            with self.stats[StatisticTags(method="confirm")]:
-                async with OperationLock(f"nft:{address}:pin", self.cid_wlock, wait=False):
-                    curr_time = st_time = time.monotonic()
-                    curr_cid = None
-                    while st_time + self.settings.confirmation_timeout > curr_time:
-                        curr_cid, nft_content = await self.get_nft_cid(address)
-                        if curr_cid == cid:
-                            break
-                        await asyncio.sleep(10)
-                        curr_time = time.monotonic()
+            async with OperationLock(f"nft:{address}:pin", self.cid_wlock, wait=False):
+                curr_time = st_time = time.monotonic()
+                curr_cid = None
+                while st_time + self.settings.confirmation_timeout > curr_time:
+                    curr_cid, nft_content = await self.get_nft_cid(address)
+                    if curr_cid == cid:
+                        break
+                    await asyncio.sleep(10)
+                    curr_time = time.monotonic()
 
-                    async with OperationLock(f"cid:{cid}:pin", self.cid_wlock):
-                        if curr_cid != cid:
-                            raise TimeoutError()
+                async with OperationLock(f"cid:{cid}:pin", self.cid_wlock):
+                    if curr_cid != cid:
+                        raise TimeoutError()
 
-                        logger.warning("Pin confirmed for CID, NFT: %s, cid: %s", address, cid)
-                        await self.cid_pin(
-                            cid,
-                            name=address,
-                            address=address,
-                            expire_at=nft_content.storage_due_time(),
-                            userdata=userdata,
-                        )
-                        if old_cid is not None:
-                            await self.cid_unpin(old_cid)
+                    logger.warning("Pin confirmed for CID, NFT: %s, cid: %s", address, cid)
+                    await self.cid_pin(
+                        cid,
+                        name=address,
+                        address=address,
+                        expire_at=nft_content.storage_due_time(),
+                        userdata=userdata,
+                    )
+                    if old_cid is not None:
+                        await self.cid_unpin(old_cid)
         except Exception as E:
             logger.warning(
                 "CID was not pinned, NFT: %s, cid: %s, curr_cid: %s due to error - %s: %s",  # noqa: E501
@@ -344,21 +359,19 @@ class IpfsRpcManager:
             result += [f"NFTorrentIpfs {dict_to_influx(_ipfs)} {timestamp}"]
         return result
 
+    @with_stats()
     async def get_cid_info(self, cid: str = None) -> models.NftContentInfo:
-        with self.stats[StatisticTags(method="get_cid_info")]:
-            _resp = await self.call_rpc_method("cid_ls", self.client.post, f"ls?arg={cid}", json=True)
+        _resp = await self.call_rpc_method("cid_ls", self.client.post, f"ls?arg={cid}", json=True)
 
-            _content = _resp["Objects"][0]
-            content = models.NftContentInfo(
-                hash=_content["Hash"],
-                size=0,
-                files=[
-                    models.NftContentFile(name=x["Name"], size=x["Size"], hash=x["Hash"]) for x in _content["Links"]
-                ],
-            )
-            content.size = sum([x.size for x in content.files])
-            content.make_digest()
-            return content
+        _content = _resp["Objects"][0]
+        content = models.NftContentInfo(
+            hash=_content["Hash"],
+            size=0,
+            files=[models.NftContentFile(name=x["Name"], size=x["Size"], hash=x["Hash"]) for x in _content["Links"]],
+        )
+        content.size = sum([x.size for x in content.files])
+        content.make_digest()
+        return content
 
     async def get_cid_file_info(self, uri: str = None, cid: str = None, file_path: str = None, digest: str = None):
         if uri:
@@ -379,118 +392,122 @@ class IpfsRpcManager:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
         return file_info
 
+    @with_stats()
     async def get_cid_file(
         self, uri: str = None, cid: str = None, file_path: str = None, digest: str = None
     ) -> tuple[bytes, models.NftContentInfo | models.NftContentFile]:
-        with self.stats[StatisticTags(method="get_cid_file")]:
-            if uri:
-                cid, _file_path, _digest = parse_ipfs_uri(uri)
-                if file_path is None and digest is None:
-                    file_path, digest = _file_path, _digest
-            if not cid:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CID not defined")
-            info = await self.get_cid_info(cid=cid)
-            file_info = None
-            if info.files:
-                file_info = info.get_file(filename=file_path, digest=digest)
-            elif info.digest == digest or info.name == file_path:
-                file_info = info
-            if not file_info:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+        if uri:
+            cid, _file_path, _digest = parse_ipfs_uri(uri)
+            if file_path is None and digest is None:
+                file_path, digest = _file_path, _digest
+        if not cid:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CID not defined")
+        info = await self.get_cid_info(cid=cid)
+        file_info = None
+        if info.files:
+            file_info = info.get_file(filename=file_path, digest=digest)
+        elif info.digest == digest or not digest:
+            file_info = info
+        if not file_info:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
-            if file_info.size > self.settings.file_size_limit:
-                raise exceptions.TorrentSizeLimit(f"file limit: {self.settings.file_size_limit}")
+        if file_info.size > self.settings.file_size_limit:
+            raise exceptions.TorrentSizeLimit(f"file size limit: {self.settings.file_size_limit}")
 
-            if not info.files:
-                data = await self.call_rpc_method("cid_cat", self.client.post, f"cat?arg={cid}")
-            else:
-                query_params = {"arg": f"{cid}/{file_info.name}"}
-                data = await self.call_rpc_method("cid_cat", self.client.post, f"cat?{urlencode(query_params)}")
-            return data, file_info
+        if not info.files:
+            data = await self.call_rpc_method("cid_cat", self.client.post, f"cat?arg={cid}")
+        else:
+            query_params = {"arg": f"{cid}/{file_info.name}"}
+            data = await self.call_rpc_method("cid_cat", self.client.post, f"cat?{urlencode(query_params)}")
+        return data, file_info
 
     # High-Level API
+    @with_stats()
     async def new_nft_create_content(self, files: list[UploadFile], owner: str = None):
-        with self.stats[StatisticTags(method="new_nft_create_content")]:
-            total_size = sum([f.size for f in files])
-            total_size = sum([f.size for f in files])
-            if total_size > self.settings.cid_size_limit:
-                raise exceptions.TorrentSizeLimit(f"total limit: {self.settings.cid_size_limit}")
-            if [f.size for f in files if f.size > self.settings.file_size_limit]:
-                raise exceptions.TorrentSizeLimit(f"file limit: {self.settings.file_size_limit}")
+        total_size = sum([f.size for f in files])
+        total_size = sum([f.size for f in files])
+        if total_size > self.settings.cid_size_limit:
+            raise exceptions.TorrentSizeLimit(f"total limit: {self.settings.cid_size_limit}")
+        if [f.size for f in files if f.size > self.settings.file_size_limit]:
+            raise exceptions.TorrentSizeLimit(f"file limit: {self.settings.file_size_limit}")
+        logger.warning(
+            "Creating CID for new NFT, owner: %s, size: %d",  # noqa: E501
+            owner,
+            total_size,
+        )
+        content = None
+        try:
+            async with OperationLock(f"owner:{owner}:new", self.cid_wlock, wait=False):
+                content = await self.cid_add_local(files=files)
+        except Exception as E:
             logger.warning(
-                "Creating CID for new NFT, owner: %s, size: %d",  # noqa: E501
+                "Creating CID, for new NFT, owner: %s, size: %d failed with error - %s: %s",  # noqa: E501
                 owner,
                 total_size,
+                type(E).__name__,
+                E,
             )
-            content = None
-            try:
-                async with OperationLock(f"owner:{owner}:new", self.cid_wlock, wait=False):
-                    content = await self.cid_add_local(files=files)
-            except Exception as E:
-                logger.warning(
-                    "Creating CID, for new NFT, owner: %s, size: %d failed with error - %s: %s",  # noqa: E501
-                    owner,
-                    total_size,
-                    type(E).__name__,
-                    E,
-                )
-                raise
-            return content
+            raise
+        return content
 
-    async def create_content(self, address: str, files: list[UploadFile], owner: str = None):
-        with self.stats[StatisticTags(method="create_content")]:
-            cid, nft_content = await self.get_nft_cid(address, owner=owner)
+    @with_stats()
+    async def create_content(self, address: str, files: list[UploadFile], owner: str = None, userdata: Any = None):
+        cid, nft_content = await self.get_nft_cid(address, owner=owner)
 
-            total_size = sum([f.size for f in files])
-            if total_size > self.settings.cid_size_limit:
-                raise exceptions.TorrentSizeLimit(f"total limit: {self.settings.cid_size_limit}")
-            if [f.size for f in files if f.size > self.settings.file_size_limit]:
-                raise exceptions.TorrentSizeLimit(f"file limit: {self.settings.file_size_limit}")
+        total_size = sum([f.size for f in files])
+        if total_size > self.settings.cid_size_limit:
+            raise exceptions.TorrentSizeLimit(f"total limit: {self.settings.cid_size_limit}")
+        if [f.size for f in files if f.size > self.settings.file_size_limit]:
+            raise exceptions.TorrentSizeLimit(f"file limit: {self.settings.file_size_limit}")
 
-            node_state = self.get_cached_node_state()
-            cluster_peers = len(node_state["cluster_peers"])
-            if cluster_peers < self.settings.min_redundancy:
-                raise exceptions.TorrentStorageError(
-                    f"Unable to comply required redundancy, min={self.settings.min_redundancy}, peers={cluster_peers}"
-                )
+        node_state = self.get_cached_node_state()
+        cluster_peers = len(node_state["cluster_peers"])
+        if cluster_peers < self.settings.min_redundancy:
+            raise exceptions.TorrentStorageError(
+                f"Unable to comply required redundancy, min={self.settings.min_redundancy}, peers={cluster_peers}"
+            )
 
+        logger.warning(
+            "Creating CID, NFT: %s, curr_cid: %s, size: %d",  # noqa: E501
+            address,
+            cid,
+            total_size,
+        )
+        try:
+            async with OperationLock(f"nft:{address}:add", self.cid_wlock, wait=False):
+                content = await self.cid_add_local(files=files)
+                new_cid = content.hash
+
+                if cid != new_cid:
+                    logger.info(
+                        "Waiting for confirmation created CID, NFT: %s, new cid: %s",  # noqa: E501
+                        address,
+                        new_cid,
+                    )
+                    self.loop.create_task(self.confirm_content(address, cid, new_cid, userdata=userdata))
+                else:
+                    logger.warning(
+                        "Created CID has already been confirmed, NFT: %s, cid: %s",
+                        address,
+                        new_cid,
+                    )
+                    await self.cid_pin(
+                        new_cid, name=address, expire_at=nft_content.storage_due_time(), userdata=userdata
+                    )
+        except Exception as E:
             logger.warning(
-                "Creating CID, NFT: %s, curr_cid: %s, size: %d",  # noqa: E501
+                "Creating CID, NFT: %s, size: %d - failed with error - %s: %s",  # noqa: E501
                 address,
-                cid,
                 total_size,
+                type(E).__name__,
+                E,
             )
-            userdata = None  # TODO: set to telegram user_id
-            try:
-                async with OperationLock(f"nft:{address}:add", self.cid_wlock, wait=False):
-                    content = await self.cid_add_local(files=files)
-                    new_cid = content.hash
+            raise
 
-                    if cid != new_cid:
-                        logger.info(
-                            "Waiting for confirmation created CID, NFT: %s, new cid: %s",  # noqa: E501
-                            address,
-                            new_cid,
-                        )
-                        self.loop.create_task(self.confirm_content(address, cid, new_cid, userdata=userdata))
-                    else:
-                        self.stats["create_confirm"] += 1
-                        logger.warning(
-                            "Created CID has already been confirmed, NFT: %s, cid: %s",
-                            address,
-                            new_cid,
-                        )
-                        await self.cid_pin(
-                            new_cid, name=address, expire_at=nft_content.storage_due_time(), userdata=userdata
-                        )
-            except Exception as E:
-                logger.warning(
-                    "Creating CID, NFT: %s, size: %d - failed with error - %s: %s",  # noqa: E501
-                    address,
-                    total_size,
-                    type(E).__name__,
-                    E,
-                )
-                raise
+        return content
 
-            return content
+    @with_stats()
+    async def nft_unlink(self, cid: str, address: str):
+        pin = await self.cid_pin_status(cid)
+        if pin and pin.nft_address == address:
+            await self.cid_unpin(cid)

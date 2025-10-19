@@ -1,0 +1,89 @@
+scope: pg-cluster
+name: {{ inventory_hostname }}
+
+restapi:
+  listen: 0.0.0.0:8018
+  connect_address: {{ ansible_host }}:8018
+  cacert: /etc/ssl/pgcluster/ca.crt
+  cert: /etc/ssl/pgcluster/server.crt
+  key: /etc/ssl/pgcluster/server.key
+  verify_client: 'required'
+
+etcd3:
+  hosts: {{ etcd_client_peer_list }}
+  protocol: https
+  cacert: /etc/ssl/pgcluster/ca.crt
+  cert: /etc/ssl/pgcluster/server.crt
+  key: /etc/ssl/pgcluster/server.key
+
+postgresql:
+  listen: 0.0.0.0:5432
+  connect_address: {{ ansible_host }}:5432
+  data_dir: {{ postgres_data_dir }}
+  bin_dir: /usr/pgsql-{{ postgres_version }}/bin
+  synchronous_mode: true
+  synchronous_mode_strict: false
+  authentication:
+    replication:
+      username: replicator
+      password: "{{ pg_users.replicator.password }}"
+    superuser:
+      username: postgres
+      password: "{{ pg_users.postgres.password }}"
+  parameters:
+    ssl: 'on'
+    ssl_min_protocol_version: 'TLSv1.2'
+    ssl_prefer_server_ciphers: 'on'
+    ssl_cert_file: '/etc/ssl/pgcluster/server.crt'
+    ssl_key_file: '/etc/ssl/pgcluster/server.key'
+    ssl_ca_file: '/etc/ssl/pgcluster/ca.crt'
+    password_encryption: scram-sha-256
+    wal_level: replica
+    hot_standby: on
+    max_wal_senders: 10
+    wal_keep_size: 1024
+    wal_sender_timeout: 10s
+    wal_receiver_timeout: 10s
+    synchronous_commit: on
+    synchronous_standby_names: 'ANY 1 (*)'
+    shared_buffers: 128MB
+    work_mem: 4MB
+    maintenance_work_mem: 48MB
+    effective_cache_size: 512MB
+    max_connections: 30
+  callbacks:
+    on_role_change: /etc/pgbouncer/update_leader.sh
+    on_start: /etc/pgbouncer/update_leader.sh
+    on_stop: /etc/pgbouncer/update_leader.sh
+  pg_hba:
+    - "local   all          postgres    peer"
+    - "hostssl all          all         0.0.0.0/0     scram-sha-256"
+    - "hostssl replication  replicator  127.0.0.1/32  scram-sha-256"
+{% for item in groups[inventory_group] %}
+    - "hostssl replication  replicator  {{ hostvars[item].ansible_host }}/32  scram-sha-256"
+{% endfor %}
+
+
+{% if pg_bootstrap_host == inventory_hostname %}
+bootstrap:
+  dcs:
+    ttl: 30
+    loop_wait: 10
+    retry_timeout: 10
+    maximum_lag_on_failover: 33554432
+  initdb:
+    - encoding: UTF8
+    - locale: en_US.UTF-8
+    - data-checksums
+  users:
+{% for username, user in pg_users.items() %}
+    {{ username }}:
+      password: '{{ user.password }}'
+{% if user.options|length > 0 %}
+      options:
+{% for opt in user.options %}
+        - {{ opt }}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% endif %}

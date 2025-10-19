@@ -1,0 +1,95 @@
+from aiogram.types import InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardMarkup
+
+from ..states.inquiry import InquiryAction, InquiryCallback, InquiryReplyCallback
+
+
+def new_inquiry_kb(submit_btn: bool = False, next_btn: bool = False, inquiry_id: str = None, gettext=None):
+    _ = gettext or (lambda x: x)
+    row1 = [
+        InlineKeyboardButton(
+            text=_("Cancel"),
+            callback_data=InquiryCallback(inquiry_id=inquiry_id, action=InquiryAction.Cancel.value).pack(),
+        )
+    ]
+    if submit_btn:
+        row1.append(
+            InlineKeyboardButton(
+                text=_("Submit"),
+                callback_data=InquiryCallback(inquiry_id=inquiry_id, action=InquiryAction.Submit.value).pack(),
+            )
+        )
+    if next_btn:
+        row1.append(
+            InlineKeyboardButton(
+                text=_("Next"),
+                callback_data=InquiryCallback(inquiry_id=inquiry_id, action=InquiryAction.NextStep.value).pack(),
+            )
+        )
+    return InlineKeyboardMarkup(inline_keyboard=[row1])
+
+
+def inquiry_reply_kb(inquiry_id: int = None, gettext=None):
+    _ = gettext or (lambda x: x)
+    row1 = [
+        InlineKeyboardButton(
+            text=_("Cancel reply"),
+            callback_data=InquiryReplyCallback(
+                inquiry_id=inquiry_id, message_id=0, user_id=0, action=InquiryAction.Cancel.value
+            ).pack(),
+        )
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=[row1])
+
+
+def inquiry_user_kb(inquiry_id: int = None, message_id: int = None, gettext=None):
+    _ = gettext or (lambda x: x)
+    row1 = [
+        InlineKeyboardButton(
+            text=_("Reply"),
+            callback_data=InquiryReplyCallback(
+                inquiry_id=inquiry_id, message_id=message_id, user_id=0, action=InquiryAction.Reply.value
+            ).pack(),
+        ),
+        InlineKeyboardButton(
+            text=_("Close"),
+            callback_data=InquiryReplyCallback(
+                inquiry_id=inquiry_id, message_id=message_id, user_id=0, action=InquiryAction.Close.value
+            ).pack(),
+        ),
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=[row1])
+
+
+def inquiry_admin_kb(inquiry_id: int = None, user_id: int = None, message_id: int = None, gettext=None):
+    _ = gettext or (lambda x: x)
+    row1 = [
+        InlineKeyboardButton(
+            text=_("Reply"),
+            callback_data=InquiryReplyCallback(
+                inquiry_id=inquiry_id,
+                user_id=user_id,
+                message_id=message_id,
+                action=InquiryAction.Reply.value,
+            ).pack(),
+        ),
+        InlineKeyboardButton(
+            text=_("Close"),
+            callback_data=InquiryReplyCallback(
+                inquiry_id=inquiry_id,
+                user_id=user_id,
+                message_id=message_id,
+                action=InquiryAction.Close.value,
+            ).pack(),
+        ),
+        InlineKeyboardButton(
+            text=_("Block"),
+            callback_data=InquiryReplyCallback(
+                inquiry_id=inquiry_id,
+                user_id=user_id,
+                message_id=message_id,
+                action=InquiryAction.BlockUser.value,
+            ).pack(),
+        ),
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=[row1])

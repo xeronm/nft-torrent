@@ -5,7 +5,7 @@
     owner: root
     group: root
     mode: 0755
-  with_items:
+  loop:
     - /etc/nginx/conf.d
   tags: nginx
 
@@ -26,8 +26,8 @@
   tags: nginx
 
 - name: Nginx is configured
-  copy:
-    src: ./etc/nginx/nginx.conf
+  template:
+    src: ./etc/nginx/nginx.j2.conf
     dest: /etc/nginx/nginx.conf
     owner: root
     group: root
@@ -75,7 +75,7 @@
     permanent: true
     immediate: true
     state: enabled
-  with_items:
+  loop:
     - http
     - https
   when: ansible_os_family == "RedHat"
@@ -85,7 +85,7 @@
   ansible.builtin.ufw:
     rule: allow
     name: "{{ item }}"
-  with_items:
+  loop:
     - http
     - https
   when: ansible_os_family == "Debian"

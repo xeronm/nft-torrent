@@ -25,7 +25,7 @@ from NFTorrent.modelsbase import (
     dataclass_to_influx,
 )
 from NFTorrent.settings import BaseCacheManager, TonlibSettings
-from NFTorrent.utils import parse_ipfs_uri
+from NFTorrent.utils import parse_ipfs_uri, uri_ipfs
 
 from .models import TonlibClientResult, TonlibWorkerMsgType
 from .worker import TonlibWorker
@@ -34,6 +34,10 @@ logger = logging.getLogger(__name__)
 
 
 class TonlibRequestError(Exception):
+    pass
+
+
+class TonlibContractIsNotNft(TonlibRequestError):
     pass
 
 
@@ -162,13 +166,13 @@ class TonlibManager:
     def setup_cache(self):
         # short-term
         self.raw_run_method = self.cache_manager.cached(expire=5)(self.raw_run_method)
+        self.raw_get_account_state = self.cache_manager.cached(expire=5)(self.raw_get_account_state)
+        self.generic_get_account_state = self.cache_manager.cached(expire=5)(self.generic_get_account_state)
+        self.get_nft_data = self.cache_manager.cached(expire=5)(self.get_nft_data)
         # mid-term
-        self.raw_get_account_state = self.cache_manager.cached(expire=15)(self.raw_get_account_state)
-        self.generic_get_account_state = self.cache_manager.cached(expire=15)(self.generic_get_account_state)
-        self.get_nft_data = self.cache_manager.cached(expire=60)(self.get_nft_data)
-        self.get_collection_data = self.cache_manager.cached(expire=60)(self.get_collection_data)
+        self.get_collection_data = self.cache_manager.cached(expire=30)(self.get_collection_data)
         # long-term
-        self.get_nft_item_address = self.cache_manager.cached(expire=600)(self.get_nft_item_address)
+        self.get_nft_item_address = self.cache_manager.cached(expire=300)(self.get_nft_item_address)
 
     def terminate_worker(self, ls_index: int, timeout: float = 0):
         wctl = self.workers[ls_index]
@@ -557,7 +561,7 @@ class TonlibManager:
         addr = TonAddress(address)
         nft_data_result = await self.raw_run_method(address, "get_nft_data", [], None)
         if nft_data_result["stack"] is None or len(nft_data_result["stack"]) != 5:
-            raise TonlibRequestError("Smart contract is not NFT")
+            raise TonlibContractIsNotNft("Smart contract is not NFT")
 
         nft_data = parse_nft_item_data(nft_data_result["stack"])
         if owner is not None and TonAddress(nft_data["owner_address"]) != TonAddress(owner):
@@ -579,7 +583,7 @@ class TonlibManager:
         )
         nft_data["address"] = addr.b64url
         image = nft_data["individual_content"].image()
-        if image and image.startswith("ipfs://"):
+        if uri_ipfs(image):
             cid, _, _ = parse_ipfs_uri(image)
             nft_data["torrent_digest"] = torrent_digest(cid)
 
