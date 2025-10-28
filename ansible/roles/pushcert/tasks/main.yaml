@@ -9,6 +9,15 @@
     - restart nginx
   tags: pushcert
 
+- name: Push chain.pem
+  copy:
+    src: "/etc/letsencrypt/live/{{ domain }}/chain.pem"
+    dest: "/etc/pki/tls/certs/{{ domain }}/chain.pem"
+    owner: root
+    group: root
+    mode: '0644'
+  tags: pushcert
+
 - name: Push privkey.pem
   copy:
     src: "/etc/letsencrypt/live/{{ domain }}/privkey.pem"
