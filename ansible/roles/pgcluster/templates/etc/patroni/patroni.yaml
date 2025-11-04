@@ -67,9 +67,9 @@ postgresql:
 {% if pg_bootstrap_host == inventory_hostname %}
 bootstrap:
   dcs:
-    ttl: 30
-    loop_wait: 10
-    retry_timeout: 10
+    ttl: 65
+    loop_wait: 15
+    retry_timeout: 60
     maximum_lag_on_failover: 33554432
   initdb:
     - encoding: UTF8

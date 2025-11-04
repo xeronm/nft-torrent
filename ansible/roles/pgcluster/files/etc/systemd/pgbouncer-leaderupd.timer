@@ -1,0 +1,9 @@
+[Unit]
+Description=Run pgbouncer periodic leader update
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1min
+
+[Install]
+WantedBy=timers.target

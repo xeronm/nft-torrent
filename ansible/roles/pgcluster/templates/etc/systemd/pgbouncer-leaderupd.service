@@ -1,0 +1,8 @@
+[Unit]
+Description=Run pgbouncer periodic leader update
+Wants=network-online.target
+After=network-online.target pgbouncer.service
+
+[Service]
+Type=oneshot
+ExecStart=/etc/pgbouncer/update_leader.sh periodic
