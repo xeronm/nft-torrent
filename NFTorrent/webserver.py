@@ -240,7 +240,7 @@ class Server:
         _stats = hc.model_dump()
         _stats["start_time"] = self.start_time
         node_id = _stats.pop("node_id")
-        measurements = [f"NFTorrentServer,node={node_id} {dict_to_influx(_stats)} {timestamp}"]
+        measurements = [f"NFTorrentServer,node={node_id} {dict_to_influx(_stats, escape=False)} {timestamp}"]
         if self.tonlib is not None:
             measurements += self.tonlib.get_measurements(timestamp)
         if self.ipfs is not None:

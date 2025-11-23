@@ -358,7 +358,7 @@ class IpfsRpcManager:
                 "max_size": state["storage"]["StorageMax"],
                 "objects": state["storage"].get("NumObjects"),
             }
-            result += [f"NFTorrentIpfs {dict_to_influx(_ipfs)} {timestamp}"]
+            result += [f"NFTorrentIpfs {dict_to_influx(_ipfs, escape=False)} {timestamp}"]
         return result
 
     @with_stats()
