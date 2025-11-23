@@ -27,6 +27,7 @@ from NFTorrent.modelsbase import CollectionConfig, StatisticNoTags
 from NFTorrent.settings import Settings
 from NFTorrent.tonlib import TonlibContractIsNotNft, TonlibManager
 from NFTorrent.utils import dict_to_influx, guess_type, parse_ipfs_uri, uri_ipfs, uri_supported
+from NFTorrent import __meta__
 
 logger = logging.getLogger(__name__)
 
@@ -185,7 +186,7 @@ class Server:
         waits = [self.tonlib.shutdown()]
         if self.ipfs is not None:
             waits.append(self.ipfs.shutdown())
-        await asyncio.wait(waits, return_when=asyncio.ALL_COMPLETED)
+        await asyncio.gather(*waits)
 
     def _get_peer_uri(self, host: str, path: str):
         authority = f"{host}:{self.settings.webserver.port}" if self.settings.webserver.port else host
@@ -225,6 +226,7 @@ class Server:
 
         return HealthCheckResult(
             node_id=self.settings.webserver.node_id,
+            version=__meta__.__version__,
             tonlib=bool(tonlib_state),
             storage=bool(stotage_state),
             indexdb=bool(indexer_state),

@@ -62,9 +62,9 @@ async def request_validation_exception_handler(request, exc):
         title=type(exc).__name__,
         detail="Request validation failed, see errors for details",
         errors=[{k: v for k, v in err.items() if k != "ctx"} for err in exc.errors()],
-        status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        status=status.HTTP_422_UNPROCESSABLE_CONTENT,
     )
-    return JSONResponse(res.model_dump(exclude_none=True), status_code=status.HTTP_422_UNPROCESSABLE_ENTITY)
+    return JSONResponse(res.model_dump(exclude_none=True), status_code=status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
 @app.exception_handler(ValidationError)
@@ -73,9 +73,9 @@ async def validation_exception_handler(request, exc):
         title=type(exc).__name__,
         detail="Request validation failed, see errors for details",
         errors=[{k: v for k, v in err.items() if k != "ctx"} for err in exc.errors()],
-        status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        status=status.HTTP_422_UNPROCESSABLE_CONTENT,
     )
-    return JSONResponse(res.model_dump(exclude_none=True), status_code=status.HTTP_422_UNPROCESSABLE_ENTITY)
+    return JSONResponse(res.model_dump(exclude_none=True), status_code=status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
 @app.exception_handler(aiohttp.client_exceptions.ClientError)

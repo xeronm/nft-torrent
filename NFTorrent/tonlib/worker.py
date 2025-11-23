@@ -39,6 +39,7 @@ class TonlibWorker(mp.Process):
         sync_verify_address: str = None,
         logger_config: dict = None,
         keystore_recreate: bool = False,
+        keystore_remove_on_fail: bool = True
     ):
         super().__init__(daemon=True)
 
@@ -59,6 +60,7 @@ class TonlibWorker(mp.Process):
         self.sync_timeout = max(self.sync_timeout, self.settings.request_timeout)
         self.logger_config = logger_config
         self.keystore_recreate = keystore_recreate
+        self.keystore_remove_on_fail = keystore_remove_on_fail
 
     def run(self):
         if self.logger_config:
@@ -95,6 +97,8 @@ class TonlibWorker(mp.Process):
             logger.error(
                 "TonlibWorker-#%03d: Failed to init and sync tonlib - %s: %s", self.ls_index, type(E).__name__, E
             )
+            if p.exists() and self.keystore_remove_on_fail:
+                shutil.rmtree(keystore)
             self.shutdown(11)
 
         # creating tasks
