@@ -3,6 +3,7 @@ import math
 from functools import lru_cache
 
 from PIL import Image, ImageDraw, ImageFont
+from PIL._typing import _Ink
 
 from .utils import guess_type
 
@@ -64,10 +65,10 @@ def generate_cover(
     title_size: int = 96,
     subtitle_font: str = None,
     subtitle_size: int = 48,
-    color: ImageDraw._Ink = "black",
+    color: _Ink = "black",
     rect_padding: tuple[int, int] = (20, 10),
     rect_margin: tuple[int, int] = (20, None),
-    rect_fill: ImageDraw._Ink = "white",
+    rect_fill: _Ink = "white",
     rect_radius: int = 16,
     offset_top: float = 0.875,
 ):
