@@ -17,8 +17,13 @@ def guess_type(url: str, strict: bool = True, default_type: str = None, default_
 def influx_escape_value(value: str) -> str:
     return re.sub(r"([ ,=])", r"\\\1", value)
 
+def influx_str_value(value: str) -> str:
+    if value is None:
+        return None
+    escvalue = re.sub(r'(["])', r"\\\1", value)
+    return f'"{escvalue}"'
 
-def dataclass_to_influx(instance, excludes: list[str] = None):
+def dataclass_to_influx(instance, excludes: list[str] = None, escape: bool = True):
     kv = []
     for _field in fields(instance):
         if excludes and _field.name in set(excludes):
@@ -33,12 +38,12 @@ def dataclass_to_influx(instance, excludes: list[str] = None):
         if issubclass(_field.type, str):
             if not isinstance(value, str):
                 value = str(value)
-            value = influx_escape_value(value) or "null"
+            value = (influx_escape_value(value) if escape else influx_str_value(value)) or "null"
         kv.append(f"{_field.name}={value}")
     return ",".join(kv)
 
 
-def dict_to_influx(instance: dict):
+def dict_to_influx(instance: dict, escape: bool = True):
     kv = []
     for k, v in instance.items():
         value = v
@@ -49,7 +54,7 @@ def dict_to_influx(instance: dict):
         elif isinstance(v, bool):
             value = int(value)
         elif isinstance(v, str):
-            value = influx_escape_value(value) or "null"
+            value = (influx_escape_value(value) if escape else influx_str_value(value)) or "null"
         kv.append(f"{k}={value}")
     return ",".join(kv)
 

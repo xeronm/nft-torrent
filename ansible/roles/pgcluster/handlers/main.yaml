@@ -18,9 +18,9 @@
     enabled: yes
     daemon_reload: yes
 
-- name: Restart etcd-dbshrink
+- name: Restart etcd-dbshrink.timer
   systemd:
-    name: etcd
+    name: etcd-dbshrink.timer
     state: restarted
     enabled: yes
     daemon_reload: yes
@@ -28,6 +28,13 @@
 - name: Restart PgBouncer
   systemd:
     name: pgbouncer
+    state: restarted
+    enabled: yes
+    daemon_reload: yes
+
+- name: Restart pgbouncer-leaderupd.timer
+  systemd:
+    name: pgbouncer-leaderupd.timer
     state: restarted
     enabled: yes
     daemon_reload: yes

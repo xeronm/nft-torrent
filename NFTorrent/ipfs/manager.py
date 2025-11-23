@@ -69,8 +69,10 @@ class IpfsRpcManager:
         for task in self.tasks.values():
             task.cancel()
         await asyncio.wait(self.tasks.values())
-        self.client.close()
-        self.cluster.close()
+        await asyncio.gather(
+            self.client.close(),
+            self.cluster.close()
+        )
 
     def setup_cache(self):
         # Short-term
@@ -356,7 +358,7 @@ class IpfsRpcManager:
                 "max_size": state["storage"]["StorageMax"],
                 "objects": state["storage"].get("NumObjects"),
             }
-            result += [f"NFTorrentIpfs {dict_to_influx(_ipfs)} {timestamp}"]
+            result += [f"NFTorrentIpfs {dict_to_influx(_ipfs, escape=False)} {timestamp}"]
         return result
 
     @with_stats()

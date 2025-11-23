@@ -90,7 +90,7 @@ class MeasurementStore(defaultdict):
 
     def as_influx(self, timestamp=None):
         timestamp = timestamp or self.get_timestamp()
-        return sorted([f"{self.name}{self.tag_set(k)} {dataclass_to_influx(v)} {timestamp}" for k, v in self.items()])
+        return sorted([f"{self.name}{self.tag_set(k)} {dataclass_to_influx(v, escape=False)} {timestamp}" for k, v in self.items()])
 
 
 def with_stats(key: Any = None, stats: MeasurementStore = None, stats_attr: str = "stats"):

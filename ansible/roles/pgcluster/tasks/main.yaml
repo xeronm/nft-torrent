@@ -269,7 +269,7 @@
     dest: /etc/systemd/system/etcd-dbshrink.service
   notify:
     - Reload systemd
-    - Restart etcd-dbshrink
+    - Restart etcd-dbshrink.timer
   tags:
     - pgcluster
     - etcd
@@ -280,7 +280,7 @@
     dest: /etc/systemd/system/etcd-dbshrink.timer
   notify:
     - Reload systemd
-    - Restart etcd-dbshrink
+    - Restart etcd-dbshrink.timer
   tags:
     - pgcluster
     - etcd
@@ -326,6 +326,29 @@
   tags:
     - pgbouncer
     - pgcluster
+
+
+- name: Deploy systemd unit for PgBouncer-LeaderUpd
+  template:
+    src: ./etc/systemd/pgbouncer-leaderupd.service
+    dest: /etc/systemd/system/pgbouncer-leaderupd.service
+  notify:
+    - Reload systemd
+    - Restart pgbouncer-leaderupd.timer
+  tags:
+    - pgcluster
+    - pgbouncer
+
+- name: Deploy systemd timer for PgBouncer-LeaderUpd
+  copy:
+    src: ./etc/systemd/pgbouncer-leaderupd.timer
+    dest: /etc/systemd/system/pgbouncer-leaderupd.timer
+  notify:
+    - Reload systemd
+    - Restart pgbouncer-leaderupd.timer
+  tags:
+    - pgcluster
+    - pgbouncer
 
 - name: Deploy Patroni config
   template:

@@ -121,6 +121,7 @@ class TonlibManager:
         collection_config: CollectionConfig = None,
         logger_config: dict = None,
         keystore_recreate: bool = False,
+        keystore_remove_on_fail: bool = True,
     ):
         self.restart_timeout = restart_timeout or settings.restart_timeout
         self.collection_config = collection_config
@@ -134,6 +135,7 @@ class TonlibManager:
         self.consensus_block_mt = 0
         self.logger_config = logger_config
         self.keystore_recreate = keystore_recreate
+        self.keystore_remove_on_fail = keystore_remove_on_fail
 
         # cache setup
         self.setup_cache()
@@ -222,6 +224,7 @@ class TonlibManager:
                     sync_verify_address=sync_verify_address,
                     logger_config=self.logger_config,
                     keystore_recreate=self.keystore_recreate,
+                    keystore_remove_on_fail=self.keystore_remove_on_fail
                 ),
                 self.loop.create_task(self.read_results(ls_index)),
             )
@@ -233,6 +236,7 @@ class TonlibManager:
                     sync_verify_address=sync_verify_address,
                     logger_config=self.logger_config,
                     keystore_recreate=self.keystore_recreate,
+                    keystore_remove_on_fail=self.keystore_remove_on_fail
                 ),
                 self.loop.create_task(self.read_results(ls_index)),
             )
@@ -523,7 +527,7 @@ class TonlibManager:
     def get_measurements(self, timestamp: int) -> list[str]:
         excludes = {"ls_index", "last_block_time", "start_mt", "sync_mt", "off_sync_mt", "restart_retry_mt"}
         return self.stats.as_influx(timestamp) + [
-            f"NFTorrentLiteserverWorker,ls_index={x.ls_index} {dataclass_to_influx(x, excludes=excludes)} {timestamp}"
+            f"NFTorrentLiteserverWorker,ls_index={x.ls_index} {dataclass_to_influx(x, excludes=excludes, escape=False)} {timestamp}"
             for x in self.workers.values()
         ]
 
