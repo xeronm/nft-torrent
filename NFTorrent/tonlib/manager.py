@@ -527,7 +527,7 @@ class TonlibManager:
     def get_measurements(self, timestamp: int) -> list[str]:
         excludes = {"ls_index", "last_block_time", "start_mt", "sync_mt", "off_sync_mt", "restart_retry_mt"}
         return self.stats.as_influx(timestamp) + [
-            f"NFTorrentLiteserverWorker,ls_index={x.ls_index} {dataclass_to_influx(x, excludes=excludes)} {timestamp}"
+            f"NFTorrentLiteserverWorker,ls_index={x.ls_index} {dataclass_to_influx(x, excludes=excludes, escape=False)} {timestamp}"
             for x in self.workers.values()
         ]
 
