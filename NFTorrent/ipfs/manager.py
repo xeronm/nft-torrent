@@ -69,10 +69,7 @@ class IpfsRpcManager:
         for task in self.tasks.values():
             task.cancel()
         await asyncio.wait(self.tasks.values())
-        await asyncio.gather(
-            self.client.close(),
-            self.cluster.close()
-        )
+        await asyncio.gather(self.client.close(), self.cluster.close())
 
     def setup_cache(self):
         # Short-term

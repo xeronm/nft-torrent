@@ -42,6 +42,7 @@ class StatisticTags:
 
 @dataclass
 class CollectionMeasurement:
+    cycle_start_time: int = 0
     db_next_index: int = 0
     bc_next_index: int = 0
     nft_index_count: int = 0
@@ -62,6 +63,7 @@ class CollectionMeasurement:
 
 @dataclass
 class IndexerMeasurement:
+    cycle_start_time: int = 0
     task_last_checked: int = 0
     tg_user_queue_adds: int = 0
     tg_user_queue_gets: int = 0
@@ -112,7 +114,7 @@ class EtcdPoolLock:
                 lock = etcd.lock(name=self.lock_name, ttl=self.lock_ttl)
                 if lock.acquire():
                     self._lock = lock
-                    logger.info('etcd lock "%s" acquired uuid=%s', self.lock_name, self._lock.uuid)
+                    logger.info('etcd lock "%s" acquired uuid=%s', self.lock_name, self._lock.uuid.hex())
                     return self
             except etcd3.Etcd3Exception as E:
                 logger.info('etcd lock "%s", peer: %s error - %s: %s', self.lock_name, etcd._url, type(E).__name__, E)
@@ -163,7 +165,7 @@ class IndexDb:
     expired_offset = datetime.timedelta(days=1)
     nft_mutable_attributes = ["owner", "uri", "image", "image_data", "fee_due_time", "description"]
     nft_image_attributes = {"image", "image_data"}
-    task_queue_timeout_sec = 3
+    task_queue_timeout_sec = 5
 
     def __init__(
         self,
@@ -213,7 +215,9 @@ class IndexDb:
         self.dbengine = create_engine(self.settings.database_url)
 
         logger.warning("Starting... workers: %d", self.num_workers)
-        self.threadpool_executor = ThreadPoolExecutor(max_workers=max(32, self.num_workers))
+        self.threadpool_executor = ThreadPoolExecutor(
+            max_workers=max(32, self.num_workers), thread_name_prefix="indexdb"
+        )
 
         # workers spawn
         self.loop = loop or asyncio.get_running_loop()
@@ -459,6 +463,8 @@ class IndexDb:
 
         while True:
             try:
+                meas.cycle_start_time = int(time.time())
+                logger.info('[bot_polling] Cycle acquiring lock "%s"', lock_name)
                 async with EtcdPoolLock(
                     lock_name,
                     self.etcd_clients,
@@ -517,17 +523,21 @@ class IndexDb:
     async def nft_indexer(self, data: CollectionTaskData):
         address = data.nft_collection.b64url
         logger.warning("[nft_indexer-%s] Indexer task entering main loop", address)
+        lock_name = f"indexer:{address}"
         while True:
             try:
                 await asyncio.sleep(self.settings.indexer_timeout)
                 if self.tonlib is None:
+                    logger.warning("[nft_indexer-%s] Tonlib still not initialized", address)
                     continue
                 if sum([1 for x in self.tonlib.get_workers_state().values() if x["is_sync"]]) == 0:
                     logger.warning("[nft_indexer-%s] No active Tonlib workers", address)
                     continue
 
+                data.meas.cycle_start_time = int(time.time())
+                logger.info('[nft_indexer-%s] Cycle acquiring lock "%s"', address, lock_name)
                 async with EtcdPoolLock(
-                    f"indexer:{address}", self.etcd_clients, self.threadpool_executor, self.etcd_lock_ttl_sec
+                    lock_name, self.etcd_clients, self.threadpool_executor, self.etcd_lock_ttl_sec, self.loop
                 ) as lock:
                     cycle = asyncio.create_task(self._nft_indexer_cycle(data))
                     refresh = asyncio.create_task(lock.refresh_loop())

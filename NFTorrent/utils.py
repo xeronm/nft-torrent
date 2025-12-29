@@ -17,11 +17,13 @@ def guess_type(url: str, strict: bool = True, default_type: str = None, default_
 def influx_escape_value(value: str) -> str:
     return re.sub(r"([ ,=])", r"\\\1", value)
 
+
 def influx_str_value(value: str) -> str:
     if value is None:
         return None
     escvalue = re.sub(r'(["])', r"\\\1", value)
     return f'"{escvalue}"'
+
 
 def dataclass_to_influx(instance, excludes: list[str] = None, escape: bool = True):
     kv = []

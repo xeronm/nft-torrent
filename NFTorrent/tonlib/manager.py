@@ -224,7 +224,7 @@ class TonlibManager:
                     sync_verify_address=sync_verify_address,
                     logger_config=self.logger_config,
                     keystore_recreate=self.keystore_recreate,
-                    keystore_remove_on_fail=self.keystore_remove_on_fail
+                    keystore_remove_on_fail=self.keystore_remove_on_fail,
                 ),
                 self.loop.create_task(self.read_results(ls_index)),
             )
@@ -236,7 +236,7 @@ class TonlibManager:
                     sync_verify_address=sync_verify_address,
                     logger_config=self.logger_config,
                     keystore_recreate=self.keystore_recreate,
-                    keystore_remove_on_fail=self.keystore_remove_on_fail
+                    keystore_remove_on_fail=self.keystore_remove_on_fail,
                 ),
                 self.loop.create_task(self.read_results(ls_index)),
             )
