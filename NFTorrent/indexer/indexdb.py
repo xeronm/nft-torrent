@@ -90,6 +90,7 @@ class EtcdLockError(Exception):
 class ChildTaskCanceled(Exception):
     pass
 
+
 class EtcdPoolLock:
 
     def __init__(
@@ -489,9 +490,7 @@ class IndexDb:
                         if pooling in done:
                             if pooling.cancelled():
                                 meas.dp_task_failures += 1
-                                logger.warning(
-                                    "Bot polling task: polling child task was cancelled"
-                                )
+                                logger.warning("Bot polling task: polling child task was cancelled")
                             elif pooling.exception():
                                 meas.dp_task_failures += 1
                                 exc = pooling.exception()
@@ -503,9 +502,7 @@ class IndexDb:
                         if refresh in done:
                             if pooling.cancelled():
                                 meas.dp_lock_failures += 1
-                                logger.warning(
-                                    "Bot polling task: lock refresh child task was cancelled"
-                                )
+                                logger.warning("Bot polling task: lock refresh child task was cancelled")
                             elif refresh.exception():
                                 meas.dp_lock_failures += 1
                                 exc = refresh.exception()
@@ -560,10 +557,7 @@ class IndexDb:
                         done, pending = await asyncio.wait([cycle, refresh], return_when=asyncio.FIRST_COMPLETED)
                         if refresh in done:
                             if refresh.cancelled():
-                                logger.warning(
-                                    "[nft_indexer-%s] lock refresh child task was cancelled",
-                                    address
-                                )
+                                logger.warning("[nft_indexer-%s] lock refresh child task was cancelled", address)
                             elif refresh.exception():
                                 exc = refresh.exception()
                                 logger.warning(
@@ -574,10 +568,7 @@ class IndexDb:
                                 )
                         if cycle in done:
                             if cycle.cancelled():
-                                logger.warning(
-                                    "[nft_indexer-%s] cycle child task was cancelled",
-                                    address
-                                )
+                                logger.warning("[nft_indexer-%s] cycle child task was cancelled", address)
                             elif cycle.exception():
                                 raise cycle.exception()
                     finally:
@@ -592,7 +583,7 @@ class IndexDb:
                     type(E).__name__,
                     E,
                 )
-            except asyncio.CancelledError as E:
+            except asyncio.CancelledError:
                 logger.warning("[nft_indexer-%s] Indexer task was cancelled", address)
                 return
             except (Exception, BaseException):
