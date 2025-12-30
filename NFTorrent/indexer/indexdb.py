@@ -87,6 +87,9 @@ class EtcdLockError(Exception):
     pass
 
 
+class ChildTaskCanceled(Exception):
+    pass
+
 class EtcdPoolLock:
 
     def __init__(
@@ -286,7 +289,7 @@ class IndexDb:
                 logger.warning("DB initialization error: %s - %s", type(E).__name__, str(E))
                 await asyncio.sleep(self.restart_timeout)
             except asyncio.CancelledError:
-                logger.info("Initialize DB task was cancelled")
+                logger.warning("Initialize DB task was cancelled")
                 return
             except (Exception, BaseException):
                 logger.exception("Initialize DB got unhandled exception, sleep for %d sec", self.restart_timeout)
@@ -304,7 +307,7 @@ class IndexDb:
                 await self.process_tg_queue(maxsize=100)
 
             except asyncio.CancelledError:
-                logger.info("Event Processor task was cancelled")
+                logger.warning("Event Processor task was cancelled")
                 return
             except (Exception, BaseException):
                 logger.exception("Event Processor task got unhandled exception, sleep for %d sec", self.restart_timeout)
@@ -447,7 +450,7 @@ class IndexDb:
                 )
                 await asyncio.sleep(self.restart_timeout)
             except asyncio.CancelledError:
-                logger.info("[nft_task_processor] NFT scheduled processor task was cancelled")
+                logger.warning("[nft_task_processor] NFT scheduled processor task was cancelled")
                 return
             except (Exception, BaseException):
                 logger.exception(
@@ -483,22 +486,34 @@ class IndexDb:
                     meas.dp_poll_time = int(time.time())
                     try:
                         done, pending = await asyncio.wait([pooling, refresh], return_when=asyncio.FIRST_COMPLETED)
-                        if pooling in done and pooling.exception():
-                            meas.dp_task_failures += 1
-                            exc = pooling.exception()
-                            logger.warning(
-                                "Bot polling task: polling terminated with error - %s: %s", type(exc).__name__, exc
-                            )
+                        if pooling in done:
+                            if pooling.cancelled():
+                                meas.dp_task_failures += 1
+                                logger.warning(
+                                    "Bot polling task: polling child task was cancelled"
+                                )
+                            elif pooling.exception():
+                                meas.dp_task_failures += 1
+                                exc = pooling.exception()
+                                logger.warning(
+                                    "Bot polling task: polling terminated with error - %s: %s", type(exc).__name__, exc
+                                )
                         else:
                             logger.warning("Bot polling task: polling exited")
-                        if refresh in done and refresh.exception():
-                            meas.dp_lock_failures += 1
-                            exc = refresh.exception()
-                            logger.warning(
-                                "Bot polling task: lock refresh task terminated with error - %s: %s",
-                                type(exc).__name__,
-                                exc,
-                            )
+                        if refresh in done:
+                            if pooling.cancelled():
+                                meas.dp_lock_failures += 1
+                                logger.warning(
+                                    "Bot polling task: lock refresh child task was cancelled"
+                                )
+                            elif refresh.exception():
+                                meas.dp_lock_failures += 1
+                                exc = refresh.exception()
+                                logger.warning(
+                                    "Bot polling task: lock refresh task terminated with error - %s: %s",
+                                    type(exc).__name__,
+                                    exc,
+                                )
                     finally:
                         self.dp_active = False
                         meas.dp_active = 0
@@ -512,7 +527,7 @@ class IndexDb:
                 logger.info("[bot_polling] Bot polling task: lock error: %s", type(E).__name__)
                 await asyncio.sleep(self.restart_timeout)
             except asyncio.CancelledError:
-                logger.info("[bot_polling] Bot polling task was cancelled")
+                logger.warning("[bot_polling] Bot polling task was cancelled")
                 return
             except (Exception, BaseException):
                 logger.exception(
@@ -543,16 +558,28 @@ class IndexDb:
                     refresh = asyncio.create_task(lock.refresh_loop())
                     try:
                         done, pending = await asyncio.wait([cycle, refresh], return_when=asyncio.FIRST_COMPLETED)
-                        if refresh in done and refresh.exception():
-                            exc = refresh.exception()
-                            logger.warning(
-                                "[nft_indexer-%s] lock refresh task terminated with error - %s: %s",
-                                address,
-                                type(exc).__name__,
-                                exc,
-                            )
-                        if cycle in done and cycle.exception():
-                            raise cycle.exception()
+                        if refresh in done:
+                            if refresh.cancelled():
+                                logger.warning(
+                                    "[nft_indexer-%s] lock refresh child task was cancelled",
+                                    address
+                                )
+                            elif refresh.exception():
+                                exc = refresh.exception()
+                                logger.warning(
+                                    "[nft_indexer-%s] lock refresh child task terminated with error - %s: %s",
+                                    address,
+                                    type(exc).__name__,
+                                    exc,
+                                )
+                        if cycle in done:
+                            if cycle.cancelled():
+                                logger.warning(
+                                    "[nft_indexer-%s] cycle child task was cancelled",
+                                    address
+                                )
+                            elif cycle.exception():
+                                raise cycle.exception()
                     finally:
                         cycle.cancel()
                         refresh.cancel()
@@ -565,8 +592,8 @@ class IndexDb:
                     type(E).__name__,
                     E,
                 )
-            except asyncio.CancelledError:
-                logger.info("[nft_indexer-%s] Indexer task was cancelled", address)
+            except asyncio.CancelledError as E:
+                logger.warning("[nft_indexer-%s] Indexer task was cancelled", address)
                 return
             except (Exception, BaseException):
                 logger.exception(

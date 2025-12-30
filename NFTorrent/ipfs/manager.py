@@ -99,7 +99,7 @@ class IpfsRpcManager:
 
                 await asyncio.sleep(self.node_state_check_timeout)
             except asyncio.CancelledError:
-                logger.info("[check_ipfs_alive]: Task was cancelled")
+                logger.warning("[check_ipfs_alive]: Task was cancelled")
                 return
             except (Exception, BaseException):
                 logger.exception(

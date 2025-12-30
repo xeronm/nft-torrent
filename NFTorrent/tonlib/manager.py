@@ -329,7 +329,7 @@ class TonlibManager:
                 if msg_type == TonlibWorkerMsgType.ARCHIVAL_UPDATE:
                     wctl.is_archival = msg_content
             except asyncio.CancelledError:
-                logger.info("[Worker-#%03d]: Reader was cancelled", ls_index)
+                logger.warning("[Worker-#%03d]: Reader was cancelled", ls_index)
                 return
             except (Exception, BaseException):
                 logger.exception(
@@ -396,7 +396,7 @@ class TonlibManager:
 
                 await asyncio.sleep(1)
             except asyncio.CancelledError:
-                logger.info("[check_working]: Task was cancelled")
+                logger.warning("[check_working]: Task was cancelled")
                 return
             except (Exception, BaseException):
                 logger.exception(
@@ -438,7 +438,7 @@ class TonlibManager:
                         self.spawn_worker(ls_index, force_restart=True)
                 await asyncio.sleep(1)
             except asyncio.CancelledError:
-                logger.info("[check_children_alive]: Task was cancelled")
+                logger.warning("[check_children_alive]: Task was cancelled")
                 return
             except (Exception, BaseException):
                 logger.exception(
@@ -491,6 +491,7 @@ class TonlibManager:
                 task_id,
                 method,
             )
+            wctl.futures[task_id] = self.loop.create_future()
             await self.loop.run_in_executor(
                 self.threadpool_executor,
                 wctl.worker.input_queue.put,
@@ -498,7 +499,6 @@ class TonlibManager:
             )
 
             try:
-                wctl.futures[task_id] = self.loop.create_future()
                 await asyncio.wait_for(wctl.futures[task_id], timeout=self.settings.request_timeout + 1)
                 result = wctl.futures[task_id].result()
                 logger.info(
