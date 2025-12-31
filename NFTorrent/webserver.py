@@ -218,8 +218,8 @@ class Server:
             indexer_state = (
                 not tonlib_state
                 or len(last_checked)
-                == len([x for x in last_checked if x >= curr_time - self.indexer.settings.indexer_timeout * 2])
-            ) and self.indexer.stats[StatisticNoTags].task_last_checked >= curr_time - self.indexer.restart_timeout * 2
+                == len([x for x in last_checked if x >= curr_time - self.indexer.settings.indexer_timeout * 3])
+            ) and self.indexer.stats[StatisticNoTags].task_last_checked >= curr_time - self.indexer.restart_timeout * 3
         bot = False
         if self.bot_app is not None:
             bot = self.indexer.dp_active
