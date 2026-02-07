@@ -1,17 +1,46 @@
 TON NFT Torrent HTTP Gateway
 ============================
+![Pets Memorial banner](/assets/images/git-readme-banner.png "Pets Memorial")
 
-Provides following HTTP API Gateway functions:
-- read NFT `individual_content` data for known NFT collections
-- read/write refrenced by NFT IPFS URI off-chain NFT files from Torrent maintained with IPFS Storage
-- maintain Torrent redundacy and pinning policy
+HTTP API gateway for accessing and managing off-chain NFT content in the TON ecosystem.
+
+Provides following HTTP API Gateway feratures:
+* Retrieve NFT `individual_content` metadata for supported collections
+* Read and write off-chain files referenced by NFT IPFS URIs
+* Store and distribute content with IPFS-backed storage
+* Maintain off-chain data redundancy, availability, and pinning policies for reliable persistence
+* NFT metadata indexing
+* telegram bot
+
+
+Parts of the LiteServer communication layer are derived from the
+[ton-http-api](https://github.com/toncenter/ton-http-api) project, with substantial refactoring and improvements tailored to this gateway’s architecture and workload.
 
 
 NFTorrent Application Architecture:
 
 ![NFTorrent Application Architecture](./assets/images/NFTorrent-Architecture.png "NFTorrent Application Architecture").
 
-NFT Contract example: https://github.com/xeronm/pets-memorial
+---
+
+**Mainnet Website:** [https://petsmem.site](https://petsmem.site)
+
+**Mainnet Contract:** [EQBSsYn6y560LVuVf3UYOnKUfH7Fexfk4iXtkA2TPl-CUsa6](https://tonviewer.com/EQBSsYn6y560LVuVf3UYOnKUfH7Fexfk4iXtkA2TPl-CUsa6)
+
+**Testnet Contract:** [EQD7HAmDSSxSXJNhAWod8suE-_W0iwlC9o_OUR76kXo3jrtD](https://testnet.tonviewer.com/EQD7HAmDSSxSXJNhAWod8suE-_W0iwlC9o_OUR76kXo3jrtD)
+
+**Collection on Getgems:** [@petsmem](https://getgems.io/petsmem)
+
+**Docker Image:** [dtec/nft-torrent](https://hub.docker.com/r/dtec/nft-torrent)
+
+---
+
+**Linked repositories:**
+- [Pets Memorial NFT Collection on TON](https://github.com/xeronm/pets-memorial)
+- [Pets Memorial Web/Mini-App](https://github.com/noobel/pets-memorial-miniapp)
+
+---
+
 
 Feel free to support me with TON: `UQDJJHWJKrt7ZKiRzXz2TpzJMxJ5RrWffTqXL8769EXa_2bh`
 
@@ -51,18 +80,7 @@ sudo useradd -r -g nftorrent --uid=9001 --home-dir=/home/nftorrent --shell=/sbin
 docker compose up -d
 ```
 
-### Annex A. Useful Commands
-
-```sh
-openssl s_client \
-  -connect 45.144.222.100:2379 \
-  -cert /etc/ssl/pgcluster/client.crt \
-  -key /etc/ssl/pgcluster/client.key \
-  -CAfile /etc/ssl/pgcluster/ca.crt
-```
-
-
-### Annex B. Localization
+### Annex A. Localization
 
 ```sh
 pybabel extract -F babel.cfg -o NFTorrent/locales/messages.pot .
