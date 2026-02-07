@@ -9,7 +9,7 @@ from dataclasses import InitVar, asdict, dataclass
 from datetime import datetime
 from typing import Any
 
-from pytonlib import TonlibError
+from pytonlib import TonlibError, TonlibNoResponse
 from pytonlib.utils.tokens import parse_nft_collection_data, parse_nft_item_data
 from tonpy.types import CellSlice
 
@@ -224,7 +224,7 @@ class TonlibManager:
                     sync_verify_address=sync_verify_address,
                     logger_config=self.logger_config,
                     keystore_recreate=self.keystore_recreate,
-                    keystore_remove_on_fail=self.keystore_remove_on_fail
+                    keystore_remove_on_fail=self.keystore_remove_on_fail,
                 ),
                 self.loop.create_task(self.read_results(ls_index)),
             )
@@ -236,7 +236,7 @@ class TonlibManager:
                     sync_verify_address=sync_verify_address,
                     logger_config=self.logger_config,
                     keystore_recreate=self.keystore_recreate,
-                    keystore_remove_on_fail=self.keystore_remove_on_fail
+                    keystore_remove_on_fail=self.keystore_remove_on_fail,
                 ),
                 self.loop.create_task(self.read_results(ls_index)),
             )
@@ -329,7 +329,7 @@ class TonlibManager:
                 if msg_type == TonlibWorkerMsgType.ARCHIVAL_UPDATE:
                     wctl.is_archival = msg_content
             except asyncio.CancelledError:
-                logger.info("[Worker-#%03d]: Reader was cancelled", ls_index)
+                logger.warning("[Worker-#%03d]: Reader was cancelled", ls_index)
                 return
             except (Exception, BaseException):
                 logger.exception(
@@ -396,7 +396,7 @@ class TonlibManager:
 
                 await asyncio.sleep(1)
             except asyncio.CancelledError:
-                logger.info("[check_working]: Task was cancelled")
+                logger.warning("[check_working]: Task was cancelled")
                 return
             except (Exception, BaseException):
                 logger.exception(
@@ -438,7 +438,7 @@ class TonlibManager:
                         self.spawn_worker(ls_index, force_restart=True)
                 await asyncio.sleep(1)
             except asyncio.CancelledError:
-                logger.info("[check_children_alive]: Task was cancelled")
+                logger.warning("[check_children_alive]: Task was cancelled")
                 return
             except (Exception, BaseException):
                 logger.exception(
@@ -491,14 +491,15 @@ class TonlibManager:
                 task_id,
                 method,
             )
-            await self.loop.run_in_executor(
-                self.threadpool_executor,
-                wctl.worker.input_queue.put,
-                (task_id, timeout, method, args, kwargs),
-            )
 
             try:
                 wctl.futures[task_id] = self.loop.create_future()
+                await self.loop.run_in_executor(
+                    self.threadpool_executor,
+                    wctl.worker.input_queue.put,
+                    (task_id, timeout, method, args, kwargs),
+                )
+
                 await asyncio.wait_for(wctl.futures[task_id], timeout=self.settings.request_timeout + 1)
                 result = wctl.futures[task_id].result()
                 logger.info(
@@ -508,6 +509,8 @@ class TonlibManager:
                     method,
                 )
                 return result
+            except asyncio.CancelledError as E:
+                raise TonlibNoResponse("Request task was canceled") from E
             finally:
                 wctl.pending_tasks -= 1
                 wctl.futures.pop(task_id)
@@ -540,18 +543,18 @@ class TonlibManager:
     async def raw_get_account_state(self, address: str, seqno: int = None):
         method = "raw_get_account_state"
         try:
-            addr = await self.dispatch_request(method, address, seqno)
+            state = await self.dispatch_request(method, address, seqno)
         except TonlibError:
-            addr = await self.dispatch_archival_request(method, address, seqno)
-        return addr
+            state = await self.dispatch_archival_request(method, address, seqno)
+        return state
 
     async def generic_get_account_state(self, address: str, seqno: int = None):
         method = "generic_get_account_state"
         try:
-            addr = await self.dispatch_request(method, address, seqno)
+            state = await self.dispatch_request(method, address, seqno)
         except TonlibError:
-            addr = await self.dispatch_archival_request(method, address, seqno)
-        return addr
+            state = await self.dispatch_archival_request(method, address, seqno)
+        return state
 
     async def get_nft_item_address(self, collection_address, item_index):
         method = "get_nft_item_address"

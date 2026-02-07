@@ -15,6 +15,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse, Response, StreamingResponse
 
+from NFTorrent import __meta__
 from NFTorrent.auth import ContractAPIKeyCookie, NodeJWTBearer
 from NFTorrent.bot import Backend, BotApp
 from NFTorrent.cache import DisabledCacheManager
@@ -27,7 +28,6 @@ from NFTorrent.modelsbase import CollectionConfig, StatisticNoTags
 from NFTorrent.settings import Settings
 from NFTorrent.tonlib import TonlibContractIsNotNft, TonlibManager
 from NFTorrent.utils import dict_to_influx, guess_type, parse_ipfs_uri, uri_ipfs, uri_supported
-from NFTorrent import __meta__
 
 logger = logging.getLogger(__name__)
 
@@ -213,13 +213,13 @@ class Server:
                 redundancy = len(ipfs_state["cluster_peers"]) / self.settings.ipfs.min_redundancy
                 stotage_state = ipfs_state["peers"] >= self.ipfs.settings.min_peers_count
         if self.indexer is not None:
-            curr_time = time.time()
+            curr_time = int(time.time())
             last_checked = [x.last_checked for x in self.indexer.stats_coll.values()]
             indexer_state = (
                 not tonlib_state
                 or len(last_checked)
-                == len([x for x in last_checked if x >= curr_time - self.indexer.settings.indexer_timeout * 2])
-            ) and self.indexer.stats[StatisticNoTags].task_last_checked >= curr_time - self.indexer.restart_timeout * 2
+                == len([x for x in last_checked if x >= curr_time - self.indexer.settings.indexer_timeout * 3])
+            ) and self.indexer.stats[StatisticNoTags].task_last_checked >= curr_time - self.indexer.restart_timeout * 3
         bot = False
         if self.bot_app is not None:
             bot = self.indexer.dp_active

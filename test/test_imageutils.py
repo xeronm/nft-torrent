@@ -1,8 +1,9 @@
-import unittest
 import io
+import unittest
 
-from NFTorrent.imageutils import generate_cover, convert_image
 from PIL import Image
+
+from NFTorrent.imageutils import convert_image, generate_cover
 
 SPECIES_LOGO = [
     "Other",
@@ -19,6 +20,7 @@ SPECIES_LOGO = [
     "Mouse",
     "Ferret",
 ]
+
 
 class TestImageUtils(unittest.TestCase):
 
@@ -40,7 +42,6 @@ class TestImageUtils(unittest.TestCase):
 
             self.assertIsNotNone(img)
 
-
     def test_convert(self):
         with open("./assets/images/marcus-2.jpg", "rb") as f:
             data = f.read()
@@ -54,4 +55,3 @@ class TestImageUtils(unittest.TestCase):
         p2000 = convert_image(data, 2000, "webp")
         img = Image.open(io.BytesIO(p2000))
         self.assertEqual(img.size, (470, 420))
-

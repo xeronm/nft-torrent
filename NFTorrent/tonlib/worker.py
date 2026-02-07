@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
-from pytonlib import BlockNotFound, TonlibClient, TonlibException
+from pytonlib import BlockDeleted, BlockNotFound, TonlibClient, TonlibException
 
 from NFTorrent.settings import TonlibSettings
 
@@ -39,13 +39,14 @@ class TonlibWorker(mp.Process):
         sync_verify_address: str = None,
         logger_config: dict = None,
         keystore_recreate: bool = False,
-        keystore_remove_on_fail: bool = True
+        keystore_remove_on_fail: bool = True,
     ):
         super().__init__(daemon=True)
 
         self.input_queue = input_queue or mp.Queue()
         self.output_queue = output_queue or mp.Queue()
         self.exit_event = mp.Event()
+        self.blockchain_failures = 0
         self.sync_verify_address = sync_verify_address
 
         self.ls_index = ls_index
@@ -74,7 +75,7 @@ class TonlibWorker(mp.Process):
         keystore = os.path.join(self.settings.keystore, f"ls_{self.ls_index:03d}")
         p = Path(keystore)
         if p.exists() and self.keystore_recreate:
-            shutil.rmtree(keystore)
+            shutil.rmtree(keystore, ignore_errors=True)
         p.mkdir(parents=True, exist_ok=True)
 
         # init tonlib
@@ -98,7 +99,7 @@ class TonlibWorker(mp.Process):
                 "TonlibWorker-#%03d: Failed to init and sync tonlib - %s: %s", self.ls_index, type(E).__name__, E
             )
             if p.exists() and self.keystore_remove_on_fail:
-                shutil.rmtree(keystore)
+                shutil.rmtree(keystore, ignore_errors=True)
             self.shutdown(11)
 
         # creating tasks
@@ -111,6 +112,10 @@ class TonlibWorker(mp.Process):
         finished, unfinished = self.loop.run_until_complete(
             asyncio.wait(self.tasks.values(), return_when=asyncio.FIRST_COMPLETED)
         )
+
+        if self.blockchain_failures:
+            if p.exists() and self.keystore_remove_on_fail:
+                shutil.rmtree(keystore, ignore_errors=True)
 
         self.shutdown(0 if self.exit_event.is_set() else 12)
 
@@ -296,6 +301,10 @@ class TonlibWorker(mp.Process):
         logger.debug("TonlibWorker-#%03d [main_loop]: entering main loop", self.ls_index)
         try:
             while not self.exit_event.is_set():
+                if self.blockchain_failures:
+                    logger.info("TonlibWorker-#%03d [main_loop]: Loop exits due to blockchain failure", self.ls_index)
+                    break
+
                 try:
                     task_id, timeout, method, args, kwargs = await self.loop.run_in_executor(
                         self.threadpool_executor, self.input_queue.get, True, 1
@@ -333,6 +342,8 @@ class TonlibWorker(mp.Process):
                     E,
                     extra={"method": method, "margs": args, "mkwargs": kwargs},
                 )
+                if isinstance(E, BlockDeleted):
+                    self.blockchain_failures += 1
             else:
                 logger.debug("TonlibWorker-#%03d: Task '%s.%s' got response", self.ls_index, task_id, method)
         else:

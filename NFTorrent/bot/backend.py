@@ -65,7 +65,7 @@ class Backend(BackendInterface):
 
                 await asyncio.sleep(self.check_dbstats_timeout)
             except asyncio.CancelledError:
-                logger.info("[check_dbstats]: Task was cancelled")
+                logger.warning("[check_dbstats]: Task was cancelled")
                 return
             except (Exception, BaseException):
                 logger.exception(

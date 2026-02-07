@@ -69,10 +69,7 @@ class IpfsRpcManager:
         for task in self.tasks.values():
             task.cancel()
         await asyncio.wait(self.tasks.values())
-        await asyncio.gather(
-            self.client.close(),
-            self.cluster.close()
-        )
+        await asyncio.gather(self.client.close(), self.cluster.close())
 
     def setup_cache(self):
         # Short-term
@@ -102,7 +99,7 @@ class IpfsRpcManager:
 
                 await asyncio.sleep(self.node_state_check_timeout)
             except asyncio.CancelledError:
-                logger.info("[check_ipfs_alive]: Task was cancelled")
+                logger.warning("[check_ipfs_alive]: Task was cancelled")
                 return
             except (Exception, BaseException):
                 logger.exception(
