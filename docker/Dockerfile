@@ -9,15 +9,16 @@ RUN apt-get update && \
         python3-psycopg2 && \
     wget https://apt.llvm.org/llvm.sh && \
     chmod +x llvm.sh && \
-    ./llvm.sh 16 all && \
+    ./llvm.sh 21 clang && \
     rm ./llvm.sh && \
     apt-get clean
 
-RUN git clone https://github.com/ton-blockchain/ton.git --branch ${TON_RELEASE} --recurse-submodules /ton && \
-    cd /ton && \
+RUN git clone https://github.com/ton-blockchain/ton.git --branch ${TON_RELEASE} --recurse-submodules /ton
+
+RUN cd /ton && \
     mkdir build && \
     cd build && \
-    cmake -GNinja -DCMAKE_BUILD_TYPE=Release .. && \
+    cmake -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang-21 -DCMAKE_CXX_COMPILER=clang++-21 -DTON_USE_JEMALLOC=ON .. && \
     ninja tonlib tonlibjson
 
 FROM ubuntu:22.04
