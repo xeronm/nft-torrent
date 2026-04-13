@@ -109,6 +109,7 @@ class WorkerControl:
 
 class TonlibManager:
     ema_alpha = 0.1
+    update_liteserver_config_timeout = 3600
     restart_retry_timeout = 600
     restart_retry_count = 3
 
@@ -157,6 +158,7 @@ class TonlibManager:
         # running tasks
         self.tasks["check_working"] = self.loop.create_task(self.check_working())
         self.tasks["check_children_alive"] = self.loop.create_task(self.check_children_alive())
+        self.tasks["update_liteserver_config"] = self.loop.create_task(self.update_liteserver_config())
 
     async def shutdown(self):
         for task in self.tasks.values():
@@ -336,6 +338,28 @@ class TonlibManager:
                     "[Worker-#%03d]: Reader terminated with exception",
                     ls_index,
                 )
+
+    async def update_liteserver_config(self):
+        logger.info("[update_liteserver_config]: entering main loop")
+        while True:
+            try:
+                logger.warning(
+                    "[update_liteserver_config]: init block: %s",
+                    self.settings.liteserver_config["validator"]["init_block"],
+                )
+                res = await self.settings.update_init_block()
+                if res is not None:
+                    logger.warning("[update_liteserver_config]: init block updated: %s", res)
+
+                await asyncio.sleep(self.update_liteserver_config_timeout)
+            except asyncio.CancelledError:
+                logger.warning("[update_liteserver_config]: Task was cancelled")
+                return
+            except (Exception, BaseException):
+                logger.exception(
+                    "[update_liteserver_config]: Unhandled exception",
+                )
+                await asyncio.sleep(self.restart_retry_timeout)
 
     async def check_working(self):
         logger.info("[check_working]: entering main loop")

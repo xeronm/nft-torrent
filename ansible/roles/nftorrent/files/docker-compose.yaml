@@ -77,6 +77,7 @@ services:
       TONLIB_KEYSTORE: /ton_keystore/
       TONLIB_REQUEST_TIMEOUT: 20
       TONLIB_LITESERVER_CONFIG: ${TONLIB_LITESERVER_CONFIG}
+      # TONLIB_CDLL_PATH: /usr/local/lib/libtonlibjson.so
       CACHE_ENABLED: 1
       # CACHE_REDIS_ENDPOINT: cache
       # CACHE_REDIS_TIMEOUT: 2

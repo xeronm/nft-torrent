@@ -64,8 +64,15 @@ class TonlibWorker(mp.Process):
         self.keystore_remove_on_fail = keystore_remove_on_fail
 
     def run(self):
+        logger.info(
+            "TonlibWorker-#%03d: worker process started, init_block: %s, liteservers: %d",
+            self.ls_index,
+            self.settings.liteserver_config["validator"]["init_block"],
+            len(self.settings.liteserver_config["liteservers"]),
+        )
         if self.logger_config:
             logging.config.dictConfig(self.logger_config)
+
         self.threadpool_executor = ThreadPoolExecutor(max_workers=16)
 
         policy = asyncio.get_event_loop_policy()
@@ -150,7 +157,11 @@ class TonlibWorker(mp.Process):
         result = None
         while result is None and not self.exit_event.is_set():
             try:
-                result = await self.tonlib.sync_tonlib()
+                # result = await self.tonlib.sync_tonlib()
+                result = await self.tonlib.tonlib_wrapper.execute(
+                    {"@type": "sync"}, timeout=sync_mtimeout - time.monotonic()
+                )
+
                 last_block = result["seqno"]
                 logger.warning(
                     "TonlibWorker-#%03d: Sync complete, workchain: %d, last_block: %d",

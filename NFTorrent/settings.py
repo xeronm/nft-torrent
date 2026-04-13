@@ -1,10 +1,13 @@
+import asyncio
 import json
 import os
 from abc import abstractmethod
 from dataclasses import dataclass
 from importlib import import_module
 
+import aiohttp
 import requests
+from fastapi import status
 
 from NFTorrent.modelsbase import CollectionConfig
 
@@ -253,12 +256,60 @@ class TonlibSettings:
     parallel_requests: int = 50
     keystore: str = "./ton_keystore/"
     liteserver_config_path: str = "https://ton.org/global-config.json"
+    toncenter_endpoint: str = None
+    toncenter_limit_rps: int = 1
     request_timeout: int = 10
     verbosity_level: int = 0
     restart_timeout: int = 10
     max_liteservers: int = 16
     cdll_path: str = None
     min_liteservers: int = 2
+
+    async def update_init_block(self):
+        init_block = None
+        if not self.toncenter_endpoint:
+            return None
+
+        deleay = 1.0 / self.toncenter_limit_rps
+
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=self.request_timeout),
+            base_url=self.toncenter_endpoint + "/",
+        ) as session:
+            async with session.get("getMasterchainInfo") as response:
+                if response.status != status.HTTP_200_OK:
+                    return None
+                data = await response.json()
+                last_info = data["result"]["last"]
+            await asyncio.sleep(deleay)
+
+            async with session.get(
+                f'getBlockHeader?workchain={last_info["workchain"]}&shard={last_info["shard"]}&seqno={last_info["seqno"]}'
+            ) as response:
+                if response.status != status.HTTP_200_OK:
+                    return None
+                data = await response.json()
+                seqno = data["result"]["prev_key_block_seqno"]
+            await asyncio.sleep(deleay)
+
+            async with session.get(
+                f'lookupBlock?workchain={last_info["workchain"]}&shard={last_info["shard"]}&seqno={seqno}'
+            ) as response:
+                if response.status != status.HTTP_200_OK:
+                    return None
+                data = await response.json()
+                file_hash = data["result"]["file_hash"]
+                root_hash = data["result"]["root_hash"]
+            await asyncio.sleep(deleay)
+
+            init_block = {
+                "seqno": seqno,
+                "file_hash": file_hash,
+                "root_hash": root_hash,
+            }
+
+            self.liteserver_config["validator"]["init_block"].update(init_block)
+        return init_block
 
     @property
     def liteserver_config(self):
@@ -268,6 +319,7 @@ class TonlibSettings:
             else:
                 with open(self.liteserver_config_path) as f:
                     self._liteserver_config = json.load(f)
+
         return self._liteserver_config
 
     @classmethod
@@ -279,6 +331,7 @@ class TonlibSettings:
         obj.parallel_requests = int(os.environ.get("TONLIB_PARALLEL_REQUESTS", cls.parallel_requests))
         obj.keystore = os.environ.get("TONLIB_KEYSTORE", cls.keystore)
         obj.liteserver_config_path = os.environ.get("TONLIB_LITESERVER_CONFIG", cls.liteserver_config_path)
+        obj.toncenter_endpoint = os.environ.get("TONLIB_TONCENTER_ENDPOINT", cls.toncenter_endpoint)
         obj.cdll_path = os.environ.get("TONLIB_CDLL_PATH", None)
         obj.request_timeout = int(os.environ.get("TONLIB_REQUEST_TIMEOUT", cls.request_timeout))
         obj.restart_timeout = int(os.environ.get("TONLIB_RESTART_TIMEOUT", cls.restart_timeout))

@@ -8,6 +8,22 @@ from NFTorrent.settings import TonlibSettings
 from NFTorrent.tonlib import TonlibManager
 
 
+class TestTonlibSettings(unittest.IsolatedAsyncioTestCase):
+
+    async def test_settings_update_config(self):
+        settings = TonlibSettings(
+            max_liteservers=1,
+            liteserver_config_path="https://ton.org/testnet-global.config.json",
+            toncenter_endpoint="https://testnet.toncenter.com/api/v2",
+            keystore=".tox/.ton_keystore",
+            request_timeout=20,
+        )
+
+        res = await settings.update_init_block()
+        for field in ["seqno", "root_hash", "file_hash"]:
+            self.assertIsNotNone(res.get(field))
+
+
 class TestTonlibManager(unittest.IsolatedAsyncioTestCase):
 
     async def test_tonlib(self):
@@ -16,6 +32,7 @@ class TestTonlibManager(unittest.IsolatedAsyncioTestCase):
             TonlibSettings(
                 max_liteservers=1,
                 liteserver_config_path="https://ton.org/testnet-global.config.json",
+                toncenter_endpoint="https://testnet.toncenter.com/api/v2",
                 keystore=".tox/.ton_keystore",
                 request_timeout=20,
             ),
