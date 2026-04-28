@@ -28,7 +28,7 @@ class TonlibWorkerException(Exception):
 class TonlibWorker(mp.Process):
 
     retry_timeout = 1
-    sync_timeout = 90
+    sync_timeout = 300
 
     def __init__(
         self,
