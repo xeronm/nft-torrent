@@ -8,9 +8,12 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import InitVar, asdict, dataclass
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlencode
 
+import aiohttp
+from fastapi import status
 from pytonlib import TonlibError, TonlibNoResponse
-from pytonlib.utils.tokens import parse_nft_collection_data, parse_nft_item_data
+from pytonlib.utils.tokens import parse_nft_collection_data, parse_nft_item_address_data, parse_nft_item_data
 from tonpy.types import CellSlice
 
 from NFTorrent.cache import DisabledCacheManager
@@ -24,6 +27,7 @@ from NFTorrent.modelsbase import (
     TonAddress,
     dataclass_to_influx,
 )
+from NFTorrent.ratelimit import UniformRateLimit
 from NFTorrent.settings import BaseCacheManager, TonlibSettings
 from NFTorrent.utils import parse_ipfs_uri, uri_ipfs
 
@@ -42,6 +46,10 @@ class TonlibContractIsNotNft(TonlibRequestError):
 
 
 class TonlibSelectWorkerError(TonlibRequestError):
+    pass
+
+
+class TonlibFallbackError(TonlibRequestError):
     pass
 
 
@@ -159,6 +167,14 @@ class TonlibManager:
         self.tasks["check_working"] = self.loop.create_task(self.check_working())
         self.tasks["check_children_alive"] = self.loop.create_task(self.check_children_alive())
         self.tasks["update_liteserver_config"] = self.loop.create_task(self.update_liteserver_config())
+
+        self.toncenter = None
+        if self.settings.toncenter_endpoint:
+            self.toncenter = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=self.settings.request_timeout),
+                base_url=self.settings.toncenter_endpoint + "/",
+            )
+            self.rate_limit = UniformRateLimit(rate_limit=self.settings.toncenter_limit_rps)
 
     async def shutdown(self):
         for task in self.tasks.values():
@@ -347,7 +363,7 @@ class TonlibManager:
                     "[update_liteserver_config]: init block: %s",
                     self.settings.liteserver_config["validator"]["init_block"],
                 )
-                res = await self.settings.update_init_block()
+                res = await self.update_init_block()
                 if res is not None:
                     logger.warning("[update_liteserver_config]: init block updated: %s", res)
 
@@ -539,6 +555,85 @@ class TonlibManager:
                 wctl.pending_tasks -= 1
                 wctl.futures.pop(task_id)
 
+    async def update_init_block(self):
+        init_block = None
+
+        async with self.rate_limit:
+            async with self.toncenter.get("getMasterchainInfo") as response:
+                if response.status != status.HTTP_200_OK:
+                    return None
+                data = await response.json()
+                last_info = data["result"]["last"]
+
+        async with self.rate_limit:
+            async with self.toncenter.get(
+                f'getBlockHeader?workchain={last_info["workchain"]}&shard={last_info["shard"]}&seqno={last_info["seqno"]}'
+            ) as response:
+                if response.status != status.HTTP_200_OK:
+                    return None
+                data = await response.json()
+                seqno = data["result"]["prev_key_block_seqno"]
+
+        async with self.rate_limit:
+            async with self.toncenter.get(
+                f'lookupBlock?workchain={last_info["workchain"]}&shard={last_info["shard"]}&seqno={seqno}'
+            ) as response:
+                if response.status != status.HTTP_200_OK:
+                    return None
+                data = await response.json()
+                file_hash = data["result"]["file_hash"]
+                root_hash = data["result"]["root_hash"]
+
+        init_block = {
+            "seqno": seqno,
+            "file_hash": file_hash,
+            "root_hash": root_hash,
+        }
+        self.settings.liteserver_config["validator"]["init_block"].update(init_block)
+        return init_block
+
+    async def toncenter_run_method(self, address: str, method: str, stack_data, seqno: int = None):
+        uri = "runGetMethod"
+        async with self.rate_limit:
+            async with self.toncenter.post(
+                uri, json={"address": address, "method": method, "stack": stack_data, "seqno": seqno}
+            ) as resp:
+                if resp.status != status.HTTP_200_OK:
+                    raise TonlibFallbackError(f'Fallback error "{uri}": {resp.status}')
+                result = await resp.json()
+        return result["result"]
+
+    async def toncenter_get_account_state(self, address: str, seqno: int = None):
+        query_params = {"address": address}
+        if seqno is not None:
+            query_params["seqno"] = seqno
+        uri = f"getAddressInformation?{urlencode(query_params)}"
+        async with self.rate_limit:
+            async with self.toncenter.get(uri) as resp:
+                if resp.status != status.HTTP_200_OK:
+                    raise TonlibFallbackError(f'Fallback error "{uri}": {resp.status}')
+                result = await resp.json()
+        return result["result"]
+
+    async def toncenter_generic_get_account_state(self, address: str, seqno: int = None):
+        query_params = {"address": address}
+        if seqno is not None:
+            query_params["seqno"] = seqno
+        uri = f"getExtendedAddressInformation?{urlencode(query_params)}"
+        async with self.rate_limit:
+            async with self.toncenter.get(uri) as resp:
+                if resp.status != status.HTTP_200_OK:
+                    raise TonlibFallbackError(f'Fallback error "{uri}": {resp.status}')
+                result = await resp.json()
+        return result["result"]
+
+    async def toncenter_get_nft_item_address(self, collection_address: str, item_index: int):
+        stack = [["int", item_index]]
+        result = await self.toncenter_run_method(collection_address, "get_nft_address_by_index", stack)
+        if result["exit_code"] != 0 or len(result["stack"]) != 1:
+            raise TonlibFallbackError("Fallback error get_nft_item_address: failed")
+        return parse_nft_item_address_data(result["stack"])
+
     async def dispatch_request(self, method: str, *args, **kwargs):
         ls_index = self.select_worker()
         return await self.dispatch_request_to_worker(method, ls_index, *args, **kwargs)
@@ -561,6 +656,10 @@ class TonlibManager:
     async def raw_run_method(self, address, method, stack_data, seqno):
         try:
             return await self.dispatch_request("raw_run_method", address, method, stack_data, seqno)
+        except TonlibSelectWorkerError:
+            if self.toncenter is None:
+                raise
+            return await self.toncenter_run_method(address, method, stack_data, seqno)
         except TonlibError:
             return await self.dispatch_archival_request("raw_run_method", address, method, stack_data, seqno)
 
@@ -568,6 +667,10 @@ class TonlibManager:
         method = "raw_get_account_state"
         try:
             state = await self.dispatch_request(method, address, seqno)
+        except TonlibSelectWorkerError:
+            if self.toncenter is None:
+                raise
+            state = self.toncenter_get_account_state(address, seqno)
         except TonlibError:
             state = await self.dispatch_archival_request(method, address, seqno)
         return state
@@ -576,6 +679,10 @@ class TonlibManager:
         method = "generic_get_account_state"
         try:
             state = await self.dispatch_request(method, address, seqno)
+        except TonlibSelectWorkerError:
+            if self.toncenter is None:
+                raise
+            state = await self.toncenter_generic_get_account_state(address, seqno)
         except TonlibError:
             state = await self.dispatch_archival_request(method, address, seqno)
         return state
@@ -584,6 +691,10 @@ class TonlibManager:
         method = "get_nft_item_address"
         try:
             addr = await self.dispatch_request(method, collection_address, item_index)
+        except TonlibSelectWorkerError:
+            if self.toncenter is None:
+                raise
+            addr = await self.toncenter_get_nft_item_address(collection_address, item_index)
         except TonlibError:
             addr = await self.dispatch_archival_request(method, collection_address, item_index)
         return addr

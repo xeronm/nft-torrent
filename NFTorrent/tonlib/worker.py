@@ -28,7 +28,7 @@ class TonlibWorkerException(Exception):
 class TonlibWorker(mp.Process):
 
     retry_timeout = 1
-    sync_timeout = 300
+    sync_verify_timeout = 60
 
     def __init__(
         self,
@@ -58,7 +58,7 @@ class TonlibWorker(mp.Process):
         self.tasks = {}
         self.tonlib = None
         self.threadpool_executor = None
-        self.sync_timeout = max(self.sync_timeout, self.settings.request_timeout)
+        self.sync_timeout = self.settings.sync_timeout
         self.logger_config = logger_config
         self.keystore_recreate = keystore_recreate
         self.keystore_remove_on_fail = keystore_remove_on_fail
@@ -98,7 +98,8 @@ class TonlibWorker(mp.Process):
 
         try:
             self.loop.run_until_complete(self.tonlib.init())
-            self.loop.run_until_complete(self.sync_initial())
+            if self.sync_timeout:
+                self.loop.run_until_complete(self.sync_initial())
             if self.sync_verify_address:
                 self.loop.run_until_complete(self.sync_verify())
         except Exception as E:
@@ -187,7 +188,7 @@ class TonlibWorker(mp.Process):
                 await asyncio.sleep(self.retry_timeout)
 
     async def sync_verify(self):
-        sync_mtimeout = time.monotonic() + self.sync_timeout
+        sync_mtimeout = time.monotonic() + self.sync_verify_timeout
         logger.debug(
             "TonlibWorker-#%03d: Sync verifying... contract address: %s",
             self.ls_index,
