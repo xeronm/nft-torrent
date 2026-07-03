@@ -62,10 +62,10 @@
     - pgcluster
     - etcd
 
-- name: Import PGDG GPG key
-  rpm_key:
-    key: https://download.postgresql.org/pub/repos/yum/keys/RPM-GPG-KEY-PGDG
+- name: Import PostgreSQL Repository GPG Key
+  ansible.builtin.rpm_key:
     state: present
+    key: https://download.postgresql.org/pub/repos/yum/keys/PGDG-RPM-GPG-KEY-RHEL
   tags: pgcluster
 
 - name: Enable PostgreSQL repository
@@ -76,8 +76,6 @@
 
 - name: Disable built-in PostgreSQL module
   shell: dnf -qy module disable postgresql
-  args:
-    warn: false
   tags: pgcluster
 
 - name: "Install PostgreSQL-{{postgres_version}} and PG-Bouncer"

@@ -173,8 +173,9 @@ class TonlibManager:
             self.toncenter = aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=self.settings.request_timeout),
                 base_url=self.settings.toncenter_endpoint + "/",
+                headers={"X-API-Key": self.settings.toncenter_apikey},
             )
-            self.rate_limit = UniformRateLimit(rate_limit=self.settings.toncenter_limit_rps)
+            self.rate_limit = UniformRateLimit(rate_limit=self.settings.toncenter_rate_limit)
 
     async def shutdown(self):
         for task in self.tasks.values():

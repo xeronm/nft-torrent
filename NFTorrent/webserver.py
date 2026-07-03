@@ -125,7 +125,7 @@ class Server:
             self.settings.indexdb.enabled,
             self.settings.tonlib.max_liteservers,
             self.settings.tonlib.toncenter_endpoint,
-            self.settings.tonlib.toncenter_limit_rps,
+            self.settings.tonlib.toncenter_rate_limit,
         )
 
         cache_manager = None

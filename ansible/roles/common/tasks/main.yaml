@@ -1,8 +1,6 @@
 - name: 'Change system hostname to "{{ inventory_hostname }}"'
   ansible.builtin.command:
     cmd: "hostnamectl set-hostname {{ inventory_hostname }}"
-  args:
-    warn: false
   tags: hostname
 
 - name: Ensure /etc/hostname contains the new hostname

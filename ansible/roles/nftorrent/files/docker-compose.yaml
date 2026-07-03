@@ -77,7 +77,11 @@ services:
       TONLIB_KEYSTORE: /ton_keystore/
       TONLIB_REQUEST_TIMEOUT: 20
       TONLIB_LITESERVER_CONFIG: ${TONLIB_LITESERVER_CONFIG}
-      # TONLIB_CDLL_PATH: /usr/local/lib/libtonlibjson.so
+      TONLIB_CDLL_PATH: /usr/local/lib/libtonlibjson.so
+      TONLIB_TONCENTER_ENDPOINT: ${TONLIB_TONCENTER_ENDPOINT}
+      TONLIB_TONCENTER_RATE_LIMIT: 5
+      TONLIB_TONCENTER_APIKEY: file:/run/secrets/toncenter_key
+      TONLIB_MAX_LITESERVERS: 10
       CACHE_ENABLED: 1
       # CACHE_REDIS_ENDPOINT: cache
       # CACHE_REDIS_TIMEOUT: 2
@@ -121,6 +125,7 @@ services:
       - ca_cert
       - tls_cert
       - tls_key
+      - toncenter_key
     ports:
       - 127.0.0.1:8002:8002
     networks:
@@ -152,5 +157,7 @@ secrets:
     file: ./private/certs/ca.crt
   ipfs_secret:
     file: ./private/ipfs_cluster.key
+  toncenter_key:
+    file: ./private/toncenter.key
 networks:
   internal:

@@ -254,7 +254,8 @@ class TonlibSettings:
     keystore: str = "./ton_keystore/"
     liteserver_config_path: str = "https://ton.org/global-config.json"
     toncenter_endpoint: str = None
-    toncenter_limit_rps: int = 1
+    toncenter_rate_limit: int = 1
+    toncenter_apikey: str = None
     request_timeout: int = 10
     sync_timeout: int = 300
     verbosity_level: int = 0
@@ -284,6 +285,8 @@ class TonlibSettings:
         obj.keystore = os.environ.get("TONLIB_KEYSTORE", cls.keystore)
         obj.liteserver_config_path = os.environ.get("TONLIB_LITESERVER_CONFIG", cls.liteserver_config_path)
         obj.toncenter_endpoint = os.environ.get("TONLIB_TONCENTER_ENDPOINT", cls.toncenter_endpoint)
+        obj.toncenter_rate_limit = int(os.environ.get("TONLIB_TONCENTER_RATE_LIMIT", cls.toncenter_rate_limit))
+        obj.toncenter_apikey = _value_from_file(os.environ.get("TONLIB_TONCENTER_APIKEY"))
         obj.cdll_path = os.environ.get("TONLIB_CDLL_PATH", None)
         obj.request_timeout = int(os.environ.get("TONLIB_REQUEST_TIMEOUT", cls.request_timeout))
         obj.request_timeout = int(os.environ.get("TONLIB_SYNC_TIMEOUT", cls.sync_timeout))
