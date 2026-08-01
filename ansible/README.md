@@ -156,11 +156,16 @@ sudo certbot certonly -a dns -d <domain> -d *.<domain> --dns-propagation-seconds
 sudo certbot renew --dry-run
 ```
 
-3. Setup Deploy hook `/etc/letsencrypt/renewal/<domain>`;
+3. Configure Deploy hook;
 
-```conf
-deploy_hook = /root/nft-torrent/ansible/deploy_pushcert.sh
+
+```sh
+$ certbot reconfigure \
+    --cert-name petsmem.site \
+    --deploy-hook "/root/nft-torrent/ansible/deploy_pushcert.sh"
 ```
+
+Veryfy `/etc/letsencrypt/renewal/<domain>.conf`
 
 4. Test hook
 

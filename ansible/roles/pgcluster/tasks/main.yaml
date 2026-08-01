@@ -437,6 +437,26 @@
     mode: '0600'
   tags: nftorrent
 
+
+- name: Enable and start etcd-dbshrink timer
+  ansible.builtin.systemd:
+    name: etcd-dbshrink.timer
+    enabled: true
+    state: started
+  tags:
+    - pgcluster
+    - etcd
+
+
+- name: Enable and start PgBouncer-LeaderUpd timer
+  ansible.builtin.systemd:
+    name: pgbouncer-leaderupd.timer
+    enabled: true
+    state: started
+  tags:
+    - pgcluster
+    - pgbouncer
+
 - name: Add user 'telegraf' to group 'postgres'
   ansible.builtin.user:
     name: telegraf
