@@ -67,7 +67,7 @@ nftorrent:
   environment:
     IPFS_CLUSTER_SECRET: <32byte hexencoded cluster secret>
     IPFS_CLUSTER_PEERNAME: "{{ inventory_hostname }}"
-    NFTORRENT_VERSION: 0.2.4
+    NFTORRENT_VERSION: 0.2.5
     HTTP_TWA_DOMAINS: ton-connect.github.io, petsmem.site
     HTTP_ALLOW_ORIGINS: http://localhost:9000, https://petsmem.site
   ton_config: https://ton.org/testnet-global-config.json
@@ -156,11 +156,16 @@ sudo certbot certonly -a dns -d <domain> -d *.<domain> --dns-propagation-seconds
 sudo certbot renew --dry-run
 ```
 
-3. Setup Deploy hook `/etc/letsencrypt/renewal/<domain>`;
+3. Configure Deploy hook;
 
-```conf
-deploy_hook = /root/nft-torrent/ansible/deploy_pushcert.sh
+
+```sh
+$ certbot reconfigure \
+    --cert-name petsmem.site \
+    --deploy-hook "/root/nft-torrent/ansible/deploy_pushcert.sh"
 ```
+
+Veryfy `/etc/letsencrypt/renewal/<domain>.conf`
 
 4. Test hook
 

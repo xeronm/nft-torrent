@@ -1,3 +1,15 @@
+- name: 'Nginx modules and config path'
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: 0755
+  loop:
+    - /usr/share/nginx/modules
+    - /etc/nginx/default.d
+  tags: geoip
+
 - name: Install geoip2 module
   copy:
     src: ./etc/nginx/ngx_http_geoip2_module.so

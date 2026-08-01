@@ -71,6 +71,16 @@
     mode: '0600'
   tags: nftorrent
 
+- name: NFTorrent private TonCenter Key
+  copy:
+    content: "{{ nftorrent.toncenter_key }}"
+    dest: "/home/{{ oam.user }}/nft-torrent/private/toncenter.key"
+    owner: "{{ oam.user }}"
+    group: "{{ oam.group }}"
+    mode: '0400'
+  notify: restart nftorrent
+  tags: nftorrent
+
 - name: NFTorrent private JWT Key
   copy:
     content: "{{ nftorrent.jwt_key }}"
@@ -98,6 +108,16 @@
     owner: "{{ oam.user }}"
     group: "{{ oam.group }}"
     mode: '0400'
+  notify: restart nftorrent
+  tags: nftorrent
+
+- name: IPFS Cluster Secret
+  copy:
+    content: "{{ nftorrent.ipfs.cluster_secret }}"
+    dest: "/home/{{ oam.user }}/nft-torrent/private/ipfs_cluster.key"
+    owner: "{{ oam.user }}"
+    group: "{{ oam.group }}"
+    mode: '0600'
   notify: restart nftorrent
   tags: nftorrent
 
