@@ -28,7 +28,7 @@ class TonlibWorkerException(Exception):
 class TonlibWorker(mp.Process):
 
     retry_timeout = 1
-    sync_timeout = 90
+    sync_verify_timeout = 60
 
     def __init__(
         self,
@@ -58,14 +58,21 @@ class TonlibWorker(mp.Process):
         self.tasks = {}
         self.tonlib = None
         self.threadpool_executor = None
-        self.sync_timeout = max(self.sync_timeout, self.settings.request_timeout)
+        self.sync_timeout = self.settings.sync_timeout
         self.logger_config = logger_config
         self.keystore_recreate = keystore_recreate
         self.keystore_remove_on_fail = keystore_remove_on_fail
 
     def run(self):
+        logger.info(
+            "TonlibWorker-#%03d: worker process started, init_block: %s, liteservers: %d",
+            self.ls_index,
+            self.settings.liteserver_config["validator"]["init_block"],
+            len(self.settings.liteserver_config["liteservers"]),
+        )
         if self.logger_config:
             logging.config.dictConfig(self.logger_config)
+
         self.threadpool_executor = ThreadPoolExecutor(max_workers=16)
 
         policy = asyncio.get_event_loop_policy()
@@ -91,7 +98,8 @@ class TonlibWorker(mp.Process):
 
         try:
             self.loop.run_until_complete(self.tonlib.init())
-            self.loop.run_until_complete(self.sync_initial())
+            if self.sync_timeout:
+                self.loop.run_until_complete(self.sync_initial())
             if self.sync_verify_address:
                 self.loop.run_until_complete(self.sync_verify())
         except Exception as E:
@@ -150,7 +158,11 @@ class TonlibWorker(mp.Process):
         result = None
         while result is None and not self.exit_event.is_set():
             try:
-                result = await self.tonlib.sync_tonlib()
+                # result = await self.tonlib.sync_tonlib()
+                result = await self.tonlib.tonlib_wrapper.execute(
+                    {"@type": "sync"}, timeout=sync_mtimeout - time.monotonic()
+                )
+
                 last_block = result["seqno"]
                 logger.warning(
                     "TonlibWorker-#%03d: Sync complete, workchain: %d, last_block: %d",
@@ -176,7 +188,7 @@ class TonlibWorker(mp.Process):
                 await asyncio.sleep(self.retry_timeout)
 
     async def sync_verify(self):
-        sync_mtimeout = time.monotonic() + self.sync_timeout
+        sync_mtimeout = time.monotonic() + self.sync_verify_timeout
         logger.debug(
             "TonlibWorker-#%03d: Sync verifying... contract address: %s",
             self.ls_index,

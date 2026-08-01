@@ -1,35 +1,57 @@
-- name: "RedHat: InfluxDB Repository"
-  yum_repository:
-    name: influxdb
-    description: InfluxDB Repository - RHEL
-    baseurl: https://repos.influxdata.com/rhel/$releasever/$basearch/stable
-    gpgkey:  https://repos.influxdata.com/influxdata-archive_compat.key
-    gpgcheck: yes
-    enabled: yes
+- name: Setup InfluxData repo (RedHat)
+  block:
+    - name: "Import InfluxDB GPG Key"
+      ansible.builtin.rpm_key:
+        state: present
+        key: https://repos.influxdata.com/influxdata-archive.key
+
+    - name: "InfluxDB Repository"
+      yum_repository:
+        name: influxdb
+        description: InfluxDB Repository - RHEL
+        baseurl: https://repos.influxdata.com/rhel/$releasever/$basearch/stable
+        gpgkey:  https://repos.influxdata.com/influxdata-archive_compat.key
+        gpgcheck: yes
+        enabled: yes
+
   when: ansible_os_family == "RedHat"
   tags: telegraf
 
-- name: "Debian: Download influxdata archive key"
-  ansible.builtin.get_url:
-    url: https://repos.influxdata.com/influxdata-archive.key
-    dest: /tmp/influxdata-archive.key
-    mode: '0644'
-  when: ansible_os_family == "Debian"
-  tags: telegraf
+- name: Setup InfluxData repo (Debian)
+  block:
+    - name: Download influxdata archive key
+      ansible.builtin.get_url:
+        url: https://repos.influxdata.com/influxdata-archive.key
+        dest: /tmp/influxdata-archive.key
+        mode: '0644'
 
-- name: "Debian: Convert influxdata archive key to GPG format"
-  ansible.builtin.command:
-    cmd: gpg --dearmor -o /etc/apt/trusted.gpg.d/influxdata-archive.gpg /tmp/influxdata-archive.key
-  args:
-    creates: /etc/apt/trusted.gpg.d/influxdata-archive.gpg
-  when: ansible_os_family == "Debian"
-  tags: telegraf
+    - name: Convert influxdata archive key to GPG format
+      ansible.builtin.command:
+        cmd: >
+          gpg --dearmor
+          -o /usr/share/keyrings/influxdata-archive.gpg
+          /tmp/influxdata-archive.key
+      args:
+        creates: /usr/share/keyrings/influxdata-archive.gpg
 
-- name: "Debian: Add influxdata APT repository"
-  ansible.builtin.apt_repository:
-    repo: "deb [signed-by=/etc/apt/trusted.gpg.d/influxdata-archive.gpg] https://repos.influxdata.com/debian stable main"
-    state: present
-    filename: influxdata
+    - name: Remove legacy influxdata trusted.gpg key
+      ansible.builtin.file:
+        path: /etc/apt/trusted.gpg.d/influxdata-archive.gpg
+        state: absent
+
+    - name: Add influxdata APT repository
+      ansible.builtin.apt_repository:
+        repo: >-
+          deb [signed-by=/usr/share/keyrings/influxdata-archive.gpg]
+          https://repos.influxdata.com/debian stable main
+        state: present
+        filename: influxdata
+
+    - name: Remove temporary key
+      ansible.builtin.file:
+        path: /tmp/influxdata-archive.key
+        state: absent
+
   when: ansible_os_family == "Debian"
   tags: telegraf
 

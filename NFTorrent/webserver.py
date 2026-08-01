@@ -108,7 +108,9 @@ class Server:
             " - webserver.collections: %s <%s>\n"
             " - ipfs.enabled: %s\n"
             " - cache.enabled: %s <%s>\n"
-            " - indexdb.enabled: %s\n",
+            " - indexdb.enabled: %s\n"
+            " - tonlib.max_liteservers: %d\n"
+            " - tonlib.toncenter: %s [%d RPS]\n",
             self.settings.webserver.testnet,
             self.settings.webserver.node_id,
             self.settings.webserver.allow_networks,
@@ -121,6 +123,9 @@ class Server:
             self.settings.cache.enabled,
             self.settings.cache.manager_class.__importname__,
             self.settings.indexdb.enabled,
+            self.settings.tonlib.max_liteservers,
+            self.settings.tonlib.toncenter_endpoint,
+            self.settings.tonlib.toncenter_rate_limit,
         )
 
         cache_manager = None

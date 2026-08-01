@@ -181,7 +181,7 @@ async def statistics(request: Request) -> str:
 async def bootstrap() -> None:
     hc = ws.get_healthcheck()
     headers = {"Access-Control-Allow-Origin": "*"}
-    if hc.tonlib and hc.storage:
+    if (hc.tonlib or ws.settings.tonlib.toncenter_endpoint) and hc.storage:
         return Response(status_code=status.HTTP_204_NO_CONTENT, headers=headers)
     else:
         return Response(status_code=status.HTTP_502_BAD_GATEWAY, headers=headers)

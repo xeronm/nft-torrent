@@ -24,7 +24,7 @@ maintainers = [
 urls = { "Homepage" = "https://github.com/xeronm/nft-torrent" }
 
 dependencies = [
-  "pytonlib==0.0.70",
+  "pytonlib==0.0.72",
   "redis",
   "ring",
   "fastapi",
